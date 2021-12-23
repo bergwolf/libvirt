@@ -2416,7 +2416,7 @@ libxlDomainPinVcpuFlags(virDomainPtr dom, unsigned int vcpu,
     libxlDriverPrivate *driver = dom->conn->privateData;
     libxlDriverConfig *cfg = libxlDriverConfigGet(driver);
     virDomainDef *targetDef = NULL;
-    virBitmap *pcpumap = NULL;
+    g_autoptr(virBitmap) pcpumap = NULL;
     virDomainVcpuDef *vcpuinfo;
     virDomainObj *vm;
     int ret = -1;
@@ -2477,7 +2477,6 @@ libxlDomainPinVcpuFlags(virDomainPtr dom, unsigned int vcpu,
 
  cleanup:
     virDomainObjEndAPI(&vm);
-    virBitmapFree(pcpumap);
     virObjectUnref(cfg);
     return ret;
 }
@@ -4808,7 +4807,7 @@ libxlDomainGetNumaParameters(virDomainPtr dom,
     libxlDriverConfig *cfg = libxlDriverConfigGet(driver);
     virDomainObj *vm;
     libxl_bitmap nodemap;
-    virBitmap *nodes = NULL;
+    g_autoptr(virBitmap) nodes = NULL;
     int rc, ret = -1;
     size_t i, j;
 
@@ -4880,7 +4879,6 @@ libxlDomainGetNumaParameters(virDomainPtr dom,
 
             /* First, we convert libxl_bitmap into virBitmap. After that,
              * we format virBitmap as a string that can be returned. */
-            virBitmapClearAll(nodes);
             libxl_for_each_set_bit(j, nodemap) {
                 if (virBitmapSetBit(nodes, j)) {
                     virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -4907,7 +4905,6 @@ libxlDomainGetNumaParameters(virDomainPtr dom,
     ret = 0;
 
  cleanup:
-    virBitmapFree(nodes);
     libxl_bitmap_dispose(&nodemap);
     virDomainObjEndAPI(&vm);
     virObjectUnref(cfg);
@@ -6388,6 +6385,29 @@ libxlDomainGetMetadata(virDomainPtr dom,
     return ret;
 }
 
+static int
+libxlDomainGetMessages(virDomainPtr dom,
+                      char ***msgs,
+                      unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    int ret = -1;
+
+    virCheckFlags(0, -1);
+
+    if (!(vm = libxlDomObjFromDomain(dom)))
+        return -1;
+
+    if (virDomainGetMessagesEnsureACL(dom->conn, vm->def) < 0)
+        goto cleanup;
+
+    ret = virDomainObjGetMessages(vm, msgs, flags);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
 static virHypervisorDriver libxlHypervisorDriver = {
     .name = LIBXL_DRIVER_EXTERNAL_NAME,
     .connectURIProbe = libxlConnectURIProbe,
@@ -6501,6 +6521,7 @@ static virHypervisorDriver libxlHypervisorDriver = {
     .connectBaselineCPU = libxlConnectBaselineCPU, /* 2.3.0 */
     .domainSetMetadata = libxlDomainSetMetadata, /* 5.7.0 */
     .domainGetMetadata = libxlDomainGetMetadata, /* 5.7.0 */
+    .domainGetMessages = libxlDomainGetMessages, /* 8.0.0 */
 
 };
 

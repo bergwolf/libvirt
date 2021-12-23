@@ -262,7 +262,7 @@ hypervLookupHostSystemBiosUuid(hypervPrivate *priv, unsigned char *uuid)
 static virCaps *
 hypervCapsInit(hypervPrivate *priv)
 {
-    virCaps *caps = NULL;
+    g_autoptr(virCaps) caps = NULL;
     virCapsGuest *guest = NULL;
 
     caps = virCapabilitiesNew(VIR_ARCH_X86_64, 1, 1);
@@ -271,7 +271,7 @@ hypervCapsInit(hypervPrivate *priv)
         return NULL;
 
     if (hypervLookupHostSystemBiosUuid(priv, caps->host.host_uuid) < 0)
-        goto error;
+        return NULL;
 
     /* i686 caps */
     guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM, VIR_ARCH_I686,
@@ -287,11 +287,7 @@ hypervCapsInit(hypervPrivate *priv)
     virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_HYPERV,
                                   NULL, NULL, 0, NULL);
 
-    return caps;
-
- error:
-    virObjectUnref(caps);
-    return NULL;
+    return g_steal_pointer(&caps);
 }
 
 

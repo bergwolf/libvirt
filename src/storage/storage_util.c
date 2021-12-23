@@ -796,6 +796,17 @@ storageBackendCreateQemuImgOpts(virStorageEncryptionInfoDef *encinfo,
             }
             virBufferAddLit(&buf, "lazy_refcounts,");
         }
+
+        if (virBitmapIsBitSet(info->features,
+                              VIR_STORAGE_FILE_FEATURE_EXTENDED_L2)) {
+            if (STREQ_NULLABLE(info->compat, "0.10")) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                               _("'extended_l2' not supported with compat level %s"),
+                               info->compat);
+                return -1;
+            }
+            virBufferAddLit(&buf, "extended_l2=on,");
+        }
     }
 
     virBufferTrim(&buf, ",");
@@ -1116,7 +1127,7 @@ virStorageBackendCreateQemuImgCmdFromVol(virStoragePoolObj *pool,
                                          const char *inputSecretPath,
                                          virStorageVolEncryptConvertStep convertStep)
 {
-    virCommand *cmd = NULL;
+    g_autoptr(virCommand) cmd = NULL;
     struct _virStorageBackendQemuImgInfo info = {
         .format = vol->target.format,
         .type = NULL,
@@ -1246,11 +1257,10 @@ virStorageBackendCreateQemuImgCmdFromVol(virStoragePoolObj *pool,
     }
     VIR_FREE(info.secretAlias);
 
-    return cmd;
+    return g_steal_pointer(&cmd);
 
  error:
     VIR_FREE(info.secretAlias);
-    virCommandFree(cmd);
     return NULL;
 }
 

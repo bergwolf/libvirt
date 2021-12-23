@@ -479,6 +479,20 @@ Returns memory stats of the node.
 If *cell* is specified, this will print the specified cell statistics only.
 
 
+nodesevinfo
+-----------
+
+**Syntax:**
+
+::
+
+   nodesevinfo
+
+Reports information about the AMD SEV launch security features for
+the node, if any. Some of this information is also reported in the
+domain capabilities XML document.
+
+
 nodesuspend
 -----------
 
@@ -2057,6 +2071,23 @@ destination hosts have synchronized time (i.e., NTP daemon is running
 on both of them).
 
 
+domlaunchsecinfo
+----------------
+
+**Syntax:**
+
+::
+
+   domlaunchsecinfo domain
+
+Returns information about the launch security parameters associated
+with a running domain.
+
+The set of parameters reported will vary depending on which type of
+launch security protection is active. If none is active, no parameters
+will be reported.
+
+
 dommemstat
 ----------
 
@@ -3203,7 +3234,7 @@ host. By default only non-shared non-readonly images are transferred. Use
 *--migrate-disks* to explicitly specify a list of disk targets to
 transfer via the comma separated ``disk-list`` argument.
 With *--copy-storage-synchronous-writes* flag used the disk data migration will
-synchronously handle guest disk writes to both the original soure and the
+synchronously handle guest disk writes to both the original source and the
 destination to ensure that the disk migration converges at the price of possibly
 decreased burst performance.
 
@@ -3514,11 +3545,11 @@ Set or get a domain's numa parameters, corresponding to the <numatune>
 element of domain XML.  Without flags, the current settings are
 displayed.
 
-*mode* can be one of \`strict', \`interleave' and \`preferred' or any
-valid number from the virDomainNumatuneMemMode enum in case the daemon
-supports it.  For a running domain, the mode can't be changed, and the
-nodeset can be changed only if the domain was started with a mode of
-\`strict'.
+*mode* can be one of \`strict', \`interleave', \`preferred' and
+\'restrictive' or any valid number from the virDomainNumatuneMemMode enum
+in case the daemon supports it.  For a running domain, the mode can't be
+changed, and the nodeset can be changed only if the domain was started with
+\`restrictive' mode.
 
 *nodeset* is a list of numa nodes used by the host for running the domain.
 Its syntax is a comma separated list, with '-' for ranges and '^' for

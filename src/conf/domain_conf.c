@@ -137,6 +137,13 @@ VIR_ENUM_IMPL(virDomainOS,
               "xenpvh",
 );
 
+VIR_ENUM_IMPL(virDomainHyperVMode,
+              VIR_DOMAIN_HYPERV_MODE_LAST,
+              "none",
+              "custom",
+              "passthrough",
+);
+
 VIR_ENUM_IMPL(virDomainBoot,
               VIR_DOMAIN_BOOT_LAST,
               "fd",
@@ -172,6 +179,7 @@ VIR_ENUM_IMPL(virDomainFeature,
               "cfpc",
               "sbbc",
               "ibs",
+              "tcg",
 );
 
 VIR_ENUM_IMPL(virDomainCapabilitiesPolicy,
@@ -205,6 +213,7 @@ VIR_ENUM_IMPL(virDomainKVM,
               "hint-dedicated",
               "poll-control",
               "pv-ipi",
+              "dirty-ring",
 );
 
 VIR_ENUM_IMPL(virDomainXen,
@@ -3712,7 +3721,9 @@ void virDomainDefFree(virDomainDef *def)
     g_free(def->emulator);
     g_free(def->description);
     g_free(def->title);
+    g_free(def->kvm_features);
     g_free(def->hyperv_vendor_id);
+    g_free(def->tcg_features);
 
     virBlkioDeviceArrayClear(def->blkio.devices,
                              def->blkio.ndevices);
@@ -14793,6 +14804,10 @@ virDomainSEVDefParseXML(virDomainSEVDef *def,
     unsigned long policy;
     int rc;
 
+    if (virXMLPropTristateBool(ctxt->node, "kernelHashes", VIR_XML_PROP_NONE,
+                               &def->kernel_hashes) < 0)
+        return -1;
+
     if (virXPathULongHex("string(./policy)", ctxt, &policy) < 0) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
                        _("failed to get launch security policy"));
@@ -15642,6 +15657,7 @@ void virDomainDiskInsert(virDomainDef *def,
         /* If bus matches and current disk is after
          * new disk, then new disk should go here */
         if (def->disks[idx]->bus == disk->bus &&
+            def->disks[idx]->dst && disk->dst &&
             (virDiskNameToIndex(def->disks[idx]->dst) >
              virDiskNameToIndex(disk->dst))) {
             insertAt = idx;
@@ -17418,7 +17434,14 @@ static int
 virDomainFeaturesHyperVDefParse(virDomainDef *def,
                                 xmlNodePtr node)
 {
-    def->features[VIR_DOMAIN_FEATURE_HYPERV] = VIR_TRISTATE_SWITCH_ON;
+    virDomainHyperVMode mode;
+
+    if (virXMLPropEnumDefault(node, "mode", virDomainHyperVModeTypeFromString,
+                              VIR_XML_PROP_NONZERO, &mode,
+                              VIR_DOMAIN_HYPERV_MODE_CUSTOM) < 0)
+        return -1;
+
+    def->features[VIR_DOMAIN_FEATURE_HYPERV] = mode;
 
     node = xmlFirstElementChild(node);
     while (node != NULL) {
@@ -17530,7 +17553,9 @@ static int
 virDomainFeaturesKVMDefParse(virDomainDef *def,
                              xmlNodePtr node)
 {
-    def->features[VIR_DOMAIN_FEATURE_KVM] = VIR_TRISTATE_SWITCH_ON;
+    g_autofree virDomainFeatureKVM *kvm = NULL;
+
+    kvm = g_new0(virDomainFeatureKVM, 1);
 
     node = xmlFirstElementChild(node);
     while (node) {
@@ -17549,10 +17574,32 @@ virDomainFeaturesKVMDefParse(virDomainDef *def,
                                      &value) < 0)
             return -1;
 
-        def->kvm_features[feature] = value;
+        kvm->features[feature] = value;
+
+        /* dirty ring feature should parse size property */
+        if (feature == VIR_DOMAIN_KVM_DIRTY_RING &&
+            value == VIR_TRISTATE_SWITCH_ON) {
+
+            if (virXMLPropUInt(node, "size", 0, VIR_XML_PROP_REQUIRED,
+                               &kvm->dirty_ring_size) < 0) {
+                return -1;
+            }
+
+            if (!VIR_IS_POW2(kvm->dirty_ring_size) ||
+                kvm->dirty_ring_size < 1024 ||
+                kvm->dirty_ring_size > 65536) {
+                virReportError(VIR_ERR_XML_ERROR, "%s",
+                               _("dirty ring must be power of 2 and ranges [1024, 65536]"));
+
+                return -1;
+            }
+        }
 
         node = xmlNextElementSibling(node);
     }
+
+    def->features[VIR_DOMAIN_FEATURE_KVM] = VIR_TRISTATE_SWITCH_ON;
+    def->kvm_features = g_steal_pointer(&kvm);
 
     return 0;
 }
@@ -17644,6 +17691,30 @@ virDomainFeaturesCapabilitiesDefParse(virDomainDef *def,
         node = xmlNextElementSibling(node);
     }
 
+    return 0;
+}
+
+
+static int
+virDomainFeaturesTCGDefParse(virDomainDef *def,
+                             xmlXPathContextPtr ctxt,
+                             xmlNodePtr node)
+{
+    g_autofree virDomainFeatureTCG *tcg = NULL;
+    VIR_XPATH_NODE_AUTORESTORE(ctxt);
+
+    tcg = g_new0(virDomainFeatureTCG, 1);
+    ctxt->node = node;
+
+    if (virDomainParseMemory("./tb-cache", "./tb-cache/@unit",
+                             ctxt, &tcg->tb_cache, false, false) < 0)
+        return -1;
+
+    if (tcg->tb_cache == 0)
+        return 0;
+
+    def->features[VIR_DOMAIN_FEATURE_TCG] = VIR_TRISTATE_SWITCH_ON;
+    def->tcg_features = g_steal_pointer(&tcg);
     return 0;
 }
 
@@ -17856,6 +17927,11 @@ virDomainFeaturesDefParse(virDomainDef *def,
             break;
         }
 
+        case VIR_DOMAIN_FEATURE_TCG:
+            if (virDomainFeaturesTCGDefParse(def, ctxt, nodes[i]) < 0)
+                return -1;
+            break;
+
         case VIR_DOMAIN_FEATURE_LAST:
             break;
         }
@@ -17977,34 +18053,30 @@ virDomainSchedulerParse(xmlNodePtr node,
                         virProcessSchedPolicy *policy,
                         int *priority)
 {
-    virBitmap *ret = NULL;
+    g_autoptr(virBitmap) ret = NULL;
     g_autofree char *tmp = NULL;
 
     if (!(tmp = virXMLPropString(node, attributeName))) {
         virReportError(VIR_ERR_XML_ERROR,
                        _("Missing attribute '%s' in element '%s'"),
                        attributeName, elementName);
-        goto error;
+        return NULL;
     }
 
     if (virBitmapParse(tmp, &ret, VIR_DOMAIN_CPUMASK_LEN) < 0)
-        goto error;
+        return NULL;
 
     if (virBitmapIsAllClear(ret)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("'%s' scheduler bitmap '%s' is empty"),
                        attributeName, tmp);
-        goto error;
+        return NULL;
     }
 
     if (virDomainSchedulerParseCommonAttrs(node, policy, priority) < 0)
-        goto error;
+        return NULL;
 
-    return ret;
-
- error:
-    virBitmapFree(ret);
-    return NULL;
+    return g_steal_pointer(&ret);
 }
 
 
@@ -21660,15 +21732,14 @@ virDomainDefFeaturesCheckABIStability(virDomainDef *src,
             break;
 
         case VIR_DOMAIN_FEATURE_MSRS:
-            break;
-
+        case VIR_DOMAIN_FEATURE_TCG:
         case VIR_DOMAIN_FEATURE_LAST:
             break;
         }
     }
 
     /* hyperv */
-    if (src->features[VIR_DOMAIN_FEATURE_HYPERV] == VIR_TRISTATE_SWITCH_ON) {
+    if (src->features[VIR_DOMAIN_FEATURE_HYPERV] != VIR_DOMAIN_HYPERV_MODE_NONE) {
         for (i = 0; i < VIR_DOMAIN_HYPERV_LAST; i++) {
             switch ((virDomainHyperv) i) {
             case VIR_DOMAIN_HYPERV_RELAXED:
@@ -21777,13 +21848,14 @@ virDomainDefFeaturesCheckABIStability(virDomainDef *src,
             case VIR_DOMAIN_KVM_DEDICATED:
             case VIR_DOMAIN_KVM_POLLCONTROL:
             case VIR_DOMAIN_KVM_PVIPI:
-                if (src->kvm_features[i] != dst->kvm_features[i]) {
+            case VIR_DOMAIN_KVM_DIRTY_RING:
+                if (src->kvm_features->features[i] != dst->kvm_features->features[i]) {
                     virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                    _("State of KVM feature '%s' differs: "
                                      "source: '%s', destination: '%s'"),
                                    virDomainKVMTypeToString(i),
-                                   virTristateSwitchTypeToString(src->kvm_features[i]),
-                                   virTristateSwitchTypeToString(dst->kvm_features[i]));
+                                   virTristateSwitchTypeToString(src->kvm_features->features[i]),
+                                   virTristateSwitchTypeToString(dst->kvm_features->features[i]));
                     return false;
                 }
 
@@ -21792,6 +21864,16 @@ virDomainDefFeaturesCheckABIStability(virDomainDef *src,
             case VIR_DOMAIN_KVM_LAST:
                 break;
             }
+        }
+
+        if (src->kvm_features->dirty_ring_size != dst->kvm_features->dirty_ring_size) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("dirty ring size of KVM feature '%s' differs: "
+                             "source: '%d', destination: '%d'"),
+                           virDomainKVMTypeToString(i),
+                           src->kvm_features->dirty_ring_size,
+                           dst->kvm_features->dirty_ring_size);
+            return false;
         }
     }
 
@@ -27056,6 +27138,10 @@ virDomainSecDefFormat(virBuffer *buf, virDomainSecDef *sec)
     case VIR_DOMAIN_LAUNCH_SECURITY_SEV: {
         virDomainSEVDef *sev = &sec->data.sev;
 
+        if (sev->kernel_hashes != VIR_TRISTATE_BOOL_ABSENT)
+            virBufferAsprintf(&attrBuf, " kernelHashes='%s'",
+                              virTristateBoolTypeToString(sev->kernel_hashes));
+
         if (sev->haveCbitpos)
             virBufferAsprintf(&childBuf, "<cbitpos>%d</cbitpos>\n", sev->cbitpos);
 
@@ -27648,6 +27734,26 @@ virDomainDefFormatBlkiotune(virBuffer *buf,
 }
 
 
+static void
+virDomainFeatureTCGFormat(virBuffer *buf,
+                          const virDomainDef *def)
+{
+    g_auto(virBuffer) childBuf = VIR_BUFFER_INIT_CHILD(buf);
+
+    if (!def->tcg_features ||
+        def->features[VIR_DOMAIN_FEATURE_TCG] != VIR_TRISTATE_SWITCH_ON)
+        return;
+
+    if (def->tcg_features->tb_cache > 0) {
+        virBufferAsprintf(&childBuf,
+                          "<tb-cache unit='KiB'>%lld</tb-cache>\n",
+                          def->tcg_features->tb_cache);
+    }
+
+    virXMLFormatElement(buf, "tcg", NULL, &childBuf);
+}
+
+
 static int
 virDomainDefFormatFeatures(virBuffer *buf,
                            virDomainDef *def)
@@ -27743,10 +27849,11 @@ virDomainDefFormatFeatures(virBuffer *buf,
             break;
 
         case VIR_DOMAIN_FEATURE_HYPERV:
-            if (def->features[i] != VIR_TRISTATE_SWITCH_ON)
+            if (def->features[i] == VIR_DOMAIN_HYPERV_MODE_NONE)
                 break;
 
-            virBufferAddLit(&childBuf, "<hyperv>\n");
+            virBufferAsprintf(&childBuf, "<hyperv mode='%s'>\n",
+                              virDomainHyperVModeTypeToString(def->features[i]));
             virBufferAdjustIndent(&childBuf, 2);
             for (j = 0; j < VIR_DOMAIN_HYPERV_LAST; j++) {
                 if (def->hyperv_features[j] == VIR_TRISTATE_SWITCH_ABSENT)
@@ -27827,11 +27934,25 @@ virDomainDefFormatFeatures(virBuffer *buf,
                 case VIR_DOMAIN_KVM_DEDICATED:
                 case VIR_DOMAIN_KVM_POLLCONTROL:
                 case VIR_DOMAIN_KVM_PVIPI:
-                    if (def->kvm_features[j])
+                    if (def->kvm_features->features[j])
                         virBufferAsprintf(&childBuf, "<%s state='%s'/>\n",
                                           virDomainKVMTypeToString(j),
                                           virTristateSwitchTypeToString(
-                                              def->kvm_features[j]));
+                                              def->kvm_features->features[j]));
+                    break;
+
+                case VIR_DOMAIN_KVM_DIRTY_RING:
+                    if (def->kvm_features->features[j] != VIR_TRISTATE_SWITCH_ABSENT) {
+                        virBufferAsprintf(&childBuf, "<%s state='%s'",
+                                          virDomainKVMTypeToString(j),
+                                          virTristateSwitchTypeToString(def->kvm_features->features[j]));
+                        if (def->kvm_features->dirty_ring_size > 0) {
+                            virBufferAsprintf(&childBuf, " size='%d'/>\n",
+                                              def->kvm_features->dirty_ring_size);
+                        } else {
+                            virBufferAddLit(&childBuf, "/>\n");
+                        }
+                    }
                     break;
 
                 case VIR_DOMAIN_KVM_LAST:
@@ -27966,6 +28087,10 @@ virDomainDefFormatFeatures(virBuffer *buf,
 
             virBufferAsprintf(&childBuf, "<ibs value='%s'/>\n",
                               virDomainIBSTypeToString(def->features[i]));
+            break;
+
+        case VIR_DOMAIN_FEATURE_TCG:
+            virDomainFeatureTCGFormat(&childBuf, def);
             break;
 
         case VIR_DOMAIN_FEATURE_LAST:

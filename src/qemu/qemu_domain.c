@@ -850,6 +850,11 @@ qemuDomainChrSourcePrivateNew(void)
     if (!(priv = virObjectNew(qemuDomainChrSourcePrivateClass)))
         return NULL;
 
+    priv->fd = -1;
+    priv->logfd = -1;
+
+    priv->passedFD = -1;
+
     return (virObject *) priv;
 }
 
@@ -858,6 +863,15 @@ static void
 qemuDomainChrSourcePrivateDispose(void *obj)
 {
     qemuDomainChrSourcePrivate *priv = obj;
+
+    VIR_FORCE_CLOSE(priv->fd);
+    VIR_FORCE_CLOSE(priv->logfd);
+
+    g_free(priv->tlsCertPath);
+
+    g_free(priv->fdset);
+    g_free(priv->logFdset);
+    g_free(priv->tlsCredsAlias);
 
     g_clear_pointer(&priv->secinfo, qemuDomainSecretInfoFree);
 }
@@ -6310,10 +6324,8 @@ void qemuDomainObjTaint(virQEMUDriver *driver,
                         virDomainTaintFlags taint,
                         qemuDomainLogContext *logCtxt)
 {
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
-
     qemuDomainObjTaintMsg(driver, obj, taint, logCtxt, NULL);
-    ignore_value(virDomainObjSave(obj, driver->xmlopt, cfg->stateDir));
+    qemuDomainSaveStatus(obj);
 }
 
 void qemuDomainObjTaintMsg(virQEMUDriver *driver,
@@ -7149,20 +7161,16 @@ qemuDomainRemoveInactiveJobLocked(virQEMUDriver *driver,
 
 
 void
-qemuDomainSetFakeReboot(virQEMUDriver *driver,
-                        virDomainObj *vm,
+qemuDomainSetFakeReboot(virDomainObj *vm,
                         bool value)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     if (priv->fakeReboot == value)
         return;
 
     priv->fakeReboot = value;
-
-    if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0)
-        VIR_WARN("Failed to save status on vm %s", vm->def->name);
+    qemuDomainSaveStatus(vm);
 }
 
 static void
@@ -9714,66 +9722,74 @@ qemuDomainPrepareChannel(virDomainChrDef *channel,
 }
 
 
-/* qemuDomainPrepareChardevSourceTLS:
- * @source: pointer to host interface data for char devices
- * @cfg: driver configuration
+/* qemuDomainPrepareChardevSourceOne:
+ * @dev: device definition
+ * @charsrc: chardev source definition
+ * @opaque: pointer to struct qemuDomainPrepareChardevSourceData
  *
- * Updates host interface TLS encryption setting based on qemu.conf
- * for char devices.  This will be presented as "tls='yes|no'" in
- * live XML of a guest.
+ * Updates the config of a chardev source based on the qemu driver configuration.
+ * Note that this is meant to be called via
+ * qemuDomainDeviceBackendChardevForeach(One).
  */
-void
-qemuDomainPrepareChardevSourceTLS(virDomainChrSourceDef *source,
-                                  virQEMUDriverConfig *cfg)
+int
+qemuDomainPrepareChardevSourceOne(virDomainDeviceDef *dev,
+                                  virDomainChrSourceDef *charsrc,
+                                  void *opaque)
 {
-    if (source->type == VIR_DOMAIN_CHR_TYPE_TCP) {
-        if (source->data.tcp.haveTLS == VIR_TRISTATE_BOOL_ABSENT) {
-            if (cfg->chardevTLS)
-                source->data.tcp.haveTLS = VIR_TRISTATE_BOOL_YES;
-            else
-                source->data.tcp.haveTLS = VIR_TRISTATE_BOOL_NO;
-            source->data.tcp.tlsFromConfig = true;
+    struct qemuDomainPrepareChardevSourceData *data = opaque;
+    qemuDomainChrSourcePrivate *charpriv = QEMU_DOMAIN_CHR_SOURCE_PRIVATE(charsrc);
+
+    switch ((virDomainDeviceType) dev->type) {
+
+    case VIR_DOMAIN_DEVICE_CHR:
+    case VIR_DOMAIN_DEVICE_RNG:
+    case VIR_DOMAIN_DEVICE_SMARTCARD:
+    case VIR_DOMAIN_DEVICE_REDIRDEV:
+        if (charsrc->type == VIR_DOMAIN_CHR_TYPE_TCP) {
+            if (charsrc->data.tcp.haveTLS == VIR_TRISTATE_BOOL_ABSENT) {
+                charsrc->data.tcp.haveTLS = virTristateBoolFromBool(data->cfg->chardevTLS);
+                charsrc->data.tcp.tlsFromConfig = true;
+            }
+
+            if (charsrc->data.tcp.haveTLS == VIR_TRISTATE_BOOL_YES) {
+                charpriv->tlsCertPath = g_strdup(data->cfg->chardevTLSx509certdir);
+                charpriv->tlsVerify = data->cfg->chardevTLSx509verify;
+            }
         }
+        break;
+
+    case VIR_DOMAIN_DEVICE_NET:
+        /* when starting a fresh VM, vhost-user network sockets wait for connection */
+        if (!data->hotplug)
+            charpriv->wait = true;
+        break;
+
+    case VIR_DOMAIN_DEVICE_DISK:
+    case VIR_DOMAIN_DEVICE_SHMEM:
+    case VIR_DOMAIN_DEVICE_LEASE:
+    case VIR_DOMAIN_DEVICE_FS:
+    case VIR_DOMAIN_DEVICE_INPUT:
+    case VIR_DOMAIN_DEVICE_SOUND:
+    case VIR_DOMAIN_DEVICE_VIDEO:
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+    case VIR_DOMAIN_DEVICE_WATCHDOG:
+    case VIR_DOMAIN_DEVICE_CONTROLLER:
+    case VIR_DOMAIN_DEVICE_GRAPHICS:
+    case VIR_DOMAIN_DEVICE_HUB:
+    case VIR_DOMAIN_DEVICE_NONE:
+    case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_NVRAM:
+    case VIR_DOMAIN_DEVICE_TPM:
+    case VIR_DOMAIN_DEVICE_PANIC:
+    case VIR_DOMAIN_DEVICE_LAST:
+    case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_IOMMU:
+    case VIR_DOMAIN_DEVICE_VSOCK:
+    case VIR_DOMAIN_DEVICE_AUDIO:
+        break;
     }
-}
 
-
-/* qemuDomainPrepareChardevSource:
- * @def: live domain definition
- * @cfg: driver configuration
- *
- * Iterate through all devices that use virDomainChrSourceDef *as host
- * interface part.
- */
-void
-qemuDomainPrepareChardevSource(virDomainDef *def,
-                               virQEMUDriverConfig *cfg)
-{
-    size_t i;
-
-    for (i = 0; i < def->nserials; i++)
-        qemuDomainPrepareChardevSourceTLS(def->serials[i]->source, cfg);
-
-    for (i = 0; i < def->nparallels; i++)
-        qemuDomainPrepareChardevSourceTLS(def->parallels[i]->source, cfg);
-
-    for (i = 0; i < def->nchannels; i++)
-        qemuDomainPrepareChardevSourceTLS(def->channels[i]->source, cfg);
-
-    for (i = 0; i < def->nconsoles; i++)
-        qemuDomainPrepareChardevSourceTLS(def->consoles[i]->source, cfg);
-
-    for (i = 0; i < def->nrngs; i++)
-        if (def->rngs[i]->backend == VIR_DOMAIN_RNG_BACKEND_EGD)
-            qemuDomainPrepareChardevSourceTLS(def->rngs[i]->source.chardev, cfg);
-
-    for (i = 0; i < def->nsmartcards; i++)
-        if (def->smartcards[i]->type == VIR_DOMAIN_SMARTCARD_TYPE_PASSTHROUGH)
-            qemuDomainPrepareChardevSourceTLS(def->smartcards[i]->data.passthru,
-                                              cfg);
-
-    for (i = 0; i < def->nredirdevs; i++)
-        qemuDomainPrepareChardevSourceTLS(def->redirdevs[i]->source, cfg);
+    return 0;
 }
 
 
@@ -11454,4 +11470,138 @@ qemuDomainGetVHostUserFSSocketPath(qemuDomainObjPrivate *priv,
         return g_strdup(fs->sock);
 
     return virFileBuildPath(priv->libDir, fs->info.alias, "-fs.sock");
+}
+
+
+/**
+ * qemuDomainDeviceBackendChardevForeachOne:
+ * @dev: device definition
+ * @cb: callback
+ * @opaque: data for @cb
+ *
+ * Calls @cb with the char device backend data if @dev is a device which has a
+ * chardev backend.
+ */
+int
+qemuDomainDeviceBackendChardevForeachOne(virDomainDeviceDef *dev,
+                                         qemuDomainDeviceBackendChardevForeachCallback cb,
+                                         void *opaque)
+{
+    switch ((virDomainDeviceType) dev->type) {
+    case VIR_DOMAIN_DEVICE_DISK:
+        if (virStorageSourceGetActualType(dev->data.disk->src) != VIR_STORAGE_TYPE_VHOST_USER)
+            return 0;
+
+        return cb(dev, dev->data.disk->src->vhostuser, opaque);
+
+    case VIR_DOMAIN_DEVICE_NET:
+        if (virDomainNetGetActualType(dev->data.net) != VIR_DOMAIN_NET_TYPE_VHOSTUSER)
+            return 0;
+
+        return cb(dev, dev->data.net->data.vhostuser, opaque);
+
+    case VIR_DOMAIN_DEVICE_REDIRDEV:
+        return cb(dev, dev->data.redirdev->source, opaque);
+
+    case VIR_DOMAIN_DEVICE_SHMEM:
+        if (!dev->data.shmem->server.enabled)
+            return 0;
+
+        return cb(dev, dev->data.shmem->server.chr, opaque);
+
+    case VIR_DOMAIN_DEVICE_CHR:
+        return cb(dev, dev->data.chr->source, opaque);
+
+    case VIR_DOMAIN_DEVICE_SMARTCARD:
+        if (dev->data.smartcard->type != VIR_DOMAIN_SMARTCARD_TYPE_PASSTHROUGH)
+            return 0;
+
+        return cb(dev, dev->data.smartcard->data.passthru, opaque);
+
+    case VIR_DOMAIN_DEVICE_RNG:
+        if (dev->data.rng->backend != VIR_DOMAIN_RNG_BACKEND_EGD)
+            return 0;
+
+        return cb(dev, dev->data.rng->source.chardev, opaque);
+
+    case VIR_DOMAIN_DEVICE_TPM:
+        switch ((virDomainTPMBackendType) dev->data.tpm->type) {
+        case VIR_DOMAIN_TPM_TYPE_PASSTHROUGH:
+            return cb(dev, dev->data.tpm->data.passthrough.source, opaque);
+
+        case VIR_DOMAIN_TPM_TYPE_EMULATOR:
+            return cb(dev, dev->data.tpm->data.emulator.source, opaque);
+
+        case VIR_DOMAIN_TPM_TYPE_LAST:
+            return 0;
+        }
+        return 0;
+
+    case VIR_DOMAIN_DEVICE_LEASE:
+    case VIR_DOMAIN_DEVICE_FS:
+    case VIR_DOMAIN_DEVICE_INPUT:
+    case VIR_DOMAIN_DEVICE_SOUND:
+    case VIR_DOMAIN_DEVICE_VIDEO:
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+    case VIR_DOMAIN_DEVICE_WATCHDOG:
+    case VIR_DOMAIN_DEVICE_CONTROLLER:
+    case VIR_DOMAIN_DEVICE_GRAPHICS:
+    case VIR_DOMAIN_DEVICE_HUB:
+    case VIR_DOMAIN_DEVICE_NONE:
+    case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_NVRAM:
+    case VIR_DOMAIN_DEVICE_PANIC:
+    case VIR_DOMAIN_DEVICE_LAST:
+    case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_IOMMU:
+    case VIR_DOMAIN_DEVICE_VSOCK:
+    case VIR_DOMAIN_DEVICE_AUDIO:
+        /* no chardev backend */
+        break;
+    }
+
+    return 0;
+}
+
+struct qemuDomainDeviceBackendChardevIterData {
+    qemuDomainDeviceBackendChardevForeachCallback cb;
+    void *cbdata;
+};
+
+
+static int
+qemuDomainDeviceBackendChardevIter(virDomainDef *def G_GNUC_UNUSED,
+                                   virDomainDeviceDef *dev,
+                                   virDomainDeviceInfo *info G_GNUC_UNUSED,
+                                   void *opaque)
+{
+    struct qemuDomainDeviceBackendChardevIterData *data = opaque;
+
+    return qemuDomainDeviceBackendChardevForeachOne(dev, data->cb, data->cbdata);
+}
+
+
+/**
+ * qemuDomainDeviceBackendChardevForeach:a
+ * @def: domain definition
+ * @cb: callback
+ * @opqaue: data for @cb
+ *
+ * Same as qemuDomainDeviceBackendChardevForeachOne called for every device in
+ * @def.
+ */
+int
+qemuDomainDeviceBackendChardevForeach(virDomainDef *def,
+                                      qemuDomainDeviceBackendChardevForeachCallback cb,
+                                      void *opaque)
+{
+    struct qemuDomainDeviceBackendChardevIterData data = {
+        .cb = cb,
+        .cbdata = opaque,
+    };
+
+    return virDomainDeviceInfoIterateFlags(def,
+                                           qemuDomainDeviceBackendChardevIter,
+                                           DOMAIN_DEVICE_ITERATE_MISSING_INFO,
+                                           &data);
 }

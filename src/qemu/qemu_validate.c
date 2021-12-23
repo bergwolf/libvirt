@@ -273,7 +273,7 @@ qemuValidateDomainDefFeatures(const virDomainDef *def,
             break;
 
         case VIR_DOMAIN_FEATURE_HYPERV:
-            if (def->features[i] != VIR_TRISTATE_SWITCH_ABSENT &&
+            if (def->features[i] != VIR_DOMAIN_HYPERV_MODE_NONE &&
                 !ARCH_IS_X86(def->os.arch) && !qemuDomainIsARMVirt(def)) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                _("Hyperv features are not supported for "
@@ -291,6 +291,23 @@ qemuValidateDomainDefFeatures(const virDomainDef *def,
                                _("PMU is always enabled for architecture '%s'"),
                                  virArchToString(def->os.arch));
                  return -1;
+            }
+            break;
+
+        case VIR_DOMAIN_FEATURE_TCG:
+            if (def->features[i] == VIR_TRISTATE_SWITCH_ON) {
+                if (def->virtType != VIR_DOMAIN_VIRT_QEMU) {
+                    virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                                   _("TCG features are incompatible with domain type '%s'"),
+                                   virDomainVirtTypeToString(def->virtType));
+                    return -1;
+                }
+
+                if ((def->tcg_features->tb_cache & 0x3ff) != 0) {
+                    virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                                   _("tb-cache size must be an integer multiple of MiB"));
+                    return -1;
+                }
             }
             break;
 
@@ -1198,6 +1215,13 @@ qemuValidateDomainDef(const virDomainDef *def,
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                                _("SEV launch security is not supported with "
                                  "this QEMU binary"));
+                return -1;
+            }
+
+            if (def->sec->data.sev.kernel_hashes != VIR_TRISTATE_BOOL_ABSENT &&
+                !virQEMUCapsGet(qemuCaps, QEMU_CAPS_SEV_GUEST_KERNEL_HASHES)) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("SEV measured direct kernel boot is not supported with this QEMU binary"));
                 return -1;
             }
             break;
@@ -4089,6 +4113,14 @@ qemuValidateDomainDeviceDefVNCGraphics(const virDomainGraphicsDef *graphics,
         !virQEMUCapsGet(qemuCaps, QEMU_CAPS_VNC_POWER_CONTROL)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                        _("VNC power control is not available"));
+        return -1;
+    }
+
+    if (graphics->data.vnc.auth.passwd &&
+        strlen(graphics->data.vnc.auth.passwd) > 8) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("VNC password is %zu characters long, only 8 permitted"),
+                       strlen(graphics->data.vnc.auth.passwd));
         return -1;
     }
 

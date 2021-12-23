@@ -143,6 +143,29 @@ virCapabilitiesHostNUMANewHost(void)
     return virTestCapsBuildNUMATopology(3);
 }
 
+void
+virHostCPUX86GetCPUID(uint32_t leaf,
+                      uint32_t extended,
+                      uint32_t *eax,
+                      uint32_t *ebx,
+                      uint32_t *ecx,
+                      uint32_t *edx)
+{
+    if (eax)
+        *eax = 0;
+    if (ebx)
+        *ebx = 0;
+    if (ecx)
+        *ecx = 0;
+    if (edx)
+        *edx = 0;
+    if (leaf == 0x8000001F && extended == 0) {
+        if (ecx)
+            *ecx = 509;
+        if (edx)
+            *edx = 451;
+    }
+}
 
 static int
 testQemuAddGuest(virCaps *caps,
@@ -749,11 +772,6 @@ testQemuInfoInitArgs(struct testQemuInfo *info)
         bool stripmachinealiases = false;
         virQEMUCaps *cachedcaps = NULL;
 
-        if (info->args.fakeCapsUsed) {
-            fprintf(stderr, "ARG_QEMU_CAPS can not be combined with ARG_CAPS_ARCH or ARG_CAPS_VER\n");
-            return -1;
-        }
-
         info->arch = virArchFromString(info->args.capsarch);
 
         if (STREQ(info->args.capsver, "latest")) {
@@ -781,6 +799,16 @@ testQemuInfoInitArgs(struct testQemuInfo *info)
 
         if (!(info->qemuCaps = virQEMUCapsNewCopy(cachedcaps)))
             return -1;
+
+        if (info->args.fakeCapsUsed) {
+            size_t i;
+            for (i = 0; i < QEMU_CAPS_LAST; i++) {
+                if (virQEMUCapsGet(info->args.fakeCaps, i)) {
+                    virQEMUCapsSet(info->qemuCaps, i);
+                }
+            }
+        }
+
 
         if (stripmachinealiases)
             virQEMUCapsStripMachineAliases(info->qemuCaps);

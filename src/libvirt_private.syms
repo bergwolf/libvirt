@@ -359,6 +359,7 @@ virDomainDeviceDefParse;
 virDomainDeviceFindSCSIController;
 virDomainDeviceGetInfo;
 virDomainDeviceInfoIterate;
+virDomainDeviceInfoIterateFlags;
 virDomainDeviceSetData;
 virDomainDeviceTypeToString;
 virDomainDiskBackingStoreFormat;
@@ -1247,7 +1248,6 @@ virNetworkObjGetMacMap;
 virNetworkObjGetNewDef;
 virNetworkObjGetPersistentDef;
 virNetworkObjGetPortStatusDir;
-virNetworkObjGetRadvdPid;
 virNetworkObjIsActive;
 virNetworkObjIsAutostart;
 virNetworkObjIsPersistent;
@@ -1275,7 +1275,6 @@ virNetworkObjSetDefTransient;
 virNetworkObjSetDnsmasqPid;
 virNetworkObjSetFloorSum;
 virNetworkObjSetMacMap;
-virNetworkObjSetRadvdPid;
 virNetworkObjTaint;
 virNetworkObjUnrefMacMap;
 virNetworkObjUnsetDefTransient;
@@ -1666,15 +1665,6 @@ virLockManagerPluginUsesState;
 virLockManagerRelease;
 
 
-# logging/log_manager.h
-virLogManagerDomainAppendMessage;
-virLogManagerDomainGetLogFilePosition;
-virLogManagerDomainOpenLogFile;
-virLogManagerDomainReadLogFile;
-virLogManagerFree;
-virLogManagerNew;
-
-
 # security/security_driver.h
 virSecurityDriverLookup;
 
@@ -1851,7 +1841,6 @@ virBitmapNextClearBit;
 virBitmapNextSetBit;
 virBitmapOverlaps;
 virBitmapParse;
-virBitmapParseSeparator;
 virBitmapParseUnlimited;
 virBitmapSetAll;
 virBitmapSetBit;
@@ -2123,9 +2112,7 @@ virIsDevMapperDevice;
 # util/virdnsmasq.h
 dnsmasqAddDhcpHost;
 dnsmasqAddHost;
-dnsmasqCapsGet;
 dnsmasqCapsGetBinaryPath;
-dnsmasqCapsGetVersion;
 dnsmasqCapsNewFromBinary;
 dnsmasqCapsNewFromBuffer;
 dnsmasqContextFree;
@@ -2308,7 +2295,6 @@ virFileCacheSetPriv;
 # util/virfirewall.h
 virFirewallAddRuleFull;
 virFirewallApply;
-virFirewallBackendSynchronize;
 virFirewallFree;
 virFirewallNew;
 virFirewallRemoveRule;
@@ -2317,7 +2303,6 @@ virFirewallRuleAddArgFormat;
 virFirewallRuleAddArgList;
 virFirewallRuleAddArgSet;
 virFirewallRuleGetArgCount;
-virFirewallSetBackend;
 virFirewallStartRollback;
 virFirewallStartTransaction;
 
@@ -2329,6 +2314,7 @@ virFirewallDGetVersion;
 virFirewallDGetZones;
 virFirewallDInterfaceSetZone;
 virFirewallDIsRegistered;
+virFirewallDSynchronize;
 virFirewallDZoneExists;
 
 
@@ -2417,6 +2403,7 @@ virHostCPUGetThreadsPerSubcore;
 virHostCPUHasBitmap;
 virHostCPUReadSignature;
 virHostCPUStatsAssign;
+virHostCPUX86GetCPUID;
 
 
 # util/virhostmem.h
@@ -2501,7 +2488,6 @@ iptablesRemoveTcpInput;
 iptablesRemoveTcpOutput;
 iptablesRemoveUdpInput;
 iptablesRemoveUdpOutput;
-iptablesSetDeletePrivate;
 iptablesSetupPrivateChains;
 
 
@@ -2538,7 +2524,6 @@ virJSONValueGetString;
 virJSONValueGetType;
 virJSONValueHashFree;
 virJSONValueIsArray;
-virJSONValueIsNull;
 virJSONValueIsObject;
 virJSONValueNewArray;
 virJSONValueNewBoolean;
@@ -2550,7 +2535,6 @@ virJSONValueNewNumberUint;
 virJSONValueNewNumberUlong;
 virJSONValueNewObject;
 virJSONValueNewString;
-virJSONValueNewStringLen;
 virJSONValueObjectAdd;
 virJSONValueObjectAddVArgs;
 virJSONValueObjectAppend;
@@ -2580,7 +2564,6 @@ virJSONValueObjectGetString;
 virJSONValueObjectGetStringArray;
 virJSONValueObjectGetValue;
 virJSONValueObjectHasKey;
-virJSONValueObjectIsNull;
 virJSONValueObjectKeysNumber;
 virJSONValueObjectPrependString;
 virJSONValueObjectRemoveKey;
@@ -3270,6 +3253,7 @@ virSocketAddrCheckNetmask;
 virSocketAddrEqual;
 virSocketAddrFormat;
 virSocketAddrFormatFull;
+virSocketAddrFormatWithPrefix;
 virSocketAddrGetIPPrefix;
 virSocketAddrGetNumNetmaskBits;
 virSocketAddrGetPath;

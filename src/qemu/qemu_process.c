@@ -98,6 +98,9 @@
 #include "storage_source.h"
 #include "backup_conf.h"
 
+#include "logging/log_manager.h"
+#include "logging/log_protocol.h"
+
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
 VIR_LOG_INIT("qemu.qemu_process");
@@ -411,7 +414,6 @@ qemuProcessHandleReset(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
     qemuDomainObjPrivate *priv;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     virDomainState state;
     int reason;
 
@@ -432,8 +434,7 @@ qemuProcessHandleReset(qemuMonitor *mon G_GNUC_UNUSED,
     if (priv->agent)
         qemuAgentNotifyEvent(priv->agent, QEMU_AGENT_EVENT_RESET);
 
-    if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0)
-        VIR_WARN("Failed to save status on vm %s", vm->def->name);
+    qemuDomainSaveStatus(vm);
 
  unlock:
     virObjectUnlock(vm);
@@ -455,7 +456,6 @@ qemuProcessFakeReboot(void *opaque)
     virDomainObj *vm = opaque;
     qemuDomainObjPrivate *priv = vm->privateData;
     virQEMUDriver *driver = priv->driver;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     virDomainRunningReason reason = VIR_DOMAIN_RUNNING_BOOTED;
     int ret = -1, rc;
 
@@ -490,11 +490,7 @@ qemuProcessFakeReboot(void *opaque)
         goto endjob;
     }
 
-    if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-        VIR_WARN("Unable to save status on vm %s after state change",
-                 vm->def->name);
-    }
-
+    qemuDomainSaveStatus(vm);
     ret = 0;
 
  endjob:
@@ -502,7 +498,7 @@ qemuProcessFakeReboot(void *opaque)
 
  cleanup:
     priv->pausedShutdown = false;
-    qemuDomainSetFakeReboot(driver, vm, false);
+    qemuDomainSetFakeReboot(vm, false);
     if (ret == -1)
         ignore_value(qemuProcessKill(vm, VIR_QEMU_PROCESS_KILL_FORCE));
     virDomainObjEndAPI(&vm);
@@ -510,8 +506,7 @@ qemuProcessFakeReboot(void *opaque)
 
 
 void
-qemuProcessShutdownOrReboot(virQEMUDriver *driver,
-                            virDomainObj *vm)
+qemuProcessShutdownOrReboot(virDomainObj *vm)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
 
@@ -530,7 +525,7 @@ qemuProcessShutdownOrReboot(virQEMUDriver *driver,
             VIR_ERROR(_("Failed to create reboot thread, killing domain"));
             ignore_value(qemuProcessKill(vm, VIR_QEMU_PROCESS_KILL_NOWAIT));
             priv->pausedShutdown = false;
-            qemuDomainSetFakeReboot(driver, vm, false);
+            qemuDomainSetFakeReboot(vm, false);
             virObjectUnref(vm);
         }
     } else {
@@ -572,7 +567,6 @@ qemuProcessHandleShutdown(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     qemuDomainObjPrivate *priv;
     virObjectEvent *event = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     int detail = 0;
 
     VIR_DEBUG("vm=%p", vm);
@@ -619,11 +613,7 @@ qemuProcessHandleShutdown(qemuMonitor *mon G_GNUC_UNUSED,
         event = virDomainEventLifecycleNewFromObj(vm,
                                                   VIR_DOMAIN_EVENT_SHUTDOWN,
                                                   detail);
-
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after state change",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
     } else {
         priv->pausedShutdown = true;
     }
@@ -631,7 +621,7 @@ qemuProcessHandleShutdown(qemuMonitor *mon G_GNUC_UNUSED,
     if (priv->agent)
         qemuAgentNotifyEvent(priv->agent, QEMU_AGENT_EVENT_SHUTDOWN);
 
-    qemuProcessShutdownOrReboot(driver, vm);
+    qemuProcessShutdownOrReboot(vm);
 
  unlock:
     virObjectUnlock(vm);
@@ -648,7 +638,6 @@ qemuProcessHandleStop(qemuMonitor *mon G_GNUC_UNUSED,
     virObjectEvent *event = NULL;
     virDomainPausedReason reason;
     virDomainEventSuspendedDetailType detail;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     qemuDomainObjPrivate *priv = vm->privateData;
 
     virObjectLock(vm);
@@ -689,10 +678,7 @@ qemuProcessHandleStop(qemuMonitor *mon G_GNUC_UNUSED,
             VIR_WARN("Unable to release lease on %s", vm->def->name);
         VIR_DEBUG("Preserving lock state '%s'", NULLSTR(priv->lockState));
 
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after state change",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
     }
 
     virObjectUnlock(vm);
@@ -707,7 +693,6 @@ qemuProcessHandleResume(qemuMonitor *mon G_GNUC_UNUSED,
 {
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     qemuDomainObjPrivate *priv;
     virDomainRunningReason reason = VIR_DOMAIN_RUNNING_UNPAUSED;
     virDomainEventResumedDetailType eventDetail;
@@ -731,11 +716,7 @@ qemuProcessHandleResume(qemuMonitor *mon G_GNUC_UNUSED,
         event = virDomainEventLifecycleNewFromObj(vm,
                                                   VIR_DOMAIN_EVENT_RESUMED,
                                                   eventDetail);
-
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after state change",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
     }
 
     virObjectUnlock(vm);
@@ -750,7 +731,6 @@ qemuProcessHandleRTCChange(qemuMonitor *mon G_GNUC_UNUSED,
 {
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
 
@@ -773,8 +753,7 @@ qemuProcessHandleRTCChange(qemuMonitor *mon G_GNUC_UNUSED,
         offset += vm->def->clock.data.variable.adjustment0;
         vm->def->clock.data.variable.adjustment = offset;
 
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0)
-           VIR_WARN("unable to save domain status with RTC change");
+        qemuDomainSaveStatus(vm);
     }
 
     event = virDomainEventRTCChangeNewFromObj(vm, offset);
@@ -794,7 +773,6 @@ qemuProcessHandleWatchdog(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     virObjectEvent *watchdogEvent = NULL;
     virObjectEvent *lifecycleEvent = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
     watchdogEvent = virDomainEventWatchdogNewFromObj(vm, action);
@@ -814,10 +792,7 @@ qemuProcessHandleWatchdog(qemuMonitor *mon G_GNUC_UNUSED,
             VIR_WARN("Unable to release lease on %s", vm->def->name);
         VIR_DEBUG("Preserving lock state '%s'", NULLSTR(priv->lockState));
 
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after watchdog event",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
     }
 
     if (vm->def->watchdog->action == VIR_DOMAIN_WATCHDOG_ACTION_DUMP) {
@@ -856,7 +831,6 @@ qemuProcessHandleIOError(qemuMonitor *mon G_GNUC_UNUSED,
     const char *srcPath;
     const char *devAlias;
     virDomainDiskDef *disk;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
 
@@ -899,8 +873,7 @@ qemuProcessHandleIOError(qemuMonitor *mon G_GNUC_UNUSED,
             VIR_WARN("Unable to release lease on %s", vm->def->name);
         VIR_DEBUG("Preserving lock state '%s'", NULLSTR(priv->lockState));
 
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0)
-            VIR_WARN("Unable to save status on vm %s after IO error", vm->def->name);
+        qemuDomainSaveStatus(vm);
     }
     virObjectUnlock(vm);
 
@@ -1082,7 +1055,6 @@ qemuProcessHandleTrayChange(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
     virDomainDiskDef *disk;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
     disk = qemuProcessFindDomainDiskByAliasOrQOM(vm, devAlias, devid);
@@ -1095,11 +1067,7 @@ qemuProcessHandleTrayChange(qemuMonitor *mon G_GNUC_UNUSED,
         else if (reason == VIR_DOMAIN_EVENT_TRAY_CHANGE_CLOSE)
             disk->tray_status = VIR_DOMAIN_DISK_TRAY_CLOSED;
 
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after tray moved event",
-                     vm->def->name);
-        }
-
+        qemuDomainSaveStatus(vm);
         virDomainObjBroadcast(vm);
     }
 
@@ -1115,7 +1083,6 @@ qemuProcessHandlePMWakeup(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
     virObjectEvent *lifecycleEvent = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
     event = virDomainEventPMWakeupNewFromObj(vm);
@@ -1132,11 +1099,7 @@ qemuProcessHandlePMWakeup(qemuMonitor *mon G_GNUC_UNUSED,
         lifecycleEvent = virDomainEventLifecycleNewFromObj(vm,
                                                   VIR_DOMAIN_EVENT_STARTED,
                                                   VIR_DOMAIN_EVENT_STARTED_WAKEUP);
-
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after wakeup event",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
     }
 
     virObjectUnlock(vm);
@@ -1152,7 +1115,6 @@ qemuProcessHandlePMSuspend(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
     virObjectEvent *lifecycleEvent = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
     event = virDomainEventPMSuspendNewFromObj(vm);
@@ -1168,11 +1130,7 @@ qemuProcessHandlePMSuspend(qemuMonitor *mon G_GNUC_UNUSED,
             virDomainEventLifecycleNewFromObj(vm,
                                      VIR_DOMAIN_EVENT_PMSUSPENDED,
                                      VIR_DOMAIN_EVENT_PMSUSPENDED_MEMORY);
-
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after suspend event",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
 
         if (priv->agent)
             qemuAgentNotifyEvent(priv->agent, QEMU_AGENT_EVENT_SUSPEND);
@@ -1192,7 +1150,6 @@ qemuProcessHandleBalloonChange(qemuMonitor *mon G_GNUC_UNUSED,
 {
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     size_t i;
 
     virObjectLock(vm);
@@ -1213,9 +1170,7 @@ qemuProcessHandleBalloonChange(qemuMonitor *mon G_GNUC_UNUSED,
               vm->def->mem.cur_balloon, actual);
     vm->def->mem.cur_balloon = actual;
 
-    if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0)
-        VIR_WARN("unable to save domain status with balloon change");
-
+    qemuDomainSaveStatus(vm);
     virObjectUnlock(vm);
 
     virObjectEventStateQueue(driver->domainEventState, event);
@@ -1229,7 +1184,6 @@ qemuProcessHandlePMSuspendDisk(qemuMonitor *mon G_GNUC_UNUSED,
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
     virObjectEvent *lifecycleEvent = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
 
     virObjectLock(vm);
     event = virDomainEventPMSuspendDiskNewFromObj(vm);
@@ -1245,11 +1199,7 @@ qemuProcessHandlePMSuspendDisk(qemuMonitor *mon G_GNUC_UNUSED,
             virDomainEventLifecycleNewFromObj(vm,
                                      VIR_DOMAIN_EVENT_PMSUSPENDED,
                                      VIR_DOMAIN_EVENT_PMSUSPENDED_DISK);
-
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after suspend event",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
 
         if (priv->agent)
             qemuAgentNotifyEvent(priv->agent, QEMU_AGENT_EVENT_SUSPEND);
@@ -1596,7 +1546,6 @@ qemuProcessHandleMigrationStatus(qemuMonitor *mon G_GNUC_UNUSED,
     qemuDomainObjPrivate *priv;
     virQEMUDriver *driver = opaque;
     virObjectEvent *event = NULL;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     int reason;
 
     virObjectLock(vm);
@@ -1626,11 +1575,7 @@ qemuProcessHandleMigrationStatus(qemuMonitor *mon G_GNUC_UNUSED,
         event = virDomainEventLifecycleNewFromObj(vm,
                                                   VIR_DOMAIN_EVENT_SUSPENDED,
                                                   VIR_DOMAIN_EVENT_SUSPENDED_POSTCOPY);
-
-        if (virDomainObjSave(vm, driver->xmlopt, cfg->stateDir) < 0) {
-            VIR_WARN("Unable to save status on vm %s after state change",
-                     vm->def->name);
-        }
+        qemuDomainSaveStatus(vm);
     }
 
  cleanup:
@@ -3066,29 +3011,6 @@ qemuProcessInitPasswords(virQEMUDriver *driver,
     }
 
     return ret;
-}
-
-
-static int
-qemuProcessPrepareChardevDevice(virDomainDef *def G_GNUC_UNUSED,
-                                virDomainChrDef *dev,
-                                void *opaque G_GNUC_UNUSED)
-{
-    int fd;
-    if (dev->source->type != VIR_DOMAIN_CHR_TYPE_FILE)
-        return 0;
-
-    if ((fd = open(dev->source->data.file.path,
-                   O_CREAT | O_APPEND, S_IRUSR|S_IWUSR)) < 0) {
-        virReportSystemError(errno,
-                             _("Unable to pre-create chardev file '%s'"),
-                             dev->source->data.file.path);
-        return -1;
-    }
-
-    VIR_FORCE_CLOSE(fd);
-
-    return 0;
 }
 
 
@@ -5707,7 +5629,7 @@ qemuProcessInit(virQEMUDriver *driver,
         }
     } else {
         vm->def->id = qemuDriverAllocateID(driver);
-        qemuDomainSetFakeReboot(driver, vm, false);
+        qemuDomainSetFakeReboot(vm, false);
         virDomainObjSetState(vm, VIR_DOMAIN_PAUSED, VIR_DOMAIN_PAUSED_STARTING_UP);
 
         if (g_atomic_int_add(&driver->nactive, 1) == 0 && driver->inhibitCallback)
@@ -5954,8 +5876,7 @@ qemuProcessValidateHotpluggableVcpus(virDomainDef *def)
     unsigned int maxvcpus = virDomainDefGetVcpusMax(def);
     size_t i = 0;
     size_t j;
-    virBitmap *ordermap = virBitmapNew(maxvcpus + 1);
-    int ret = -1;
+    g_autoptr(virBitmap) ordermap = virBitmapNew(maxvcpus + 1);
 
     /* validate:
      * - all hotpluggable entities to be hotplugged have the correct data
@@ -5974,14 +5895,14 @@ qemuProcessValidateHotpluggableVcpus(virDomainDef *def)
             if (virBitmapIsBitSet(ordermap, vcpu->order)) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                _("duplicate vcpu order '%u'"), vcpu->order);
-                goto cleanup;
+                return -1;
             }
 
             if (virBitmapSetBit(ordermap, vcpu->order)) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                _("vcpu order '%u' exceeds vcpu count"),
                                vcpu->order);
-                goto cleanup;
+                return -1;
             }
         }
 
@@ -5993,7 +5914,7 @@ qemuProcessValidateHotpluggableVcpus(virDomainDef *def)
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                _("vcpus '%zu' and '%zu' are in the same hotplug "
                                  "group but differ in configuration"), i, j);
-                goto cleanup;
+                return -1;
             }
         }
 
@@ -6003,15 +5924,12 @@ qemuProcessValidateHotpluggableVcpus(virDomainDef *def)
                 !vcpupriv->type) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                _("vcpu '%zu' is missing hotplug data"), i);
-                goto cleanup;
+                return -1;
             }
         }
     }
 
-    ret = 0;
- cleanup:
-    virBitmapFree(ordermap);
-    return ret;
+    return 0;
 }
 
 
@@ -6518,6 +6436,24 @@ qemuProcessUpdateSEVInfo(virDomainObj *vm)
 }
 
 
+/* qemuProcessPrepareChardevSource:
+ * @def: live domain definition
+ * @cfg: driver configuration
+ *
+ * Iterate through all devices that use virDomainChrSourceDef as backend.
+ */
+static int
+qemuProcessPrepareChardevSource(virDomainDef *def,
+                                virQEMUDriverConfig *cfg)
+{
+    struct qemuDomainPrepareChardevSourceData data = { .cfg = cfg };
+
+    return qemuDomainDeviceBackendChardevForeach(def,
+                                                 qemuDomainPrepareChardevSourceOne,
+                                                 &data);
+}
+
+
 /**
  * qemuProcessPrepareDomain:
  * @driver: qemu driver
@@ -6606,8 +6542,9 @@ qemuProcessPrepareDomain(virQEMUDriver *driver,
     if (qemuProcessPrepareDomainHostdevs(vm, priv) < 0)
         return -1;
 
-    VIR_DEBUG("Prepare chardev source backends for TLS");
-    qemuDomainPrepareChardevSource(vm->def, cfg);
+    VIR_DEBUG("Prepare chardev source backends");
+    if (qemuProcessPrepareChardevSource(vm->def, cfg) < 0)
+        return -1;
 
     VIR_DEBUG("Prepare device secrets");
     if (qemuDomainSecretPrepare(driver, vm) < 0)
@@ -6806,6 +6743,208 @@ qemuProcessOpenVhostVsock(virDomainVsockDef *vsock)
 }
 
 
+static int
+qemuProcessPrepareHostBackendChardevFileHelper(const char *path,
+                                               virTristateSwitch append,
+                                               int *fd,
+                                               virLogManager *logManager,
+                                               virSecurityManager *secManager,
+                                               virQEMUCaps *qemuCaps,
+                                               virQEMUDriverConfig *cfg,
+                                               const virDomainDef *def)
+{
+    /* Technically, to pass an FD via /dev/fdset we don't need
+     * any capability check because X_QEMU_CAPS_ADD_FD is already
+     * assumed. But keeping the old style is still handy when
+     * building a standalone command line (e.g. for tests). */
+    if (!logManager &&
+        !virQEMUCapsGet(qemuCaps, QEMU_CAPS_CHARDEV_FD_PASS_COMMANDLINE))
+        return 0;
+
+    if (logManager) {
+        int flags = 0;
+
+        if (append == VIR_TRISTATE_SWITCH_ABSENT ||
+            append == VIR_TRISTATE_SWITCH_OFF)
+            flags |= VIR_LOG_MANAGER_PROTOCOL_DOMAIN_OPEN_LOG_FILE_TRUNCATE;
+
+        if ((*fd = virLogManagerDomainOpenLogFile(logManager,
+                                                  "qemu",
+                                                  def->uuid,
+                                                  def->name,
+                                                  path,
+                                                  flags,
+                                                  NULL, NULL)) < 0)
+            return -1;
+    } else {
+        int oflags = O_CREAT | O_WRONLY;
+
+        switch (append) {
+        case VIR_TRISTATE_SWITCH_ABSENT:
+        case VIR_TRISTATE_SWITCH_OFF:
+            oflags |= O_TRUNC;
+            break;
+        case VIR_TRISTATE_SWITCH_ON:
+            oflags |= O_APPEND;
+            break;
+        case VIR_TRISTATE_SWITCH_LAST:
+            break;
+        }
+
+        if ((*fd = qemuDomainOpenFile(cfg, def, path, oflags, NULL)) < 0)
+            return -1;
+
+        if (qemuSecuritySetImageFDLabel(secManager, (virDomainDef*)def, *fd) < 0) {
+            VIR_FORCE_CLOSE(*fd);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
+struct qemuProcessPrepareHostBackendChardevData {
+    virQEMUCaps *qemuCaps;
+    virLogManager *logManager;
+    virSecurityManager *secManager;
+    virQEMUDriverConfig *cfg;
+    virDomainDef *def;
+};
+
+
+static int
+qemuProcessPrepareHostBackendChardevOne(virDomainDeviceDef *dev,
+                                        virDomainChrSourceDef *chardev,
+                                        void *opaque)
+{
+    struct qemuProcessPrepareHostBackendChardevData *data = opaque;
+    qemuDomainChrSourcePrivate *charpriv = QEMU_DOMAIN_CHR_SOURCE_PRIVATE(chardev);
+
+    /* this function is also called for the monitor backend which doesn't have
+     * a 'dev' */
+    if (dev) {
+        /* vhost-user disk doesn't use FD passing */
+        if (dev->type == VIR_DOMAIN_DEVICE_DISK)
+            return 0;
+
+        if (dev->type == VIR_DOMAIN_DEVICE_NET) {
+            /* due to a historical bug in qemu we don't use FD passtrhough for
+             * vhost-sockets for network devices */
+            return 0;
+        }
+
+        /* TPMs FD passing setup is special and handled separately */
+        if (dev->type == VIR_DOMAIN_DEVICE_TPM)
+            return 0;
+    }
+
+    switch ((virDomainChrType) chardev->type) {
+    case VIR_DOMAIN_CHR_TYPE_NULL:
+    case VIR_DOMAIN_CHR_TYPE_VC:
+    case VIR_DOMAIN_CHR_TYPE_PTY:
+    case VIR_DOMAIN_CHR_TYPE_DEV:
+    case VIR_DOMAIN_CHR_TYPE_PIPE:
+    case VIR_DOMAIN_CHR_TYPE_STDIO:
+    case VIR_DOMAIN_CHR_TYPE_UDP:
+    case VIR_DOMAIN_CHR_TYPE_TCP:
+    case VIR_DOMAIN_CHR_TYPE_SPICEVMC:
+    case VIR_DOMAIN_CHR_TYPE_SPICEPORT:
+        break;
+
+    case VIR_DOMAIN_CHR_TYPE_FILE:
+        if (qemuProcessPrepareHostBackendChardevFileHelper(chardev->data.file.path,
+                                                           chardev->data.file.append,
+                                                           &charpriv->fd,
+                                                           data->logManager,
+                                                           data->secManager,
+                                                           data->qemuCaps,
+                                                           data->cfg,
+                                                           data->def) < 0)
+            return -1;
+
+        break;
+
+    case VIR_DOMAIN_CHR_TYPE_UNIX:
+        if (chardev->data.nix.listen &&
+            virQEMUCapsGet(data->qemuCaps, QEMU_CAPS_CHARDEV_FD_PASS_COMMANDLINE)) {
+
+            if (qemuSecuritySetSocketLabel(data->secManager, data->def) < 0)
+                return -1;
+
+            charpriv->fd = qemuOpenChrChardevUNIXSocket(chardev);
+
+            if (qemuSecurityClearSocketLabel(data->secManager, data->def) < 0) {
+                VIR_FORCE_CLOSE(charpriv->fd);
+                return -1;
+            }
+
+            if (charpriv->fd < 0)
+                return -1;
+        }
+        break;
+
+    case VIR_DOMAIN_CHR_TYPE_NMDM:
+    case VIR_DOMAIN_CHR_TYPE_LAST:
+    default:
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("unsupported chardev '%s'"),
+                       virDomainChrTypeToString(chardev->type));
+        return -1;
+    }
+
+    if (chardev->logfile) {
+        if (qemuProcessPrepareHostBackendChardevFileHelper(chardev->logfile,
+                                                           chardev->logappend,
+                                                           &charpriv->logfd,
+                                                           data->logManager,
+                                                           data->secManager,
+                                                           data->qemuCaps,
+                                                           data->cfg,
+                                                           data->def) < 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+
+/* prepare the chardev backends for various devices:
+ * serial/parallel/channel chardevs, vhost-user disks, vhost-user network
+ * interfaces, smartcards, shared memory, and redirdevs */
+static int
+qemuProcessPrepareHostBackendChardev(virDomainObj *vm,
+                                     virQEMUCaps *qemuCaps,
+                                     virSecurityManager *secManager)
+{
+    qemuDomainObjPrivate *priv = vm->privateData;
+    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(priv->driver);
+    struct qemuProcessPrepareHostBackendChardevData data = {
+        .qemuCaps = qemuCaps,
+        .logManager = NULL,
+        .secManager = secManager,
+        .cfg = cfg,
+        .def = vm->def,
+    };
+    g_autoptr(virLogManager) logManager = NULL;
+
+    if (cfg->stdioLogD) {
+        if (!(logManager = data.logManager = virLogManagerNew(priv->driver->privileged)))
+            return -1;
+    }
+
+    if (qemuDomainDeviceBackendChardevForeach(vm->def,
+                                              qemuProcessPrepareHostBackendChardevOne,
+                                              &data) < 0)
+        return -1;
+
+    if (qemuProcessPrepareHostBackendChardevOne(NULL, priv->monConfig, &data) < 0)
+        return -1;
+
+    return 0;
+}
+
+
 /**
  * qemuProcessPrepareHost:
  * @driver: qemu driver
@@ -6826,6 +6965,14 @@ qemuProcessPrepareHost(virQEMUDriver *driver,
     unsigned int hostdev_flags = 0;
     qemuDomainObjPrivate *priv = vm->privateData;
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
+
+    /*
+     * Create all per-domain directories in order to make sure domain
+     * with any possible seclabels can access it.
+     */
+    if (qemuProcessMakeDir(driver, vm, priv->libDir) < 0 ||
+        qemuProcessMakeDir(driver, vm, priv->channelTargetDir) < 0)
+        return -1;
 
     if (qemuPrepareNVRAM(driver, vm) < 0)
         return -1;
@@ -6852,11 +6999,10 @@ qemuProcessPrepareHost(virQEMUDriver *driver,
                                         hostdev_flags) < 0)
         return -1;
 
-    VIR_DEBUG("Preparing chr devices");
-    if (virDomainChrDefForeach(vm->def,
-                               true,
-                               qemuProcessPrepareChardevDevice,
-                               NULL) < 0)
+    VIR_DEBUG("Preparing chr device backends");
+    if (qemuProcessPrepareHostBackendChardev(vm,
+                                             priv->qemuCaps,
+                                             driver->securityManager) < 0)
         return -1;
 
     if (qemuProcessBuildDestroyMemoryPaths(driver, vm, NULL, true) < 0)
@@ -6888,14 +7034,6 @@ qemuProcessPrepareHost(virQEMUDriver *driver,
                              priv->pidfile);
         return -1;
     }
-
-    /*
-     * Create all per-domain directories in order to make sure domain
-     * with any possible seclabels can access it.
-     */
-    if (qemuProcessMakeDir(driver, vm, priv->libDir) < 0 ||
-        qemuProcessMakeDir(driver, vm, priv->channelTargetDir) < 0)
-        return -1;
 
     VIR_DEBUG("Write domain masterKey");
     if (qemuDomainWriteMasterKeyFile(driver, vm) < 0)
@@ -7271,8 +7409,6 @@ qemuProcessLaunch(virConnectPtr conn,
 
     VIR_DEBUG("Building emulator command line");
     if (!(cmd = qemuBuildCommandLine(driver,
-                                     qemuDomainLogContextGetManager(logCtxt),
-                                     driver->securityManager,
                                      vm,
                                      incoming ? incoming->launchURI : NULL,
                                      snapshot, vmop,
@@ -7786,8 +7922,6 @@ qemuProcessCreatePretendCmdBuild(virQEMUDriver *driver,
 {
     VIR_DEBUG("Building emulator command line");
     return qemuBuildCommandLine(driver,
-                                NULL,
-                                driver->securityManager,
                                 vm,
                                 migrateURI,
                                 NULL,
@@ -8731,7 +8865,7 @@ qemuProcessReconnect(void *opaque)
          reason == VIR_DOMAIN_PAUSED_USER)) {
         VIR_DEBUG("Finishing shutdown sequence for domain %s",
                   obj->def->name);
-        qemuProcessShutdownOrReboot(driver, obj);
+        qemuProcessShutdownOrReboot(obj);
         goto cleanup;
     }
 

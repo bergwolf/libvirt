@@ -260,6 +260,7 @@ mymain(void)
     DO_TEST_NOCAPS("hyperv");
     DO_TEST_NOCAPS("hyperv-off");
     DO_TEST_NOCAPS("hyperv-panic");
+    DO_TEST_NOCAPS("hyperv-passthrough");
     DO_TEST_NOCAPS("hyperv-stimer-direct");
 
     DO_TEST_NOCAPS("kvm-features");
@@ -1387,6 +1388,7 @@ mymain(void)
     DO_TEST_CAPS_ARCH_LATEST("x86_64-default-cpu-tcg-pc-4.2", "x86_64");
     DO_TEST_CAPS_ARCH_LATEST("x86_64-default-cpu-kvm-q35-4.2", "x86_64");
     DO_TEST_CAPS_ARCH_LATEST("x86_64-default-cpu-tcg-q35-4.2", "x86_64");
+    DO_TEST_CAPS_ARCH_LATEST("x86_64-default-cpu-tcg-features", "x86_64");
 
     DO_TEST_CAPS_LATEST("virtio-9p-multidevs");
     DO_TEST_CAPS_LATEST("virtio-9p-createmode");

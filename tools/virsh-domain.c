@@ -6983,7 +6983,7 @@ virshParseCPUList(vshControl *ctl, int *cpumaplen,
                   const char *cpulist, int maxcpu)
 {
     unsigned char *cpumap = NULL;
-    virBitmap *map = NULL;
+    g_autoptr(virBitmap) map = NULL;
 
     if (cpulist[0] == 'r') {
         map = virBitmapNew(maxcpu);
@@ -6994,21 +6994,19 @@ virshParseCPUList(vshControl *ctl, int *cpumaplen,
         if (virBitmapParse(cpulist, &map, 1024) < 0 ||
             virBitmapIsAllClear(map)) {
             vshError(ctl, _("Invalid cpulist '%s'"), cpulist);
-            goto cleanup;
+            return NULL;
         }
         lastcpu = virBitmapLastSetBit(map);
         if (lastcpu >= maxcpu) {
             vshError(ctl, _("CPU %d in cpulist '%s' exceed the maxcpu %d"),
                      lastcpu, cpulist, maxcpu);
-            goto cleanup;
+            return NULL;
         }
     }
 
     if (virBitmapToData(map, &cpumap, cpumaplen) < 0)
-        goto cleanup;
+        return NULL;
 
- cleanup:
-    virBitmapFree(map);
     return cpumap;
 }
 
@@ -9409,6 +9407,7 @@ static const vshCmdOptDef opts_numatune[] = {
     VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "mode",
      .type = VSH_OT_STRING,
+     .completer = virshDomainNumatuneModeCompleter,
      .help = N_("NUMA mode, one of strict, preferred and interleave \n"
                 "or a number from the virDomainNumatuneMemMode enum")
     },
@@ -9523,6 +9522,53 @@ cmdNumatune(vshControl * ctl, const vshCmd * cmd)
  error:
     vshError(ctl, "%s", _("Unable to change numa parameters"));
     goto cleanup;
+}
+
+/*
+ * "domlaunchsecinfo" command
+ */
+static const vshCmdInfo info_domlaunchsecinfo[] = {
+    {.name = "help",
+     .data = N_("Get domain launch security info")
+    },
+    {.name = "desc",
+     .data = N_("Get the launch security parameters for a guest domain")
+    },
+    {.name = NULL}
+};
+
+static const vshCmdOptDef opts_domlaunchsecinfo[] = {
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
+    {.name = NULL}
+};
+
+static bool
+cmdDomLaunchSecInfo(vshControl * ctl, const vshCmd * cmd)
+{
+    g_autoptr(virshDomain) dom = NULL;
+    size_t i;
+    int nparams = 0;
+    virTypedParameterPtr params = NULL;
+    bool ret = false;
+
+    if (!(dom = virshCommandOptDomain(ctl, cmd, NULL)))
+        return false;
+
+    if (virDomainGetLaunchSecurityInfo(dom, &params, &nparams, 0) != 0) {
+        vshError(ctl, "%s", _("Unable to get launch security parameters"));
+        goto cleanup;
+    }
+
+    for (i = 0; i < nparams; i++) {
+        g_autofree char *str = vshGetTypedParamValue(ctl, &params[i]);
+        vshPrint(ctl, "%-15s: %s\n", params[i].field, str);
+    }
+
+    ret = true;
+
+ cleanup:
+    virTypedParamsFree(params, nparams);
+    return ret;
 }
 
 /*
@@ -14542,6 +14588,12 @@ const vshCmdDef domManagementCmds[] = {
      .handler = cmdDomjobinfo,
      .opts = opts_domjobinfo,
      .info = info_domjobinfo,
+     .flags = 0
+    },
+    {.name = "domlaunchsecinfo",
+     .handler = cmdDomLaunchSecInfo,
+     .opts = opts_domlaunchsecinfo,
+     .info = info_domlaunchsecinfo,
      .flags = 0
     },
     {.name = "domname",
