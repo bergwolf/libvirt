@@ -1528,6 +1528,7 @@ virStreamClass;
 
 # driver.h
 virConnectValidateURIPath;
+virDriverFeatureIsGlobal;
 virDriverShouldAutostart;
 virGetConnectInterface;
 virGetConnectNetwork;
@@ -1575,6 +1576,13 @@ virDomainDriverNodeDeviceReAttach;
 virDomainDriverNodeDeviceReset;
 virDomainDriverParseBlkioDeviceStr;
 virDomainDriverSetupPersistentDefBlkioParams;
+
+
+# hypervisor/domain_job.h
+virDomainJobDataCopy;
+virDomainJobDataFree;
+virDomainJobDataInit;
+virDomainJobStatusToType;
 
 
 # hypervisor/virclosecallbacks.h

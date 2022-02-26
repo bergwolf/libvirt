@@ -9,13 +9,14 @@
 # simmon <simmon@nplob.com>, 2021, 2022.
 # SeongHyun Jo <caelus9536@gmail.com>, 2021.
 # jason lee <ppark5237@gmail.com>, 2021.
+# Kim InSoo <simmon@nplob.com>, 2022.
 msgid ""
 msgstr ""
 "Project-Id-Version: libvirt 6.0.0\n"
 "Report-Msgid-Bugs-To: https://libvirt.org/bugs.html\n"
-"POT-Creation-Date: 2022-01-10 08:58+0000\n"
-"PO-Revision-Date: 2022-01-20 13:46+0000\n"
-"Last-Translator: simmon <simmon@nplob.com>\n"
+"POT-Creation-Date: 2022-02-23 12:43+0000\n"
+"PO-Revision-Date: 2022-02-25 03:16+0000\n"
+"Last-Translator: Kim InSoo <simmon@nplob.com>\n"
 "Language-Team: Korean <https://translate.fedoraproject.org/projects/libvirt/"
 "libvirt/ko/>\n"
 "Language: ko\n"
@@ -41,7 +42,6 @@ msgstr ""
 "\n"
 "  (그룹에서 명령에 대한 상세한 정보를 위해 도움 <group>을 지정합니다)\n"
 
-#. Print the description only if it's not empty.
 msgid ""
 "\n"
 "  DESCRIPTION\n"
@@ -454,7 +454,6 @@ msgstr ""
 msgid "    Bandwidth limit: %llu bytes/s (%-.3lf %s/s)"
 msgstr "    대역폭 제한: %llu 바이트/초 (%-.3lf %s/s)"
 
-#. true if 'arg' works instead of '--opt arg'
 msgid "  NAME\n"
 msgstr "  이름\n"
 
@@ -694,16 +693,6 @@ msgstr "%s은 QEMU 바이너리에서 지원되지 않음"
 msgid "%s object has invalid dynamic type"
 msgstr "%s 개체에 잘못된 동적 유형이 있습니다"
 
-#.
-#. * A required property must be != 0 (NULL for pointers, "undefined" == 0 for
-#. * enumeration values).
-#. *
-#. * To be used as part of ESX_VI__TEMPLATE__VALIDATE.
-#.
-#.
-#. * Macros to implement managed objects
-#.
-#. FIXME: This results in O(n^2) runtime in case of missing required, but      * unselected properties.
 #, c-format
 msgid "%s object is missing the required '%s' property"
 msgstr "%s 개체가 필요한 '%s' 속성에 누락되어 있습니다"
@@ -1341,10 +1330,6 @@ msgstr "'peak' 및 'burst'는 'average' 속성이 필요합니다"
 msgid "'pool' and 'volume' must be specified together for 'pool' type source"
 msgstr "'pool' 유형 소스의 'pool' 및 'volume'을 함께 지정해야 합니다"
 
-#, c-format
-msgid "'queues' attribute must be positive number: %s"
-msgstr "'queues' 속성은 양수여야 합니다: %s"
-
 msgid "'queues' is only supported by virtio-scsi controller"
 msgstr "'queues'는 virtio-scsi 제어기에서만 지원됩니다"
 
@@ -1361,13 +1346,6 @@ msgid ""
 msgstr ""
 "'restrictive' 방식은 memnode 요소가 메모리 요소에서 'restrictive'일때 필요합"
 "니다"
-
-#, c-format
-msgid "'rx_queue_size' attribute must be positive number: %s"
-msgstr "'rx_queue_size' 속성은 양수여야 합니다: %s"
-
-msgid "'sgio' is not supported for SCSI generic device yet "
-msgstr "'sgio'는 아직 전반적인 SCSI장비들에서 지원이 되지 않습니다 "
 
 #, c-format
 msgid "'sibling_id %d' does not refer to a valid cell within NUMA 'cell id %d'"
@@ -1392,10 +1370,6 @@ msgstr "'tftp' 통신규약은 이 QEMU 바이너리에서 지원하지 않습�
 
 msgid "'trim' algorithm not supported"
 msgstr "'trim' 알고리즘을 지원하지 않습니다"
-
-#, c-format
-msgid "'tx_queue_size' attribute must be positive number: %s"
-msgstr "'tx_queue_size' 속성은 양수여야 합니다: %s"
 
 msgid "'type' missing in reply of guest-get-fsinfo"
 msgstr "guest-get-fsinfo의 대답에서 'type'(종류)가 누락되었습니다"
@@ -1471,7 +1445,6 @@ msgstr "(인터페이스 정의)"
 msgid "(libxl_migration_cookie)"
 msgstr "(libxl_migration_cookie)"
 
-#. parse and modify the xml from the user
 msgid "(metadata_xml)"
 msgstr "(메타자료_xml)"
 
@@ -1529,7 +1502,6 @@ msgstr "(qemu_migration_cookie)"
 msgid "(volume_definition)"
 msgstr "(볼륨 정의)"
 
-#. Capacity related information isn't available
 msgid "-"
 msgstr "-"
 
@@ -2170,6 +2142,9 @@ msgstr ""
 "디스크 이동을 위한 포트와 URI 모두 요청이 되었습니다. 이 둘은 서로 독립되어"
 "서 요청되었습니다"
 
+msgid "Both secret and the secret header are required"
+msgstr "비밀과 비밀 헤더가 모두 필요합니다"
+
 msgid "Bounded"
 msgstr "묶임"
 
@@ -2488,14 +2463,10 @@ msgstr ""
 "'domstats --dirtyrate' 를 호출함으로써 계산된 Dirty Rate 정보를 확인하실 수 "
 "있습니다."
 
-#.
-#. * Macros to implement dynamic dispatched functions
-#.
 #, c-format
 msgid "Call to %s for unexpected type '%s'"
 msgstr "예기치 않은 유형 '%s'에 대해 %s에 호출"
 
-#. nothing
 #, c-format
 msgid "Call to %s for unexpected type '%s', expected '%s'"
 msgstr "예기치 않은 유형 '%s'에 대한 %s에 호출합니다, '%s'가 예상됩니다"
@@ -2749,10 +2720,6 @@ msgid "Cannot check address family on this platform"
 msgstr "이와 같은 기술 환경에서 주소 군을 점검 할 수 없습니다"
 
 #, c-format
-msgid "Cannot check dnsmasq binary %s"
-msgstr "dnsmasq 바이너리 %s를 확인할 수 없음"
-
-#, c-format
 msgid "Cannot chown uniq path: %s"
 msgstr "고유 경로 파일의 소유권을 변경 할 수 없습니다: %s"
 
@@ -2931,10 +2898,6 @@ msgstr "블록 장치 '%s'에 바이트 '%s' 통계를 찾을 수 없습니다"
 #, c-format
 msgid "Cannot find byte stats for block device '%s'"
 msgstr "블록 장치 '%s'에 바이트 통계를 찾을 수 없습니다"
-
-#, c-format
-msgid "Cannot find name for FD %d socket family %d"
-msgstr "%d 소켓계열의 파일디스크 (FD) %d의 이름을 찾을 수 없습니다"
 
 #, c-format
 msgid "Cannot find program %d version %d"
@@ -3351,12 +3314,12 @@ msgid "Cannot set interface MAC on '%s'"
 msgstr "'%s'에서 연결장치 MAC을 설정 할 수 없음"
 
 #, c-format
-msgid "Cannot set interface MAC to %s on '%s'"
-msgstr "'%s'에서 연결장치 MAC을 %s로 설정 할 수 없습니다"
+msgid "Cannot set interface MAC to %s for ifname %s vf %d"
+msgstr ""
 
 #, c-format
-msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
-msgstr "ifname %svf%d를 위한 연결장치 MAC/vlanid를 %s/%d에 설정할 수 없음"
+msgid "Cannot set interface MAC to %s on '%s'"
+msgstr "'%s'에서 연결장치 MAC을 %s로 설정 할 수 없습니다"
 
 #, c-format
 msgid "Cannot set interface MTU on '%s'"
@@ -3365,6 +3328,10 @@ msgstr "'%s'에서 인터페이스 MTU를 설정할 수 없음"
 #, c-format
 msgid "Cannot set interface flags on '%s'"
 msgstr "'%s'에서 연결장치 플래그를 설정 할 수 없음"
+
+#, c-format
+msgid "Cannot set interface vlanid to %d for ifname %s vf %d"
+msgstr ""
 
 msgid "Cannot set memory higher than max memory"
 msgstr "최대 메모리보다 더 높게 메모리를 설정할 수 없음"
@@ -3642,7 +3609,6 @@ msgstr "체크포인트 목록"
 msgid "Checkpoints have inconsistent relations for domain %s"
 msgstr "점검점 %s 도메인에 대한 관계가 일관되지 않습니다"
 
-#. All bytes up to and including the checksum byte should add up to 0.
 msgid "Checksum validation has failed"
 msgstr "체크썸 유효성이 실패하였습니다"
 
@@ -4834,7 +4800,6 @@ msgstr "NIC 설정을 검색할 수 없습니다"
 msgid "Could not retrieve default Msvm_DiskDrive object"
 msgstr "기본 Msvm_DiskDrive 개체를 검색할 수 없습니다"
 
-#. Something went wrong retrieving pool info, cope with it
 msgid "Could not retrieve pool information"
 msgstr "풀 정보를 검색할 수 없음"
 
@@ -4935,10 +4900,6 @@ msgstr ""
 #, c-format
 msgid "Could not start 'slirp'. exitstatus: %d"
 msgstr "'slirp'를 시작 할 수 없습니다. 종료상태: %d"
-
-#, c-format
-msgid "Could not start 'swtpm'. exitstatus: %d, error: %s"
-msgstr "'swtpm'을 시작할 수 없습니다. 종료 상태: %d, 오류: %s"
 
 #, c-format
 msgid "Could not start 'vhost-user-gpu'. exitstatus: %d"
@@ -5708,7 +5669,6 @@ msgstr ""
 "도메인에 %d개의 인터페이스가 있습니다. --mac을 사용하여 분리할 것을 지정하십"
 "시오"
 
-#. this is the 2nd match, so it's ambiguous
 #, c-format
 msgid ""
 "Domain has multiple interfaces matching MAC address %s. You must use detach-"
@@ -6892,25 +6852,15 @@ msgstr "스레드 생성 실패"
 msgid "Failed to create thread for receiving migration data"
 msgstr "이전 자료를 수신하기 위하여 쓰레드 생성하는데 실패했습니다"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle daemon restart"
 msgstr "데몬 재시작을 처리할 스레드를 생성하지 못했습니다"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain death"
 msgstr "도메인 사멸을 처리하기 위한 쓰레드를 생성하는데 실패함"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain shutdown"
 msgstr "도메인 종료를 처리할 스레드를 생성하지 못했습니다"
 
-#. Not much else can be done
 msgid "Failed to create thread to handle pool refresh"
 msgstr "풀 새로 고침을 처리할 스레드를 생성하지 못했습니다"
 
@@ -7463,7 +7413,6 @@ msgstr "활성화 네트워크 보들기 실패"
 msgid "Failed to list active pools"
 msgstr "활성화 풀 목록 얻기 실패"
 
-#. there was an error during the first or second call
 msgid "Failed to list domains"
 msgstr "도메인 목록을 나열하는데 실패"
 
@@ -7479,27 +7428,21 @@ msgstr "비활성화 네트워크 보기 실패"
 msgid "Failed to list inactive pools"
 msgstr "비활성화 풀 목록 얻기 실패"
 
-#. there was an error during the first or second call
 msgid "Failed to list interfaces"
 msgstr "인터페이스를 나열하지 못했습니다"
 
-#. there was an error during the call
 msgid "Failed to list network filter bindings"
 msgstr "네트워크 필터 바인딩을 목록화 하는데 실패"
 
-#. there was an error during the call
 msgid "Failed to list network filters"
 msgstr "네트워크 필터를 목록화 하는데 실패"
 
-#. there was an error during the first or second call
 msgid "Failed to list networks"
 msgstr "네트워크 목록 나열 실패"
 
-#. there was an error during the call
 msgid "Failed to list node devices"
 msgstr "노드 장치 목록 얻기 실패"
 
-#. there was an error during the call
 msgid "Failed to list node secrets"
 msgstr "노드 비밀 목록화에 실패함"
 
@@ -7507,7 +7450,6 @@ msgstr "노드 비밀 목록화에 실패함"
 msgid "Failed to list persistent guests on $uri"
 msgstr "$uri에 영구 게스트 목록화 하는데 실패"
 
-#. there was an error during the first or second call
 msgid "Failed to list pools"
 msgstr "풀 목록화에 실패"
 
@@ -7527,7 +7469,6 @@ msgstr "임시 게스트 목록 나열 실패"
 msgid "Failed to list vcpus for domain '%d' with libxenlight"
 msgstr "libxenlight를 사용하여 도메인 '%d'에 대한 vcpus를 나열하지 못했습니다"
 
-#. there was an error during the call
 msgid "Failed to list volumes"
 msgstr "볼륨 목록화에 실패"
 
@@ -8106,9 +8047,6 @@ msgstr "libxenlight와 함께 도메인 `%d`를 재시작 하는데 실패"
 msgid "Failed to resume domain '%s'"
 msgstr "도메인 '%s'를 재개하지 못했습니다"
 
-#. Hm, we already know we are in error here.  We don't want to
-#. * overwrite the previous error, though, so we just throw something
-#. * to the logs and hope for the best
 #, c-format
 msgid "Failed to resume guest %s after failure"
 msgstr "실패 후 게스트 %s를 재개하는 데 실패"
@@ -8743,63 +8681,10 @@ msgstr ""
 "첫 번째 파일 기반 하드 디스크에는 소스가 없습니다, VMX 파일의 데이터 저장소 "
 "및 경로를 추론할 수 없습니다"
 
-#. Macros to help dealing with flag requirements.
-#. *
-#. * VIR_REQUIRE_FLAG_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @RET: Return value.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_REQUIRE_FLAG_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if required flag is not set.
-#.
 #, c-format
 msgid "Flag '%s' is required by flag '%s'"
 msgstr "플래그 '%s'에는 플래그 '%s'가 필요합니다"
 
-#. Macros to help dealing with mutually exclusive flags.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @RET: Return value.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, c-format
 msgid "Flags '%s' and '%s' are mutually exclusive"
 msgstr "플래그 '%s' 및 '%s'는 상호 배타적입니다"
@@ -9585,10 +9470,6 @@ msgid "Invalid 'level' attribute in cache element for NUMA node %d"
 msgstr "NUMA 노드 %d에 대한 캐쉬 요소의 잘못된 '레벨' 속성"
 
 #, c-format
-msgid "Invalid 'removed' attribute for feature %s in model %s"
-msgstr "모델 %s의 피쳐 %s에 대한 잘못된 'removed' (제거됨) 속성"
-
-#, c-format
 msgid "Invalid --with-loader-nvram list: %s"
 msgstr "잘못된 --with-loader-nvram 목록: %s"
 
@@ -9704,12 +9585,6 @@ msgstr ""
 "잘못된 STP 상태 값 %d이 '%s'에 대해 수신되었습니다. -1, 0, 또는 1이어야 합니"
 "다."
 
-msgid "Invalid TSC frequency"
-msgstr "잘못된 TSC 주파수"
-
-msgid "Invalid TSC scaling attribute"
-msgstr "잘못된 TSC 스케일링 속성"
-
 #, c-format
 msgid "Invalid ULong value specified for prefix in definition of network '%s'"
 msgstr "네트워크 '%s'의 정의에서 프리픽스에 잘못된 ULong 값이 지정되었습니다"
@@ -9750,15 +9625,6 @@ msgstr "버스 유형이 '%s'인 디스크 '%s'의 주소 유형 '%s'가 잘못�
 msgid "Invalid address."
 msgstr "잘못된 주소."
 
-#.
-#. * Don't check for *selectSet != NULL here because selectSet is a list
-#. * and might contain items already. This function appends to selectSet.
-#.
-#. optional
-#. optional
-#. nothing
-#. nothing
-#. nothing
 msgid "Invalid argument"
 msgstr "잘못된 인수"
 
@@ -9940,24 +9806,12 @@ msgstr "정의에서 잘못된 디스크 버스"
 msgid "Invalid disk read error policy: '%s'"
 msgstr "잘못된 디스크 읽기 오류 정책: '%s'"
 
-#, c-format
-msgid "Invalid dns enable setting '%s' in network '%s'"
-msgstr "네트워크 '%s'에서 잘못된 DNS 활성화 설정 '%s'"
-
-#, c-format
-msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
-msgstr "네트워크 '%s'의 잘못된 DNS forwardPlainNames 설정 '%s'"
-
 msgid "Invalid domain checkpoint"
 msgstr "잘못된 도메인 체크포인트"
 
 #, c-format
 msgid "Invalid domain checkpoint: %s"
 msgstr "잘못된 도메인 체크포인트: %s"
-
-#, c-format
-msgid "Invalid domain localOnly setting '%s' in network '%s'"
-msgstr "네트워크 '%s'에서 잘못된 도메인 localOnly 설정 '%s'"
 
 msgid "Invalid domain snapshot"
 msgstr "잘못된 도메인 스냅샷"
@@ -10069,10 +9923,6 @@ msgstr ""
 "니다"
 
 #, c-format
-msgid "Invalid guest rx filters trust setting '%s' "
-msgstr "잘못된 게스트 rx 필터 신뢰 설정 '%s' "
-
-#, c-format
 msgid "Invalid harddisk device name: %s"
 msgstr "잘못된 하드디스크 장치 이름: %s"
 
@@ -10096,9 +9946,6 @@ msgstr "잘못된 hostdev 프로토콜 '%s'"
 msgid "Invalid integer value '%s' in file '%s'"
 msgstr "잘못된 정수 값 '%s'이(가) 파일 '%s'에 있습니다"
 
-msgid "Invalid ip address prefix value"
-msgstr "잘못된 ip 주소 접두어 값"
-
 #, c-format
 msgid "Invalid ipv6 setting '%s' in network '%s'"
 msgstr "네트워크 '%s'에서 잘못된 ipv6 설정 '%s'"
@@ -10121,10 +9968,6 @@ msgstr "유효하지 않은 수명주기 동작: '%s'."
 #, c-format
 msgid "Invalid lifecycle type '%s'."
 msgstr "잘못된 수명주기 유형 '%s'"
-
-#, c-format
-msgid "Invalid localPtr value '%s' in network '%s'"
-msgstr "네트워크 '%s'의 잘못된 localPtr 값 '%s'"
 
 #, c-format
 msgid "Invalid log destination '%s' for log output '%s'"
@@ -10160,13 +10003,6 @@ msgid "Invalid macTableManager setting '%s' in network port"
 msgstr "네트워크 포트에서 잘못된 macTableManager 설정 '%s'"
 
 #, c-format
-msgid "Invalid managed setting '%s' in network port"
-msgstr "네트워크 포트에서 잘못 관리된 설정 '%s'"
-
-msgid "Invalid match attribute for CPU specification"
-msgstr "CPU 설정에서 매치 특성이 잘못되었습니다"
-
-#, c-format
 msgid "Invalid match string '%s'"
 msgstr "잘못된 일치 문자열 '%s'"
 
@@ -10177,10 +10013,6 @@ msgstr "잘못된 maxEventChannels: %i"
 #, c-format
 msgid "Invalid maxGrantFrames: %i"
 msgstr "잘못된 maxGrantFrames: %i"
-
-#, c-format
-msgid "Invalid memory core dump attribute value '%s'"
-msgstr "잘못된 메모리 코어 덤프 속성 값 '%s'"
 
 #, c-format
 msgid "Invalid message prog=%d type=%d serial=%u proc=%d"
@@ -10250,10 +10082,6 @@ msgid "Invalid network port pointer: %s"
 msgstr "잘못된 네트워크 포트 포인터: %s"
 
 #, c-format
-msgid "Invalid network prt plug type '%s'"
-msgstr "잘못된 네트워크 prt 플러그 유형 '%s'"
-
-#, c-format
 msgid "Invalid node id %u "
 msgstr "잘못된 노드 id: %u "
 
@@ -10301,6 +10129,10 @@ msgstr "virXPathULong()에 잘못된 매개변수 전달"
 
 msgid "Invalid parameter type passed to free"
 msgstr "free에 잘못된 매개변수 유형이 전달되었습니다"
+
+#, c-format
+msgid "Invalid parameters: %d"
+msgstr ""
 
 msgid "Invalid partial specification for virtio ccw address"
 msgstr "virtio ccw 주소에 대한 잘못된 부분적 지정"
@@ -10440,14 +10272,6 @@ msgid ""
 msgstr "네트워크 '%s' IPv6 정적 호스트 정의에서 잘못 지정된 MAC 주소 '%s'"
 
 #, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
-msgstr "네트워크 '%s'의 잘못된 trustGuestRxFilters 설정 '%s'"
-
-#, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in portgroup"
-msgstr "포트 그룹에서 잘못된 trustGuestRxFilters 설정 '%s'"
-
-#, c-format
 msgid "Invalid type '%s' requested for parameter '%s', actual type is '%s'"
 msgstr ""
 "매개변수 '%s'에 대해 잘못된 유형 '%s'가 요청되었습니다; 실제 유형은 '%s'입니"
@@ -10510,6 +10334,12 @@ msgid ""
 msgstr "요소 '%s'의 특성 '%s'에 대한 잘못된 값: '%s'. 예상 정수 값"
 
 #, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative integer value"
+msgstr ""
+
+#, c-format
 msgid "Invalid value for attribute '%s' in element '%s': Zero is not permitted"
 msgstr "요소 '%s'의 특성 '%s'에 대한 잘못된 값: 0은 허용되지 않습니다"
 
@@ -10545,10 +10375,6 @@ msgstr "시작 CPU 값이 잘못되었습니다"
 
 msgid "Invalid value for timeout"
 msgstr "시간 초과에 대한 값이 잘못됨"
-
-#, c-format
-msgid "Invalid value in migratable attribute: '%s'"
-msgstr "이전 할 수 있는 속성에서 잘못된 값: '%s'"
 
 #, c-format
 msgid "Invalid value of %d for I/O weight"
@@ -10633,10 +10459,6 @@ msgstr "이보다 작은 연속 사용 가능한 범위(바이트)를 무시하�
 
 msgid "KVM device assignment is no longer supported on this system"
 msgstr "이 시스템에서는 KVM 장치 할당이 더 이상 지원되지 않습니다"
-
-#, c-format
-msgid "KVM is not supported by '%s' on this host"
-msgstr "KVM은 이 호스트에서 '%s'에 의해 지원되지 않습니다"
 
 msgid "KVM is not supported on this platform"
 msgstr "KVM은 이 플랫폼에서 지원되지 않습니다"
@@ -10775,7 +10597,8 @@ msgstr "잠금경로 자원 '%s'가 잠기지 않습니다"
 msgid ""
 "Log output '%s' does not meet the format requirements for destination type "
 "'%s'"
-msgstr "로그 출력 '%s'는 대상 유형 '%s'에 대한 형식 요구 사항을 충족하지 않습니다"
+msgstr ""
+"로그 출력 '%s'는 대상 유형 '%s'에 대한 형식 요구 사항을 충족하지 않습니다"
 
 msgid "Logging filters: "
 msgstr "로깅 필터: "
@@ -11003,6 +10826,10 @@ msgstr "최대 메모리:"
 #, c-format
 msgid "Maximum CPUs greater than specified machine type limit %u"
 msgstr "지정된 머신 유형 제한 %u보다 큰 최대 CPU"
+
+#, c-format
+msgid "Maximum supported number of ISA serial ports is '%d'"
+msgstr ""
 
 msgid "Media Registry is null"
 msgstr "미디어 레지스트리가 null입니다"
@@ -11232,9 +11059,6 @@ msgstr "NUMA 노드 %d의 캐쉬 요소에 '레벨' 속성이 없습니다"
 msgid "Missing 'link' attribute for NIC"
 msgstr "NIC에 대한 '링크' 속성 누락"
 
-msgid "Missing 'model' attribute in mediated device's <hostdev> element"
-msgstr "중재된 장치의 <hostdev> 요소에 'model' 속성이 없습니다"
-
 #, c-format
 msgid "Missing 'name' property in %s lookup"
 msgstr "%s 검색에서 'name' 속성이 누락되어 있음"
@@ -11309,6 +11133,9 @@ msgstr "네트워크 '%s' DNS HOST 기록에 IP 주소가 누락되어 있음"
 #, c-format
 msgid "Missing IP address in static host definition for network '%s'"
 msgstr "네트워크 '%s'의 정적 호스트 정의에서 IP 주소가 누락되어 있음"
+
+msgid "Missing LISTEN_FDNAMES env from systemd socket activation"
+msgstr ""
 
 #, c-format
 msgid "Missing PVR information for CPU model %s"
@@ -11997,12 +11824,6 @@ msgstr "NVMe 디스크는 이 QEMU 바이너리에서 지원되지 않습니다"
 msgid "NVMe namespace can't be zero"
 msgstr "NVMe 네임스페이스는 0일 수 없습니다"
 
-#. Output old style header
-#. We only get here if the --details option was selected.
-#. Insert the header into table
-#. The old output format
-#. We only get here if the --details option was selected.
-#. Insert the header into table
 msgid "Name"
 msgstr "이름"
 
@@ -12997,20 +12818,6 @@ msgstr ""
 "옵션 '%s'는 인덱스 '%d', 모델 '%s' 및 modelName '%s'가 있는 PCI 컨트롤러에 대"
 "해 유효하지 않습니다"
 
-#. Macros to help dealing with required options.
-#. VSH_REQUIRE_OPTION_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable).
-#. * @NAME2: String containing the name of required option.
-#. * @EXPR2: Expression to validate the variable (boolean variable).
-#. *
-#. * Check if required command options in virsh was set.  Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Option --%s is required by option --%s"
 msgstr "--%s 옵션은 --%s 옵션에 필요합니다"
@@ -13030,20 +12837,6 @@ msgstr "옵션 인수가 비어 있습니다"
 msgid "Optional flags or --rawstats are not supported by the daemon"
 msgstr "선택적인 플래그 또는 --rawstats는 데몬에 의해 지원되지 않습니다"
 
-#. Macros to help dealing with mutually exclusive options.
-#. VSH_EXCLUSIVE_OPTIONS_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable)
-#. * @NAME2: String containing the name of the option.
-#. * @EXPR2: Expression to validate the variable (boolean variable)
-#. *
-#. * Reject mutually exclusive command options in virsh. Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Options --%s and --%s are mutually exclusive"
 msgstr "옵션 --%s 및 --%s는 상호 배타적입니다"
@@ -13281,7 +13074,6 @@ msgstr "구문 분석된 JSON 응답 '%s'는 개체가 아닙니다"
 msgid "Partition path '%s' must start with '/'"
 msgstr "파티션 경로 '%s'은 '/'로 시작해야 합니다"
 
-#. warn users that the --base64 option passed from command line is wrong
 msgid "Passing secret value as command-line argument is insecure!"
 msgstr "명령줄 인수로 비밀 값을 전달하는 것은 안전하지 않습니다!"
 
@@ -13607,9 +13399,15 @@ msgstr ""
 msgid "QEMU does not support SEV guest"
 msgstr "QEMU는 SEV 게스트를 지원하지 않습니다"
 
+msgid "QEMU does not support calculating dirty page rate"
+msgstr ""
+
 #, c-format
 msgid "QEMU does not support device assignment mode '%s'"
 msgstr "QEMU는 장치 할당 모드 '%s'을(를) 지원하지 않습니다"
+
+msgid "QEMU does not support dirty page rate calculation mode."
+msgstr ""
 
 msgid "QEMU does not support multiple listens for one graphics device."
 msgstr "QEMU는 하나의 그래픽 장치에 대한 다중 수신을 지원하지 않습니다."
@@ -14120,7 +13918,6 @@ msgstr "이 QEMU 바이너리에서는 S390 PV 실행 보안이 지원되지 않
 msgid "S4 state is disabled for this domain"
 msgstr "이 도메인에 대해 S4 상태가 비활성화되었습니다"
 
-#. Denied
 #, c-format
 msgid "SASL client identity '%s' not allowed by ACL"
 msgstr "SASL 클라이언트 ID '%s'는 ACL에서 허용되지 않습니다"
@@ -14642,9 +14439,6 @@ msgstr "설치 시간:"
 msgid "Shared memory mapping is not supported with this QEMU"
 msgstr "공유된 메모리 대응하기는 이 QEMU에서 지원되지 않습니다"
 
-#. XXX: Need to sort the returned params once new parameter
-#. * fields not of shared memory are added.
-#.
 msgid "Shared memory:\n"
 msgstr "공유된 메모리:\n"
 
@@ -14720,7 +14514,6 @@ msgstr "이 스트림에서는 건너뛰기가 지원되지 않습니다"
 msgid "Snapshot"
 msgstr "스냅샷"
 
-#. Depending on flags, we re-edit even if XML is unchanged.
 #, c-format
 msgid "Snapshot %s XML configuration not changed.\n"
 msgstr "도메인 %s XML 설정이 변경되지 않았습니다.\n"
@@ -15196,7 +14989,6 @@ msgstr "TPM 모델 '%s'는 x86 및 aarch64 게스트에만 사용할 수 있습�
 msgid "Table row cannot be empty"
 msgstr "테이블 행은 비워 둘 수 없습니다"
 
-#. title
 msgid "Target"
 msgstr "대상"
 
@@ -15810,6 +15602,10 @@ msgstr ""
 "지 않습니다"
 
 #, c-format
+msgid "Target serial model %s does not match source %s"
+msgstr ""
+
+#, c-format
 msgid "Target serial port %d does not match source %d"
 msgstr "대상 시리얼 포트 %d가 소스 %d와 일치하지 않음"
 
@@ -15860,8 +15656,8 @@ msgid "Target timer %s does not match source %s"
 msgstr "대상 타이머 %s는 소스 %s와 일치하지 않습니다"
 
 #, c-format
-msgid "Target timer presence %d does not match source %d"
-msgstr "대상 타이머 상태 %d가 소스 %d와 일치하지 않습니다"
+msgid "Target timer presence '%s' does not match source '%s'"
+msgstr ""
 
 #, c-format
 msgid "Target type '%s' cannot have an associated address"
@@ -16490,11 +16286,9 @@ msgstr "오류 상태에서 소켓을 쓰려고 했습니다"
 msgid "Try again?"
 msgstr "다시 시도?"
 
-#. Better leak than crash
 msgid "Trying to free MultiCURL object that is still in use"
 msgstr "아직 사용 중인 MultiCURL 개체를 해제하려 합니다"
 
-#. Better leak than crash
 msgid "Trying to free SharedCURL object that is still in use"
 msgstr "아직 사용 중인 SharedCURL 개체를 해제하려 합니다"
 
@@ -16919,10 +16713,6 @@ msgstr "rc=%08x인 하드디스크를 닫을 수 없습니다"
 msgid "Unable to close disk children"
 msgstr "디스크 하위 항목을 닫을 수 없습니다"
 
-#, c-format
-msgid "Unable to close file '%s'"
-msgstr "파일 '%s'를 닫을 수 없습니다"
-
 msgid "Unable to close recursively all disks"
 msgstr "모든 디스크를 재귀적으로 닫을 수 없음"
 
@@ -17227,6 +17017,9 @@ msgstr "'cpuacct' cgroups 컨트롤러 마운트를 찾을 수 없습니다"
 msgid "Unable to find 'devices' cgroups controller mount"
 msgstr "'devices' cgroups 제어기 적재를 찾을 수 없습니다"
 
+msgid "Unable to find 'dnsmasq' binary in $PATH"
+msgstr ""
+
 msgid "Unable to find 'memory' cgroups controller mount"
 msgstr "'메모리' cgroups 컨트롤러 마운트를 찾을 수 없습니다"
 
@@ -17444,10 +17237,6 @@ msgstr "데몬 로깅 필터 정보를 가져올 수 없습니다"
 msgid "Unable to get daemon logging outputs information"
 msgstr "데몬 로깅 출력 정보를 가져올 수 없습니다"
 
-#, c-format
-msgid "Unable to get device ID '%s'"
-msgstr "장치 ID '%s'을 가져 올 수 없습니다"
-
 msgid "Unable to get device master from netlink on this platform"
 msgstr "이 플랫폼의 netlink에서 장치 마스터를 가져올 수 없습니다"
 
@@ -17553,10 +17342,6 @@ msgstr "메모리 매개 변수를 얻을 수 없음"
 
 msgid "Unable to get memory stats"
 msgstr "메모리 통계를 가져올 수 없습니다"
-
-#, c-format
-msgid "Unable to get minor number of device '%s'"
-msgstr "장치 '%s'의 부 번호를 가져 올 수 없습니다"
 
 msgid "Unable to get node cpu stats"
 msgstr "노드 CPU 통계를 가져올 수 없습니다"
@@ -18311,6 +18096,9 @@ msgstr "%d 신호를 %d 처리에 전송 할 수 없습니다"
 msgid "Unable to send SIGTERM to init pid %llu"
 msgstr "SIGTERM을 init pid %llu에 전송 할 수 없습니다"
 
+msgid "Unable to send a VF SETLINK request on this platform"
+msgstr ""
+
 msgid "Unable to send container continue message"
 msgstr "컨테이너 계속 메시지를 전송할 수 없음"
 
@@ -18367,6 +18155,15 @@ msgstr "이와 같은 기술환경에서 %s에 STD 설정을 할 수 없습니�
 #, c-format
 msgid "Unable to set XATTR %s on %s"
 msgstr "%s에서XATTR %s를 설정 할 수 없습니다"
+
+msgid "Unable to set a VF MAC on this platform"
+msgstr ""
+
+msgid "Unable to set a VF VLAN on this platform"
+msgstr ""
+
+msgid "Unable to set a VF config on this platform"
+msgstr ""
 
 msgid "Unable to set agent close-on-exec flag"
 msgstr "에이전트 close-on-exec 플래그를 설정 할 수 없음"
@@ -18866,10 +18663,6 @@ msgid "Unexpected signal received: %d"
 msgstr "예상치 못한 신호가 수신됨: %d"
 
 #, c-format
-msgid "Unexpected socket family %d"
-msgstr "예기치 않은 소켓 제품군 %d"
-
-#, c-format
 msgid "Unexpected state of feature '%s'"
 msgstr "기능 '%s'의 예기치 않은 상태"
 
@@ -18930,10 +18723,6 @@ msgstr "알 수 없는 JSON 응답 '%s'"
 #, c-format
 msgid "Unknown LXC namespace source '%s'"
 msgstr "알 수 없는 LXC 네임스페이스 소스 '%s'"
-
-#, c-format
-msgid "Unknown PCI device <driver name='%s'/> has been specified"
-msgstr "알 수 없는 PCI 장치 <driver name='%s'/>가 지정되어 있습니다"
 
 #, c-format
 msgid "Unknown PCI header type '%d' for device '%s'"
@@ -18999,6 +18788,10 @@ msgid "Unknown cache type '%s'"
 msgstr "알 수 없는 캐시 유형 '%s'"
 
 #, c-format
+msgid "Unknown calculation mode '%s'"
+msgstr ""
+
+#, c-format
 msgid "Unknown cgroup controller '%s'"
 msgstr "알 수 없는 cgroup 컨트롤러 '%s'"
 
@@ -19025,6 +18818,10 @@ msgstr "알지 못하는 암호화 해쉬 %d"
 #, c-format
 msgid "Unknown data source '%s'"
 msgstr "알 수 없는 데이터 소스 '%s'"
+
+#, c-format
+msgid "Unknown dirty page rate calculation mode: %s"
+msgstr ""
 
 #, c-format
 msgid "Unknown dirty rate status: %s"
@@ -19057,7 +18854,6 @@ msgstr "네트워크에서 알지 못하는 활성화된 유형 %d"
 msgid "Unknown error"
 msgstr "알 수 없는 오류"
 
-#. should never happen (tm)
 msgid "Unknown error value"
 msgstr "알 수 없는 오류 값"
 
@@ -19083,14 +18879,6 @@ msgstr "네트워크에서 알 수 없는 forwardPlainNames 유형 %d"
 
 msgid "Unknown input device type"
 msgstr "알려지지 않은 입력 장치 유형"
-
-#, c-format
-msgid "Unknown interface <driver name='%s'> has been specified"
-msgstr "알 수 없는 인터페이스 <driver name='%s'>가 지정되었습니다"
-
-#, c-format
-msgid "Unknown interface <driver txmode='%s'> has been specified"
-msgstr "알 수 없는 인터페이스 <driver txmode='%s'>가 지정되었습니다"
 
 msgid "Unknown invocation state"
 msgstr "알 수 없는 호출 상태"
@@ -19798,7 +19586,8 @@ msgid "VIR_DOMAIN_BLOCK_COPY_SYNCHRONOUS_WRITES is not supported by this VM"
 msgstr "VIR_DOMAIN_BLOCK_COPY_SYNCHRONOUS_WRITES는 이 VM에서 지원되지 않습니다"
 
 msgid "VIR_MIGRATE_NON_SHARED_SYNCHRONOUS_WRITES is not supported by this QEMU"
-msgstr "VIR_MIGRATE_NON_SHARED_SYNCHRONOUS_WRITES는 이 QEMU에서 지원되지 않습니다"
+msgstr ""
+"VIR_MIGRATE_NON_SHARED_SYNCHRONOUS_WRITES는 이 QEMU에서 지원되지 않습니다"
 
 msgid "VM is already active"
 msgstr "VM이 이미 실행중입니다"
@@ -19876,12 +19665,10 @@ msgstr "장황한 메시지"
 msgid "Video adapters are not supported int containers."
 msgstr "비디오 어댑터는 내부 컨테이너를 지원하지 않습니다."
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, c-format
 msgid "Virsh command line tool of libvirt %s\n"
 msgstr "libvirt %s의 Virsh 명령줄 도구\n"
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, c-format
 msgid "Virt-admin command line tool of libvirt %s\n"
 msgstr "libvirt %s의 Virt-admin 명령줄 도구\n"
@@ -20275,6 +20062,10 @@ msgstr "비디오 유형 ramfb에 대해 지원되지 않는 주소"
 msgid "address of disk device"
 msgstr "디스크 장치의 주소"
 
+#, c-format
+msgid "address of type '%s' is supported only for hostdevs"
+msgstr ""
+
 msgid "address source: 'lease' or 'agent'"
 msgstr "주소 소스: '리스' 또는 '에이전트'"
 
@@ -20338,11 +20129,6 @@ msgstr "모든 vcpus에는 순서가 설정되거나 설정되지 않아야 합�
 msgid "allocate the new capacity, rather than leaving it sparse"
 msgstr "새 용량을 희소하게 두지 않고 할당합니다"
 
-#.
-#. * we need to use an intermediary pointer to @data as compilers may sometimes
-#. * complain about @data not being a pointer type:
-#. * error: the address of 'foo' will always evaluate as 'true' [-Werror=address]
-#.
 msgid "allocated netlink buffer is too small"
 msgstr "할당된 넷링크 버퍼가 너무 작습니다"
 
@@ -21066,7 +20852,8 @@ msgid "can't change media while a block job is running on the device"
 msgstr "장치에서 차단 작업이 실행되는 동안 미디어를 변경할 수 없습니다"
 
 msgid "can't change nodeset for strict mode for running domain"
-msgstr "실행 중인 도메인을 위해 엄격한 방식을 위한 노드 구성을 변경 할 수 없습니다"
+msgstr ""
+"실행 중인 도메인을 위해 엄격한 방식을 위한 노드 구성을 변경 할 수 없습니다"
 
 msgid "can't change numatune mode for running domain"
 msgstr "실행 중인 도메인에 대한 numatune 모드를 변경할 수 없습니다"
@@ -21724,6 +21511,10 @@ msgstr "프로세스 %d의 CPU 진화도를 얻을 수 없음"
 msgid "cannot get RSS for domain"
 msgstr "도메인에 대한 RSS를 가져올 수 없습니다"
 
+#, c-format
+msgid "cannot get cert distinguished name: %s"
+msgstr ""
+
 msgid "cannot get children disk"
 msgstr "자식 디스크를 얻을 수 없습니다"
 
@@ -22041,7 +21832,6 @@ msgstr "'%s' 경로를 열 수 없음"
 msgid "cannot open path '%s' in '%s'"
 msgstr "'%s'에서 경로 '%s'을 열 수 없습니다"
 
-#. A dangling symlink now implies a TOCTTOU race; report it.
 #, c-format
 msgid "cannot open volume '%s'"
 msgstr "볼륨 '%s'를 열 수 없음"
@@ -22064,10 +21854,6 @@ msgstr "CPU 데이터를 구문 분석할 수 없습니다"
 #, c-format
 msgid "cannot parse MAC address '%s' from file '%s'"
 msgstr "파일 '%s'에서 MAC 주소 '%s'을(를) 구문 분석할 수 없습니다"
-
-#, c-format
-msgid "cannot parse cache mode '%s' for virtiofs"
-msgstr "virtiofs에 대한 캐시 모드 '%s'을(를) 구문 분석할 수 없습니다"
 
 #, c-format
 msgid "cannot parse cpu sys stat '%s'"
@@ -22125,10 +21911,6 @@ msgstr "virtiofs에 대한 대기열 크기 '%s'을(를) 구문 분석할 수 �
 #, c-format
 msgid "cannot parse rdp port %s"
 msgstr "rdp 포트 %s를 구문분석 할 수 없습니다"
-
-#, c-format
-msgid "cannot parse sandbox mode '%s' for virtiofs"
-msgstr "virtiofs에 대한 샌드박스 모드 '%s'를 구문 분석할 수 없습니다"
 
 #, c-format
 msgid "cannot parse target for lunStr '%s'"
@@ -22708,6 +22490,10 @@ msgstr "가상 CPU 수 변경"
 msgid "change of nodeset for running domain requires restrictive numa mode"
 msgstr "실행 중인 도메인의 노드 구성의 변경은 제한적인 numa 방식이 필요합니다"
 
+msgid "change of nodeset for running domain requires strict numa mode"
+msgstr ""
+"실행 중인 도메인에 대한 노드 집합을 변경하려면 엄격한 numa 모드가 필요합니다"
+
 msgid "change the current directory"
 msgstr "현재 디렉터리를 변경함"
 
@@ -22827,7 +22613,6 @@ msgstr "체크포인트 이름"
 msgid "child didn't write error (status=%d)"
 msgstr "자식이 오류를 쓰지 않았습니다(상태=%d)"
 
-#. in case of EACCES, the parent will retry
 #, c-format
 msgid "child failed to create directory '%s'"
 msgstr "자식이 디렉터리 '%s'를 만드는 데 실패"
@@ -24078,6 +23863,9 @@ msgstr "dimm 메모리 정보 데이터에 'id'가 없습니다"
 msgid "dir"
 msgstr "디렉토리"
 
+msgid "direct FD passing supports only 1 file descriptor"
+msgstr ""
+
 msgid "direct migration"
 msgstr "직접 이전"
 
@@ -24095,13 +23883,22 @@ msgstr ""
 msgid "directory to switch to (default: home or else root)"
 msgstr "변경하려는 디렉터리(디폴트: 홈 또는 다른 루트)"
 
+msgid ""
+"dirty page rate calculation mode, either of these 3 options 'page-sampling, "
+"dirty-bitmap, dirty-ring' can be specified."
+msgstr ""
+
 msgid "dirty ring must be power of 2 and ranges [1024, 65536]"
 msgstr "더티 링(dirty ring)은 2의 거듭제곱과 범위여야 합니다 [1024, 65536]"
 
 #, c-format
 msgid ""
 "dirty ring size of KVM feature '%s' differs: source: '%d', destination: '%d'"
-msgstr "KVM 기능 '%s'의 더티 링(dirty ring) 크기는 다릅니다: 원천: '%d', 대상: '%d'"
+msgstr ""
+"KVM 기능 '%s'의 더티 링(dirty ring) 크기는 다릅니다: 원천: '%d', 대상: '%d'"
+
+msgid "dirty-ring calculation mode requires dirty-ring feature enabled."
+msgstr ""
 
 msgid "disable"
 msgstr "비활성화됨"
@@ -24380,10 +24177,6 @@ msgstr "이전 진행을 표시합니다"
 
 msgid "display the progress of save"
 msgstr "저장 진행률 표시"
-
-#, c-format
-msgid "dnsmasq binary %s is not executable"
-msgstr "dnsmasq 바이너리 %s를 실행 할 수 없습니다"
 
 #, c-format
 msgid "dnsmasq version >= %u.%u required but %lu.%lu found"
@@ -25339,6 +25132,10 @@ msgid "expecting a value"
 msgstr "값 예상하기"
 
 #, c-format
+msgid "expecting a value for value of type %s"
+msgstr ""
+
+#, c-format
 msgid "expecting absolute path: %s"
 msgstr "절대 경로 필요: %s"
 
@@ -26231,10 +26028,6 @@ msgid "failed to parse the index of the VMX key '%s'"
 msgstr "VMX 키 '%s'의 인덱스를 구문 분석하지 못했습니다"
 
 #, c-format
-msgid "failed to parse value of %s"
-msgstr "%s 값을 구문 분석하는데 실패"
-
-#, c-format
 msgid "failed to parse write_bps_device: '%s'"
 msgstr "write_bps_device를 구문 분석하지 못했습니다: '%s'"
 
@@ -26632,18 +26425,12 @@ msgstr "파일디스크(fd)는 유효해야 합니다"
 msgid "fd passing is not supported by this connection"
 msgstr "이 연결은 파일디스크(fd) 전달을 지원하지 않습니다"
 
-msgid "fdset must be valid"
-msgstr "파일디스크 설정 (fdset)은 유효해야 합니다"
-
 msgid "fetch or set the currently defined set of logging filters on daemon"
 msgstr "데몬에서 현재 정의된 로깅 필터 세트를 가져오거나 설정합니다"
 
 msgid "fetch or set the currently defined set of logging outputs on daemon"
 msgstr "데몬에서 현재 정의된 로깅 출력 세트를 가져오거나 설정합니다"
 
-#. parse inbound and outbound which are in the format of
-#. * 'average,peak,burst,floor', in which peak and burst are optional,
-#. * thus 'average,,burst' and 'average,peak' are also legal.
 #, c-format
 msgid "field '%s' is malformed"
 msgstr "필드 '%s'의 형식이 잘못되었습니다"
@@ -26694,10 +26481,6 @@ msgstr "XML 볼륨 설명이 있는 파일"
 
 msgid "file containing secret attributes in XML"
 msgstr "XML의 비밀 특성을 포함하는 파일"
-
-#, c-format
-msgid "file descriptor %d has not been transferred"
-msgstr "파일 설명자 %d이(가) 전송되지 않았습니다"
 
 msgid "file format type raw,bochs,qcow,qcow2,qed,vmdk"
 msgstr "파일 형식 유형 raw,bochs,qcow,qcow2,qed,vmdk"
@@ -26899,7 +26682,9 @@ msgstr "관리되는 모든 저장을 삭제하여 강제로 새로 부팅"
 msgid ""
 "force guest disk writes to be synchronously written to the destination to "
 "improve storage migration convergence"
-msgstr "저장소 이전 수렴을 개선하려면 게스트 디스크 쓰기가 대상에 동기화 되어 기록되도록 강제합니다"
+msgstr ""
+"저장소 이전 수렴을 개선하려면 게스트 디스크 쓰기가 대상에 동기화 되어 기록되"
+"도록 강제합니다"
 
 msgid "force media changing"
 msgstr "강제 미디어 변경"
@@ -27235,7 +27020,6 @@ msgstr "스냅샷 생성 후 도메인 중지"
 msgid "handler failed to wait on condition"
 msgstr "핸들러가 조건을 기다리지 못했습니다"
 
-#. caller's error
 msgid "hash lookup resulted in NULL pointer"
 msgstr "해시 조회 결과 NULL 포인터를 반환했습니다"
 
@@ -27776,9 +27560,6 @@ msgstr "접속기가 실행되고 있지 않음"
 msgid "interface mac"
 msgstr "인터페이스 MAC"
 
-msgid "interface misses the type attribute"
-msgstr "인터페이스에 type 특성이 빠졌습니다"
-
 msgid "interface mtu value is improper"
 msgstr "인터페이스 mtu 값이 적절하지 않습니다"
 
@@ -27789,25 +27570,6 @@ msgstr "인터페이스 이름"
 msgid "interface name %s does not fit into buffer "
 msgstr "인터페이스 이름 %s이 버퍼에 맞지 않음 "
 
-#.
-#. * virsh-interface.c: Commands to manage host interface
-#. *
-#. * Copyright (C) 2005, 2007-2016 Red Hat, Inc.
-#. *
-#. * This library is free software; you can redistribute it and/or
-#. * modify it under the terms of the GNU Lesser General Public
-#. * License as published by the Free Software Foundation; either
-#. * version 2.1 of the License, or (at your option) any later version.
-#. *
-#. * This library is distributed in the hope that it will be useful,
-#. * but WITHOUT ANY WARRANTY; without even the implied warranty of
-#. * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#. * Lesser General Public License for more details.
-#. *
-#. * You should have received a copy of the GNU Lesser General Public
-#. * License along with this library.  If not, see
-#. * <http://www.gnu.org/licenses/>.
-#.
 msgid "interface name or MAC address"
 msgstr "인터페이스 이름 또는 MAC 주소"
 
@@ -28082,10 +27844,6 @@ msgid "invalid XML length: %d"
 msgstr "잘못된 이미지 길이: %d"
 
 #, c-format
-msgid "invalid allowReboot value '%s'"
-msgstr "잘못된 allowReboot 값 '%s'"
-
-#, c-format
 msgid "invalid ap-adapter value '%s' for '%s'"
 msgstr "'%s'에 대한 잘못된 ap-어댑터 값 '%s'"
 
@@ -28187,8 +27945,8 @@ msgid "invalid disk target '%s', partitions can't appear in disk targets"
 msgstr "잘못된 디스크 대상 '%s', 파티션은 디스크 대상에 나타날 수 없습니다"
 
 #, c-format
-msgid "invalid dmode: '%s'"
-msgstr "잘못된 dmode: '%s'"
+msgid "invalid dmode: '0%o'"
+msgstr ""
 
 msgid "invalid domain pointer in"
 msgstr "잘못된 도메인 포인터"
@@ -28220,13 +27978,8 @@ msgstr "잘못된 오류 동작: '%s'\n"
 msgid "invalid fd %d for %s"
 msgstr "잘못된 fd %d (%s를 위한)"
 
-#, c-format
-msgid "invalid firmware feature enabled value '%s'"
-msgstr "잘못된 펌웨어 기능 활성화 값 '%s'"
-
-#, c-format
-msgid "invalid firmware feature name '%s'"
-msgstr "잘못된 펌웨어 기능 이름 '%s'"
+msgid "invalid file descriptor"
+msgstr ""
 
 msgid "invalid flag"
 msgstr "잘못된 플래그"
@@ -28236,8 +27989,8 @@ msgid "invalid flag combination: (0x%x)"
 msgstr "잘못된 플래그 조합: (0x%x)"
 
 #, c-format
-msgid "invalid fmode: '%s'"
-msgstr "잘못된 fmode: '%s'"
+msgid "invalid fmode: '0%o'"
+msgstr ""
 
 msgid "invalid hasmanagedsave"
 msgstr "잘못된 hasmanagedsave"
@@ -28324,7 +28077,8 @@ msgstr "잘못된 링크 상태 '%s'"
 msgid ""
 "invalid loadparm value '%s', expecting chars in set of [a-zA-Z0-9.] and "
 "blank spaces"
-msgstr "잘못된 loadparm 값 '%s', [a-zA-Z0-9.]의 구성에서 문자와 빈 공간이 예상됩니다"
+msgstr ""
+"잘못된 loadparm 값 '%s', [a-zA-Z0-9.]의 구성에서 문자와 빈 공간이 예상됩니다"
 
 #, c-format
 msgid ""
@@ -28340,25 +28094,11 @@ msgid ""
 msgstr "query-rx-filter 응답에서 'unicast-table' 배열의 잘못된 mac 주소 '%s'"
 
 #, c-format
-msgid "invalid mac address check value: '%s'"
-msgstr "잘못된 MAC 주소 확인 값: '%s'"
-
-#, c-format
-msgid ""
-"invalid mac address type value: '%s'. Valid values are \"generated\" and "
-"\"static\"."
-msgstr ""
-"잘못된 MAC 주소 유형 값: '%s'. 유효한 값은 \"생성됨\" 및 \"정적\"입니다."
-
-#, c-format
 msgid "invalid master key read, size=%zd"
 msgstr "잘못된 마스터 키 읽기, 크기=%zd"
 
 msgid "invalid microcode version"
 msgstr "잘못된 마이크로코드 버전"
-
-msgid "invalid migratability value for host CPU model"
-msgstr "호스트 CPU 모델을 위해 잘못된 이전 가능성 값"
 
 msgid "invalid mode"
 msgstr "잘못된 모드"
@@ -28434,14 +28174,6 @@ msgid ""
 "invalid number value for '%s' host CPU model property in QEMU capabilities "
 "cache"
 msgstr "QEMU 기능 캐쉬의 '%s' 호스트 CPU 모델 속성에 대한 잘못된 숫자 값"
-
-#, c-format
-msgid "invalid or missing decode/guest attribute in CPU model %s"
-msgstr "CPU 모델 %s의 디코드/게스트 속성이 잘못되었거나 누락되었습니다"
-
-#, c-format
-msgid "invalid or missing decode/host attribute in CPU model %s"
-msgstr "CPU 모델 %s의 디코드/호스트 속성이 잘못되었거나 누락되었습니다"
 
 #, c-format
 msgid "invalid parent device '%s'"
@@ -28533,10 +28265,6 @@ msgstr "잘못된 스냅샷 이름 '%s': 이름은 '.'로 시작 할 수 없음"
 msgid "invalid ssid value '%s' for '%s'"
 msgstr "'%s'에 대한 잘못된 ssid 값 '%s'"
 
-#, c-format
-msgid "invalid storage pool cow feature state '%s'"
-msgstr "잘못된 저장소 pool cow 기능 상태 '%s'"
-
 msgid "invalid storage pool pointer in"
 msgstr "내부에 잘못된 저장소 포인터"
 
@@ -28589,6 +28317,9 @@ msgstr "'%s'에 잘못된 고유 ID가 제공되었습니다"
 msgid "invalid use of command API"
 msgstr "API 명령어의 잘못된 사용"
 
+msgid "invalid use of conf API"
+msgstr ""
+
 msgid "invalid use with no flags"
 msgstr "플래그가 없는 잘못된 사용"
 
@@ -28608,18 +28339,8 @@ msgstr "이전 매개변수 '%s'를 위한 잘못된 값 '%s'"
 msgid "invalid value '%s' for parameter '%s' of device '%s'"
 msgstr "장치 '%s'의 매개변수 '%s'에 대한 값 '%s'가 잘못되었습니다"
 
-#, c-format
-msgid "invalid value for 'managed': %s"
-msgstr "'관리'에 대한 잘못된 값: %s"
-
-msgid "invalid value for boot menu timeout"
-msgstr "부팅 메뉴 시간 초과 값이 잘못되었습니다"
-
 msgid "invalid value for boot menu timeout, must be in range [0,65535]"
 msgstr "부트 메뉴 시간초과에 잘못된 값, [0,65535] 범위 안에 있어야 합니다"
-
-msgid "invalid value for rebootTimeout"
-msgstr "rebootTimeout (재시작 시간초과)에 대한 잘못된 값"
 
 msgid "invalid value for rebootTimeout, must be in range [-1,65535]"
 msgstr "rebootTimeout의 잘못된 값, [-1,65535] 범위에 있어야 합니다"
@@ -28657,7 +28378,8 @@ msgid "io uring is not supported by this QEMU binary"
 msgstr "이 QEMU 바이너리는 ioing을 지원하지 않습니다"
 
 msgid "io='native' needs either no disk cache or directsync cache mode"
-msgstr "io='native'는 디스크 캐쉬가 없거나 직접 동기화 캐쉬 방식 중 하나이어야 합니다"
+msgstr ""
+"io='native'는 디스크 캐쉬가 없거나 직접 동기화 캐쉬 방식 중 하나이어야 합니다"
 
 msgid "ioeventfd is not supported with vhostuser disk"
 msgstr "ioeventfd는 vhostuser 디스크에서 지원되지 않습니다"
@@ -28714,6 +28436,9 @@ msgstr "ipset 이름이 너무 깁니다"
 
 msgid "is not active"
 msgstr "활성화 상태가 아닙니다"
+
+msgid "isa-debug serial type only valid on x86 architecture"
+msgstr ""
 
 msgid "iscsi pool only supports 'chap' auth type"
 msgstr "iscsi 풀은 'chap' 인증 유형만 지원합니다"
@@ -30093,9 +29818,6 @@ msgstr "<memory> 장치에 대한 <target> 요소 누락"
 msgid "missing <type> element in <capability> element"
 msgstr "<capability> 요소에 <type> 요소가 없습니다"
 
-msgid "missing @managed attribute for <reservations/>"
-msgstr "<reservations/>를 @managed 속성 누락"
-
 msgid "missing CPU data architecture"
 msgstr "CPU 자료 구조가 누락되었습니다"
 
@@ -30192,9 +29914,6 @@ msgstr "디스크 '%s'에 대한 블록 작업 데이터가 없습니다"
 msgid "missing blocker name in QEMU capabilities cache"
 msgstr "QEMU 기능 캐시에서 차단기 이름 누락"
 
-msgid "missing boot device"
-msgstr "부트 장치가 누락되어 있음"
-
 msgid "missing capability name"
 msgstr "기능 이름이 누락"
 
@@ -30237,6 +29956,10 @@ msgstr "기존 스냅샷에서 생성 시간이 누락되어 있음"
 #, c-format
 msgid "missing cssid value for '%s'"
 msgstr "'%s'에 대한 cssid 값이 없습니다"
+
+#, c-format
+msgid "missing decode element in CPU model %s"
+msgstr ""
 
 #, c-format
 msgid "missing destination file for disk %s: %s"
@@ -30751,9 +30474,6 @@ msgstr "쿠키 '%s'에 대한 누락된 값"
 msgid "missing value for migration parameter '%s'"
 msgstr "이전 매개변수 '%s'를 위해 누락된 값"
 
-msgid "missing values for acceleration"
-msgstr "가속에 대한 누락된 값"
-
 msgid "missing vendor"
 msgstr "제조사 누락"
 
@@ -30855,15 +30575,6 @@ msgstr "설명 대신 제목 수정/가져오기"
 msgid "monitor failure"
 msgstr "모니터 실패"
 
-#. *
-#. * QEMU_CHECK_MONITOR_FULL:
-#. * @mon: monitor pointer variable to check, evaluated multiple times, no parentheses
-#. * @exit: statement that is used to exit the function
-#. *
-#. * This macro checks that the monitor is valid for given operation and exits
-#. * the function if not. The macro also adds a debug statement regarding the
-#. * monitor.
-#.
 msgid "monitor must not be NULL"
 msgstr "모니터는 NULL이 아니어야 합니다"
 
@@ -31060,7 +30771,6 @@ msgstr "rawio 기능이 필요합니다"
 msgid "negative size requires --shrink"
 msgstr "음수 크기에는 --shrink가 필요합니다"
 
-#. 56 is good for Kerberos
 #, c-format
 msgid "negotiated SSF %d was not strong enough"
 msgstr "협상된 SSF %d가 충분히 강력하지 않습니다"
@@ -33226,11 +32936,17 @@ msgstr "쿼리 CPU 정의 응답 데이터에 '이름'이 누락되었습니다"
 msgid "query-cpu-model-comparison reply data was missing 'result'"
 msgstr "쿼리 CPU 모델 비교 응답 데이터에 '결과'가 누락되었습니다"
 
+msgid "query-dirty-rate parsing 'vcpu-dirty-rate' in failure"
+msgstr ""
+
 msgid "query-dirty-rate reply was missing 'calc-time' data"
 msgstr "query-dirty-rate 응답에 'calc-time' 데이터가 누락되었습니다"
 
 msgid "query-dirty-rate reply was missing 'dirty-rate' data"
 msgstr "query-dirty-rate 응답에 'dirty-rate' 데이터가 누락되었습니다"
+
+msgid "query-dirty-rate reply was missing 'id' data"
+msgstr ""
 
 msgid "query-dirty-rate reply was missing 'return' data"
 msgstr "query-dirty-rate 응답에 'return' 데이터가 누락되었습니다"
@@ -33380,6 +33096,9 @@ msgstr "rawio는 device='lun'에서만 사용 될 수 있습니다"
 
 msgid "rawio is only supported for scsi host device"
 msgstr "rawio는 scsi 호스트 장치만 지원됩니다"
+
+msgid "re-initialize NVRAM from its pristine template"
+msgstr ""
 
 msgid "read I/O operations limit per second"
 msgstr "초당 읽기 I/O 작업 제한"
@@ -34222,17 +33941,6 @@ msgid "sgio is only supported for scsi host device"
 msgstr "sgio는 scsi 호스트 장치만 지원됩니다"
 
 #, c-format
-msgid "sgio of shared disk '%s' conflicts with other active domains"
-msgstr "공유 디스크 '%s'의 sgio가 다른 활성 도메인과 충돌합니다"
-
-#, c-format
-msgid ""
-"sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active domains"
-msgstr ""
-"공유 디스크 'pool=%s' 'volume=%s'의 sgio와 다른 활성화된 도메인과 충돌이 발생"
-"했습니다"
-
-#, c-format
 msgid "shallow copy of disk '%s' into a raw file is not possible"
 msgstr "디스크 '%s'를 단순 파일로 얕은 복사를 할 수 없습니다"
 
@@ -34825,8 +34533,18 @@ msgstr ""
 "사후-복사로 전환하려면 VIR_MIGRATE_POSTCOPY 플래그로 시작되어야 할 이전이 필"
 "요합니다"
 
-msgid "swtpm failed to start"
-msgstr "swtpm을 시작하지 못했습니다"
+msgid "swtpm didn't show up"
+msgstr ""
+
+#, c-format
+msgid "swtpm died and reported: %s"
+msgstr ""
+
+msgid "swtpm died unexpectedly"
+msgstr ""
+
+msgid "swtpm socket did not show up"
+msgstr ""
 
 #, c-format
 msgid "syntax: %s DEVICE [-g]|[-p]\n"
@@ -34931,6 +34649,10 @@ msgid "target pci device "
 msgstr "대상 PCI 장치 "
 
 #, c-format
+msgid "target port '%d' already allocated"
+msgstr ""
+
+#, c-format
 msgid "target type must be specified for %s device"
 msgstr "%s 장치의 대상 유형을 지정해야 합니다"
 
@@ -34997,6 +34719,10 @@ msgstr "MAC 주소 '%s'가 여러 연결장치와 일치합니다"
 
 msgid "the QEMU binary does not support the ISA panic device"
 msgstr "QEMU 바이너리는 ISA 패닉 장치를 지원하지 않습니다"
+
+#, c-format
+msgid "the accel '%s' is not supported by '%s' on this host"
+msgstr ""
 
 msgid ""
 "the address family of a dhcp range must match the address family of the dhcp "
@@ -35232,9 +34958,6 @@ msgstr "이 qemu 버전은 특정 vCPU 핫플러그를 지원하지 않습니다
 
 msgid "this storage volume exists already"
 msgstr "이 저장소 볼륨이 이미 있습니다"
-
-msgid "this version of libxenlight does not support backend domain name"
-msgstr "이 버전의 libxenlight는 백엔드 도메인 이름을 지원하지 않습니다"
 
 msgid "threshold as a scaled number (by default bytes)"
 msgstr "스케일된 숫자로서의 임계값(기본적으로 바이트)"
@@ -35936,7 +35659,6 @@ msgstr "qemu-img를 찾을 수 없습니다"
 msgid "unable to find valid requested VMware backend '%s'"
 msgstr "요청된 유효한 VMware 백엔드 '%s'를 찾을 수 없습니다"
 
-#. fdatasync() may fail on some special FDs, e.g. pipes
 #, c-format
 msgid "unable to fsync %s"
 msgstr "fsync %s로 할 수 없음"
@@ -36674,22 +36396,6 @@ msgstr "예상치 못한 스트림 구멍"
 msgid "unexpected sysinfo type model %d"
 msgstr "예기치 못한 시스템 정보 유형 모델 %d"
 
-#, c-format
-msgid "unexpected timer mode %d"
-msgstr "예기치 못한 타이머 모드 %d"
-
-#, c-format
-msgid "unexpected timer name %d"
-msgstr "예기치 못한 타이머 이름 %d"
-
-#, c-format
-msgid "unexpected timer tickpolicy %d"
-msgstr "예기치 못한 타이머 tickpolicy %d"
-
-#, c-format
-msgid "unexpected timer track %d"
-msgstr "예기치 못한 타이머 트랙 %d"
-
 msgid "unexpected transport in <domainbackup>"
 msgstr "<domainbackup>의 예기치 않은 전송"
 
@@ -36739,6 +36445,9 @@ msgstr "예기치 않은 0/음수 길이 요청 %lld"
 msgid "unexpectedly failed"
 msgstr "예상치 못하게 실패함"
 
+msgid "unfiltered sgio is no longer supported"
+msgstr ""
+
 #, c-format
 msgid "unimplemented parameter type %d"
 msgstr "구현되지 않은 매개변수 유형 %d"
@@ -36746,8 +36455,6 @@ msgstr "구현되지 않은 매개변수 유형 %d"
 msgid "unix"
 msgstr "유닉스"
 
-#. Something went wrong retrieving a volume path, cope with it
-#. Something went wrong retrieving volume info, cope with it
 msgid "unknown"
 msgstr "알 수 없음"
 
@@ -36783,10 +36490,6 @@ msgid "unknown OS type '%s'"
 msgstr "알려지지 않은 OS 유형 '%s'"
 
 #, c-format
-msgid "unknown PM state value %s"
-msgstr "알 수 없는 PM 상태 값 %s"
-
-#, c-format
 msgid "unknown QEMU_AUDIO_DRV setting %s"
 msgstr "알 수 없는 QEMU_AUDIO_DRV 설정 %s"
 
@@ -36809,18 +36512,6 @@ msgstr "'%s'을 위해 알려지지 않은 SCSI 대상 기능 유형 '%s'"
 #, c-format
 msgid "unknown SDL_AUDIODRIVER setting %s"
 msgstr "알 수 없는 SDL_AUDIODRIVER 설정 %s"
-
-#, c-format
-msgid "unknown accel2d value '%s'"
-msgstr "알 수 없는 accel2d 값 '%s'"
-
-#, c-format
-msgid "unknown accel3d value '%s'"
-msgstr "알 수 없는 accel3d 값 '%s'"
-
-#, c-format
-msgid "unknown accessmode '%s'"
-msgstr "알 수 없는 액세스 모드 '%s'"
 
 #, c-format
 msgid "unknown address type '%s'"
@@ -36874,10 +36565,6 @@ msgid "unknown bonding mode %s"
 msgstr "알려지지 않은 본딩 모드 %s"
 
 #, c-format
-msgid "unknown boot device '%s'"
-msgstr "알려지지 않은 부팅 장치 %s"
-
-#, c-format
 msgid "unknown capability type '%d' for '%s'"
 msgstr "기능 유형 '%d'가('%s'에 대해) 알려져 있지 않음"
 
@@ -36929,10 +36616,6 @@ msgid "unknown device type in '%s'"
 msgstr "'%s'에 알 수 없는 장치 유형"
 
 #, c-format
-msgid "unknown dhcp peerdns value %s"
-msgstr "알려지지 않은 dhcp peerdns 값 %s"
-
-#, c-format
 msgid "unknown disk snapshot driver '%s'"
 msgstr "알 수 없는 디스크 스냅샷 드라이버 '%s'"
 
@@ -36972,16 +36655,8 @@ msgid "unknown event type %s"
 msgstr "알 수 없는 이벤트 유형 %s"
 
 #, c-format
-msgid "unknown filesystem type '%s'"
-msgstr "알려지지 않은 파일 시스템 유형 '%s'"
-
-#, c-format
 msgid "unknown firmware value %s"
 msgstr "알 수 없는 펌웨어 값 %s"
-
-#, c-format
-msgid "unknown flock value '%s'"
-msgstr "알 수 없는 무리 값 '%s'"
 
 #, c-format
 msgid "unknown forwarding type '%s'"
@@ -37013,14 +36688,6 @@ msgid "unknown hostdev mode '%s'"
 msgstr "알려지지 않은 hostdev 모드 '%s'"
 
 #, c-format
-msgid "unknown hostdev model '%s'"
-msgstr "알 수 없는 hostdev 모델 '%s'"
-
-#, c-format
-msgid "unknown hostdev rawio setting '%s'"
-msgstr "알 수 없는 hostdev rawio 설정 '%s'"
-
-#, c-format
 msgid "unknown hub device type '%s'"
 msgstr "알 수 없는 허브 장치 유형 '%s'"
 
@@ -37045,24 +36712,12 @@ msgid "unknown inputvol storage vol type %d"
 msgstr "알 수 없는 입력볼륨 저장소 볼륨 유형 %d"
 
 #, c-format
-msgid "unknown interface event_idx mode '%s'"
-msgstr "알 수 없는 인터페이스 event_idx 모드 '%s'"
-
-#, c-format
-msgid "unknown interface ioeventfd mode '%s'"
-msgstr "알 수 없는 인터페이스 ioeventfd 모드 '%s'"
-
-#, c-format
 msgid "unknown interface link state '%s'"
 msgstr "알 수 없는 인터페이스 링크 상태 '%s'"
 
 #, c-format
 msgid "unknown interface startmode %s"
 msgstr "알려지지 않은 인터페이스 startmode %s"
-
-#, c-format
-msgid "unknown interface type %s"
-msgstr "알려지지 않은 인터페이스 유형 %s"
 
 #, c-format
 msgid "unknown interface type: '%s'"
@@ -37093,10 +36748,6 @@ msgid "unknown metadata type '%d'"
 msgstr "알 수 없는 메타데이터 유형 '%d'"
 
 #, c-format
-msgid "unknown migratable value for '%s' host CPU model property"
-msgstr "'%s' 호스트 CPU 모델 속성을 위해 알지 못하는 이전 가능 값"
-
-#, c-format
 msgid "unknown migration parameter '%s'"
 msgstr "알 수 없는 이전 매개변수 '%s'"
 
@@ -37114,14 +36765,6 @@ msgstr "알 수 없는 미러 작업 유형 '%s'"
 #, c-format
 msgid "unknown mirror ready state %s"
 msgstr "알 수 없는 미러 준비 상태 %s"
-
-#, c-format
-msgid "unknown model '%s'"
-msgstr "알 수 없는 모델 '%s'"
-
-#, c-format
-msgid "unknown multidevs '%s'"
-msgstr "알 수 없는 다중 개발자 '%s'"
 
 #, c-format
 msgid "unknown network device feature '%s'"
@@ -37150,24 +36793,12 @@ msgid "unknown partition type"
 msgstr "알 수 없는 파티션 유형"
 
 #, c-format
-msgid "unknown pci writeFiltering setting '%s'"
-msgstr "알 수 없는 PCI writeFiltering 설정 '%s'"
-
-#, c-format
 msgid "unknown pool format number %d"
 msgstr "알려져 있지 않은 풀(pool) 형식 번호 %d"
 
 #, c-format
 msgid "unknown pool format type %s"
 msgstr "알 수 없는 풀 포맷 형식 %s"
-
-#, c-format
-msgid "unknown port isolated value '%s'"
-msgstr "알 수 없는 포트 격리 값 '%s'"
-
-#, c-format
-msgid "unknown posix lock value '%s'"
-msgstr "알 수 없는 posix 잠금 값 '%s'"
 
 #, c-format
 msgid "unknown procedure: %d"
@@ -37217,10 +36848,6 @@ msgstr "알려져 있지 않은 비밀 사용 유형"
 #, c-format
 msgid "unknown secret usage type %s"
 msgstr "알려져 있지 않은 비밀 사용 유형 %s"
-
-#, c-format
-msgid "unknown sgio mode '%s'"
-msgstr "알 수 없는 sgio 모드 '%s'"
 
 #, c-format
 msgid "unknown smbios mode '%s'"
@@ -37291,10 +36918,6 @@ msgid "unknown timer name '%s'"
 msgstr "알 수 없는 타이머 이름 '%s'"
 
 #, c-format
-msgid "unknown timer present value '%s'"
-msgstr "알 수 없는 타이머 표시 값: '%s'"
-
-#, c-format
 msgid "unknown timer tickpolicy '%s'"
 msgstr "알 수 없는 타이머 tickpolicy '%s'"
 
@@ -37309,14 +36932,6 @@ msgstr "알 수 없는 형식 '%s'"
 #, c-format
 msgid "unknown type presented to host for character device: %s"
 msgstr "문자 장치의 호스트에 알 수 없는 형식이 표시되어 있습니다: %s"
-
-#, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'display'"
-msgstr "<hostdev> 속성 '디스플레이'에 대한 알 수 없는 값 '%s'"
-
-#, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
-msgstr "<hostdev> 속성 'ramfb'에 대한 알 수 없는 값 '%s'"
 
 #, c-format
 msgid "unknown value '%s' in attribute 'usable'"
@@ -37379,10 +36994,6 @@ msgstr "알려지지 않은 와치독 방식 '%s'"
 msgid "unknown write_policy value '%u'"
 msgstr "알 수 없는 write_policy 값 '%u'"
 
-#, c-format
-msgid "unknown xattr value '%s'"
-msgstr "알 수 없는 xattr 값 '%s'"
-
 msgid "unlimited"
 msgstr "제한 없음"
 
@@ -37399,9 +37010,6 @@ msgstr "일시 정지 해제"
 
 msgid "unplug of device was rejected by the guest"
 msgstr "게스트가 기기 분리를 거부했습니다"
-
-msgid "unpriv_sgio is not supported by this kernel"
-msgstr "이 커널은 unpriv_sgio를 지원하지 않습니다"
 
 #, c-format
 msgid "unprocessed hole of size %lld already in the queue"
@@ -37622,28 +37230,6 @@ msgstr "지원되지 않는 파일 시스템 드라이버 '%s'"
 msgid "unsupported filesystem type '%s'"
 msgstr "지원되지 않는 파일 시스템 유형 '%s'"
 
-#. *
-#. * virCheckFlags:
-#. * @supported: an OR'ed set of supported flags
-#. * @retval: return value in case unsupported flags were passed
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Exits the caller function if unsupported flags were
-#. * passed to it.
-#.
-#. *
-#. * virCheckFlagsGoto:
-#. * @supported: an OR'ed set of supported flags
-#. * @label: label to jump to on error
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, c-format
 msgid "unsupported flags (0x%lx) in function %s"
 msgstr "지원되지 않는 플래그 (0x%lx) (기능 %s에서)"
@@ -38207,6 +37793,10 @@ msgid "video type %s is not supported by libxl"
 msgstr "비디오 유형 %s는 libxl에서 지원되지 않습니다"
 
 #, c-format
+msgid "video type '%s' doesn't support multiple 'heads'"
+msgstr ""
+
+#, c-format
 msgid "video type '%s' is only valid as primary video device"
 msgstr "비디오 유형 '%s'는 기본 비디오 장치로만 유효합니다"
 
@@ -38437,6 +38027,10 @@ msgstr "virtiofs는 아직 세션 모드에서 지원되지 않습니다"
 msgid "virtiofs only supports passthrough accessmode"
 msgstr "virtiofs는 통과 액세스 모드만 지원합니다"
 
+#, c-format
+msgid "virtiofsd binary '%s' is not executable"
+msgstr ""
+
 msgid "virtiofsd died unexpectedly"
 msgstr "virtiofsd가 예기치 않게 사망했습니다"
 
@@ -38480,6 +38074,10 @@ msgstr ""
 
 msgid "vlan trunking is not supported by SR-IOV network devices"
 msgstr "VLAN 트렁킹은 SR-IOV 네트워크 장치에서 지원되지 않습니다"
+
+#, c-format
+msgid "vlanid out of range: %d"
+msgstr ""
 
 msgid "vmcoreinfo is not available with this QEMU binary"
 msgstr "vmcoreinfo는 이 QEMU 바이너리와 함께 사용할 수 없습니다"
@@ -38527,22 +38125,6 @@ msgstr "vnuma 형제 %zu에 vcpus 세트가 없습니다"
 #, c-format
 msgid "vnuma vnode %zu contains invalid pnode value '%s'"
 msgstr "vnuma vnode %zu에 잘못된 pnode 값 '%s'가 포함되어 있습니다"
-
-#, c-format
-msgid "vnuma vnode %zu pnode '%s' too long for destination"
-msgstr "vnuma vnode %zu pnode '%s'가 대상에 대해 너무 깁니다"
-
-#, c-format
-msgid "vnuma vnode %zu size '%s' too long for destination"
-msgstr "vnuma vnode %zu 크기 '%s'가 대상에 대해 너무 깁니다"
-
-#, c-format
-msgid "vnuma vnode %zu vcpus '%s' too long for destination"
-msgstr "vnuma vnode %zu vcpus '%s'가 대상에 대해 너무 깁니다"
-
-#, c-format
-msgid "vnuma vnode %zu vdistances '%s' too long for destination"
-msgstr "vnuma vnode %zu vdistances '%s'가 대상에 대해 너무 깁니다"
 
 #, c-format
 msgid "vnuma vnode invalid format '%s'"
@@ -38827,6 +38409,298 @@ msgstr ""
 msgid "{[--%s] <string>}..."
 msgstr "{[--%s] <string>}..."
 
+#~ msgid "'queues' attribute must be positive number: %s"
+#~ msgstr "'queues' 속성은 양수여야 합니다: %s"
+
+#~ msgid "'rx_queue_size' attribute must be positive number: %s"
+#~ msgstr "'rx_queue_size' 속성은 양수여야 합니다: %s"
+
+#~ msgid "'sgio' is not supported for SCSI generic device yet "
+#~ msgstr "'sgio'는 아직 전반적인 SCSI장비들에서 지원이 되지 않습니다 "
+
+#~ msgid "'tx_queue_size' attribute must be positive number: %s"
+#~ msgstr "'tx_queue_size' 속성은 양수여야 합니다: %s"
+
+#~ msgid "Cannot check dnsmasq binary %s"
+#~ msgstr "dnsmasq 바이너리 %s를 확인할 수 없음"
+
+#~ msgid "Cannot find name for FD %d socket family %d"
+#~ msgstr "%d 소켓계열의 파일디스크 (FD) %d의 이름을 찾을 수 없습니다"
+
+#~ msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
+#~ msgstr "ifname %svf%d를 위한 연결장치 MAC/vlanid를 %s/%d에 설정할 수 없음"
+
+#~ msgid "Could not start 'swtpm'. exitstatus: %d, error: %s"
+#~ msgstr "'swtpm'을 시작할 수 없습니다. 종료 상태: %d, 오류: %s"
+
+#~ msgid "Invalid 'removed' attribute for feature %s in model %s"
+#~ msgstr "모델 %s의 피쳐 %s에 대한 잘못된 'removed' (제거됨) 속성"
+
+#~ msgid "Invalid TSC frequency"
+#~ msgstr "잘못된 TSC 주파수"
+
+#~ msgid "Invalid TSC scaling attribute"
+#~ msgstr "잘못된 TSC 스케일링 속성"
+
+#~ msgid "Invalid dns enable setting '%s' in network '%s'"
+#~ msgstr "네트워크 '%s'에서 잘못된 DNS 활성화 설정 '%s'"
+
+#~ msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
+#~ msgstr "네트워크 '%s'의 잘못된 DNS forwardPlainNames 설정 '%s'"
+
+#~ msgid "Invalid domain localOnly setting '%s' in network '%s'"
+#~ msgstr "네트워크 '%s'에서 잘못된 도메인 localOnly 설정 '%s'"
+
+#~ msgid "Invalid guest rx filters trust setting '%s' "
+#~ msgstr "잘못된 게스트 rx 필터 신뢰 설정 '%s' "
+
+#~ msgid "Invalid ip address prefix value"
+#~ msgstr "잘못된 ip 주소 접두어 값"
+
+#~ msgid "Invalid localPtr value '%s' in network '%s'"
+#~ msgstr "네트워크 '%s'의 잘못된 localPtr 값 '%s'"
+
+#~ msgid "Invalid managed setting '%s' in network port"
+#~ msgstr "네트워크 포트에서 잘못 관리된 설정 '%s'"
+
+#~ msgid "Invalid match attribute for CPU specification"
+#~ msgstr "CPU 설정에서 매치 특성이 잘못되었습니다"
+
+#~ msgid "Invalid memory core dump attribute value '%s'"
+#~ msgstr "잘못된 메모리 코어 덤프 속성 값 '%s'"
+
+#~ msgid "Invalid network prt plug type '%s'"
+#~ msgstr "잘못된 네트워크 prt 플러그 유형 '%s'"
+
+#~ msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
+#~ msgstr "네트워크 '%s'의 잘못된 trustGuestRxFilters 설정 '%s'"
+
+#~ msgid "Invalid trustGuestRxFilters setting '%s' in portgroup"
+#~ msgstr "포트 그룹에서 잘못된 trustGuestRxFilters 설정 '%s'"
+
+#~ msgid "Invalid value in migratable attribute: '%s'"
+#~ msgstr "이전 할 수 있는 속성에서 잘못된 값: '%s'"
+
+#~ msgid "KVM is not supported by '%s' on this host"
+#~ msgstr "KVM은 이 호스트에서 '%s'에 의해 지원되지 않습니다"
+
+#~ msgid "Missing 'model' attribute in mediated device's <hostdev> element"
+#~ msgstr "중재된 장치의 <hostdev> 요소에 'model' 속성이 없습니다"
+
+#~ msgid "Target timer presence %d does not match source %d"
+#~ msgstr "대상 타이머 상태 %d가 소스 %d와 일치하지 않습니다"
+
+#~ msgid "Unable to close file '%s'"
+#~ msgstr "파일 '%s'를 닫을 수 없습니다"
+
+#~ msgid "Unable to get device ID '%s'"
+#~ msgstr "장치 ID '%s'을 가져 올 수 없습니다"
+
+#~ msgid "Unable to get minor number of device '%s'"
+#~ msgstr "장치 '%s'의 부 번호를 가져 올 수 없습니다"
+
+#~ msgid "Unexpected socket family %d"
+#~ msgstr "예기치 않은 소켓 제품군 %d"
+
+#~ msgid "Unknown PCI device <driver name='%s'/> has been specified"
+#~ msgstr "알 수 없는 PCI 장치 <driver name='%s'/>가 지정되어 있습니다"
+
+#~ msgid "Unknown interface <driver name='%s'> has been specified"
+#~ msgstr "알 수 없는 인터페이스 <driver name='%s'>가 지정되었습니다"
+
+#~ msgid "Unknown interface <driver txmode='%s'> has been specified"
+#~ msgstr "알 수 없는 인터페이스 <driver txmode='%s'>가 지정되었습니다"
+
+#~ msgid "cannot parse cache mode '%s' for virtiofs"
+#~ msgstr "virtiofs에 대한 캐시 모드 '%s'을(를) 구문 분석할 수 없습니다"
+
+#~ msgid "cannot parse sandbox mode '%s' for virtiofs"
+#~ msgstr "virtiofs에 대한 샌드박스 모드 '%s'를 구문 분석할 수 없습니다"
+
+#~ msgid "dnsmasq binary %s is not executable"
+#~ msgstr "dnsmasq 바이너리 %s를 실행 할 수 없습니다"
+
+#~ msgid "failed to parse value of %s"
+#~ msgstr "%s 값을 구문 분석하는데 실패"
+
+#~ msgid "fdset must be valid"
+#~ msgstr "파일디스크 설정 (fdset)은 유효해야 합니다"
+
+#~ msgid "file descriptor %d has not been transferred"
+#~ msgstr "파일 설명자 %d이(가) 전송되지 않았습니다"
+
+#~ msgid "interface misses the type attribute"
+#~ msgstr "인터페이스에 type 특성이 빠졌습니다"
+
+#~ msgid "invalid allowReboot value '%s'"
+#~ msgstr "잘못된 allowReboot 값 '%s'"
+
+#~ msgid "invalid dmode: '%s'"
+#~ msgstr "잘못된 dmode: '%s'"
+
+#~ msgid "invalid firmware feature enabled value '%s'"
+#~ msgstr "잘못된 펌웨어 기능 활성화 값 '%s'"
+
+#~ msgid "invalid firmware feature name '%s'"
+#~ msgstr "잘못된 펌웨어 기능 이름 '%s'"
+
+#~ msgid "invalid fmode: '%s'"
+#~ msgstr "잘못된 fmode: '%s'"
+
+#~ msgid "invalid mac address check value: '%s'"
+#~ msgstr "잘못된 MAC 주소 확인 값: '%s'"
+
+#~ msgid ""
+#~ "invalid mac address type value: '%s'. Valid values are \"generated\" and "
+#~ "\"static\"."
+#~ msgstr ""
+#~ "잘못된 MAC 주소 유형 값: '%s'. 유효한 값은 \"생성됨\" 및 \"정적\"입니다."
+
+#~ msgid "invalid migratability value for host CPU model"
+#~ msgstr "호스트 CPU 모델을 위해 잘못된 이전 가능성 값"
+
+#~ msgid "invalid or missing decode/guest attribute in CPU model %s"
+#~ msgstr "CPU 모델 %s의 디코드/게스트 속성이 잘못되었거나 누락되었습니다"
+
+#~ msgid "invalid or missing decode/host attribute in CPU model %s"
+#~ msgstr "CPU 모델 %s의 디코드/호스트 속성이 잘못되었거나 누락되었습니다"
+
+#~ msgid "invalid storage pool cow feature state '%s'"
+#~ msgstr "잘못된 저장소 pool cow 기능 상태 '%s'"
+
+#~ msgid "invalid value for 'managed': %s"
+#~ msgstr "'관리'에 대한 잘못된 값: %s"
+
+#~ msgid "invalid value for boot menu timeout"
+#~ msgstr "부팅 메뉴 시간 초과 값이 잘못되었습니다"
+
+#~ msgid "invalid value for rebootTimeout"
+#~ msgstr "rebootTimeout (재시작 시간초과)에 대한 잘못된 값"
+
+#~ msgid "missing @managed attribute for <reservations/>"
+#~ msgstr "<reservations/>를 @managed 속성 누락"
+
+#~ msgid "missing boot device"
+#~ msgstr "부트 장치가 누락되어 있음"
+
+#~ msgid "missing values for acceleration"
+#~ msgstr "가속에 대한 누락된 값"
+
+#~ msgid "sgio of shared disk '%s' conflicts with other active domains"
+#~ msgstr "공유 디스크 '%s'의 sgio가 다른 활성 도메인과 충돌합니다"
+
+#~ msgid ""
+#~ "sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active "
+#~ "domains"
+#~ msgstr ""
+#~ "공유 디스크 'pool=%s' 'volume=%s'의 sgio와 다른 활성화된 도메인과 충돌이 "
+#~ "발생했습니다"
+
+#~ msgid "swtpm failed to start"
+#~ msgstr "swtpm을 시작하지 못했습니다"
+
+#~ msgid "this version of libxenlight does not support backend domain name"
+#~ msgstr "이 버전의 libxenlight는 백엔드 도메인 이름을 지원하지 않습니다"
+
+#~ msgid "unexpected timer mode %d"
+#~ msgstr "예기치 못한 타이머 모드 %d"
+
+#~ msgid "unexpected timer name %d"
+#~ msgstr "예기치 못한 타이머 이름 %d"
+
+#~ msgid "unexpected timer tickpolicy %d"
+#~ msgstr "예기치 못한 타이머 tickpolicy %d"
+
+#~ msgid "unexpected timer track %d"
+#~ msgstr "예기치 못한 타이머 트랙 %d"
+
+#~ msgid "unknown PM state value %s"
+#~ msgstr "알 수 없는 PM 상태 값 %s"
+
+#~ msgid "unknown accel2d value '%s'"
+#~ msgstr "알 수 없는 accel2d 값 '%s'"
+
+#~ msgid "unknown accel3d value '%s'"
+#~ msgstr "알 수 없는 accel3d 값 '%s'"
+
+#~ msgid "unknown accessmode '%s'"
+#~ msgstr "알 수 없는 액세스 모드 '%s'"
+
+#~ msgid "unknown boot device '%s'"
+#~ msgstr "알려지지 않은 부팅 장치 %s"
+
+#~ msgid "unknown dhcp peerdns value %s"
+#~ msgstr "알려지지 않은 dhcp peerdns 값 %s"
+
+#~ msgid "unknown filesystem type '%s'"
+#~ msgstr "알려지지 않은 파일 시스템 유형 '%s'"
+
+#~ msgid "unknown flock value '%s'"
+#~ msgstr "알 수 없는 무리 값 '%s'"
+
+#~ msgid "unknown hostdev model '%s'"
+#~ msgstr "알 수 없는 hostdev 모델 '%s'"
+
+#~ msgid "unknown hostdev rawio setting '%s'"
+#~ msgstr "알 수 없는 hostdev rawio 설정 '%s'"
+
+#~ msgid "unknown interface event_idx mode '%s'"
+#~ msgstr "알 수 없는 인터페이스 event_idx 모드 '%s'"
+
+#~ msgid "unknown interface ioeventfd mode '%s'"
+#~ msgstr "알 수 없는 인터페이스 ioeventfd 모드 '%s'"
+
+#~ msgid "unknown interface type %s"
+#~ msgstr "알려지지 않은 인터페이스 유형 %s"
+
+#~ msgid "unknown migratable value for '%s' host CPU model property"
+#~ msgstr "'%s' 호스트 CPU 모델 속성을 위해 알지 못하는 이전 가능 값"
+
+#~ msgid "unknown model '%s'"
+#~ msgstr "알 수 없는 모델 '%s'"
+
+#~ msgid "unknown multidevs '%s'"
+#~ msgstr "알 수 없는 다중 개발자 '%s'"
+
+#~ msgid "unknown pci writeFiltering setting '%s'"
+#~ msgstr "알 수 없는 PCI writeFiltering 설정 '%s'"
+
+#~ msgid "unknown port isolated value '%s'"
+#~ msgstr "알 수 없는 포트 격리 값 '%s'"
+
+#~ msgid "unknown posix lock value '%s'"
+#~ msgstr "알 수 없는 posix 잠금 값 '%s'"
+
+#~ msgid "unknown sgio mode '%s'"
+#~ msgstr "알 수 없는 sgio 모드 '%s'"
+
+#~ msgid "unknown timer present value '%s'"
+#~ msgstr "알 수 없는 타이머 표시 값: '%s'"
+
+#~ msgid "unknown value '%s' for <hostdev> attribute 'display'"
+#~ msgstr "<hostdev> 속성 '디스플레이'에 대한 알 수 없는 값 '%s'"
+
+#~ msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
+#~ msgstr "<hostdev> 속성 'ramfb'에 대한 알 수 없는 값 '%s'"
+
+#~ msgid "unknown xattr value '%s'"
+#~ msgstr "알 수 없는 xattr 값 '%s'"
+
+#~ msgid "unpriv_sgio is not supported by this kernel"
+#~ msgstr "이 커널은 unpriv_sgio를 지원하지 않습니다"
+
+#~ msgid "vnuma vnode %zu pnode '%s' too long for destination"
+#~ msgstr "vnuma vnode %zu pnode '%s'가 대상에 대해 너무 깁니다"
+
+#~ msgid "vnuma vnode %zu size '%s' too long for destination"
+#~ msgstr "vnuma vnode %zu 크기 '%s'가 대상에 대해 너무 깁니다"
+
+#~ msgid "vnuma vnode %zu vcpus '%s' too long for destination"
+#~ msgstr "vnuma vnode %zu vcpus '%s'가 대상에 대해 너무 깁니다"
+
+#~ msgid "vnuma vnode %zu vdistances '%s' too long for destination"
+#~ msgstr "vnuma vnode %zu vdistances '%s'가 대상에 대해 너무 깁니다"
+
 #~ msgid "%s not available, firewall backend will not function"
 #~ msgstr "%s를 사용 할 수 없으며, 방화벽 백엔드가 작동하지 않습니다"
 
@@ -38921,11 +38795,6 @@ msgstr "{[--%s] <string>}..."
 
 #~ msgid "[%s]"
 #~ msgstr "[%s]"
-
-#~ msgid "change of nodeset for running domain requires strict numa mode"
-#~ msgstr ""
-#~ "실행 중인 도메인에 대한 노드 집합을 변경하려면 엄격한 numa 모드가 필요합니"
-#~ "다"
 
 #~ msgid "couldn't write radvd config file '%s'"
 #~ msgstr "radvd 구성 파일 '%s'을(를) 쓸 수 없습니다"

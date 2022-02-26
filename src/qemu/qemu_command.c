@@ -29,6 +29,7 @@
 #include "qemu_security.h"
 #include "qemu_slirp.h"
 #include "qemu_block.h"
+#include "qemu_fd.h"
 #include "viralloc.h"
 #include "virlog.h"
 #include "virarch.h"
@@ -297,73 +298,6 @@ qemuBuildMasterKeyCommandLine(virCommand *cmd,
         return -1;
 
     return 0;
-}
-
-
-/**
- * qemuBuildFDSet:
- * @fd: fd to reassign to the child
- * @idx: index in the fd set
- *
- * Format the parameters for the -add-fd command line option
- * for the given file descriptor. The file descriptor must previously
- * have been 'transferred' in a virCommandPassFDIndex() call,
- * and @idx is the value returned by that call.
- */
-static char *
-qemuBuildFDSet(int fd, size_t idx)
-{
-    return g_strdup_printf("set=%zu,fd=%d", idx, fd);
-}
-
-
-/**
- * qemuVirCommandGetFDSet:
- * @cmd: the command to modify
- * @fd: fd to reassign to the child
- *
- * Get the parameters for the QEMU -add-fd command line option
- * for the given file descriptor. The file descriptor must previously
- * have been 'transferred' in a virCommandPassFD() call.
- * This function for example returns "set=10,fd=20".
- */
-static char *
-qemuVirCommandGetFDSet(virCommand *cmd, int fd)
-{
-    int idx = virCommandPassFDGetFDIndex(cmd, fd);
-
-    if (idx < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("file descriptor %d has not been transferred"), fd);
-        return NULL;
-    }
-
-    return g_strdup_printf("set=%d,fd=%d", idx, fd);
-}
-
-
-/**
- * qemuVirCommandGetDevSet:
- * @cmd: the command to modify
- * @fd: fd to reassign to the child
- *
- * Get the parameters for the QEMU path= parameter where a file
- * descriptor is accessed via a file descriptor set, for example
- * /dev/fdset/10. The file descriptor must previously have been
- * 'transferred' in a virCommandPassFD() call.
- */
-static char *
-qemuVirCommandGetDevSet(virCommand *cmd, int fd)
-{
-    int idx = virCommandPassFDGetFDIndex(cmd, fd);
-
-    if (idx < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("file descriptor %d has not been transferred"), fd);
-        return NULL;
-    }
-
-    return g_strdup_printf("/dev/fdset/%d", idx);
 }
 
 
@@ -1361,8 +1295,8 @@ qemuBuildChardevStr(const virDomainChrSourceDef *dev,
         path = dev->data.file.path;
         append = dev->data.file.append;
 
-        if (chrSourcePriv->fdset) {
-            path = chrSourcePriv->fdset;
+        if (chrSourcePriv->sourcefd) {
+            path = qemuFDPassGetPath(chrSourcePriv->sourcefd);
             append = VIR_TRISTATE_SWITCH_ON;
         }
 
@@ -1429,8 +1363,8 @@ qemuBuildChardevStr(const virDomainChrSourceDef *dev,
 
     case VIR_DOMAIN_CHR_TYPE_UNIX:
         virBufferAsprintf(&buf, "socket,id=%s", charAlias);
-        if (chrSourcePriv->passedFD != -1) {
-            virBufferAsprintf(&buf, ",fd=%d", chrSourcePriv->passedFD);
+        if (chrSourcePriv->sourcefd) {
+            virBufferAsprintf(&buf, ",fd=%s", qemuFDPassGetPath(chrSourcePriv->sourcefd));
         } else {
             virBufferAddLit(&buf, ",path=");
             virQEMUBuildBufferEscapeComma(&buf, dev->data.nix.path);
@@ -1465,8 +1399,8 @@ qemuBuildChardevStr(const virDomainChrSourceDef *dev,
         path = dev->logfile;
         append = dev->logappend;
 
-        if (chrSourcePriv->logFdset) {
-            path = chrSourcePriv->logFdset;
+        if (chrSourcePriv->logfd) {
+            path = qemuFDPassGetPath(chrSourcePriv->logfd);
             append = VIR_TRISTATE_SWITCH_ON;
         }
 
@@ -1526,28 +1460,8 @@ qemuBuildChardevCommand(virCommand *cmd,
         break;
 
     case VIR_DOMAIN_CHR_TYPE_FILE:
-        if (chrSourcePriv->fd != -1) {
-            g_autofree char *fdset = NULL;
-            size_t idx;
-
-            virCommandPassFDIndex(cmd, chrSourcePriv->fd,
-                                  VIR_COMMAND_PASS_FD_CLOSE_PARENT, &idx);
-            fdset = qemuBuildFDSet(chrSourcePriv->fd, idx);
-            chrSourcePriv->fd = -1;
-
-            virCommandAddArg(cmd, "-add-fd");
-            virCommandAddArg(cmd, fdset);
-
-            chrSourcePriv->fdset = g_strdup_printf("/dev/fdset/%zu", idx);
-        }
-        break;
-
     case VIR_DOMAIN_CHR_TYPE_UNIX:
-        if (chrSourcePriv->fd != -1) {
-            virCommandPassFD(cmd, chrSourcePriv->fd, VIR_COMMAND_PASS_FD_CLOSE_PARENT);
-            chrSourcePriv->passedFD = chrSourcePriv->fd;
-            chrSourcePriv->fd = -1;
-        }
+        qemuFDPassTransferCommand(chrSourcePriv->sourcefd, cmd);
         break;
 
     case VIR_DOMAIN_CHR_TYPE_NULL:
@@ -1570,20 +1484,7 @@ qemuBuildChardevCommand(virCommand *cmd,
         return -1;
     }
 
-    if (chrSourcePriv->logfd != -1) {
-        g_autofree char *fdset = NULL;
-        size_t idx;
-
-        virCommandPassFDIndex(cmd, chrSourcePriv->logfd,
-                              VIR_COMMAND_PASS_FD_CLOSE_PARENT, &idx);
-        fdset = qemuBuildFDSet(chrSourcePriv->logfd, idx);
-        chrSourcePriv->logfd = -1;
-
-        virCommandAddArg(cmd, "-add-fd");
-        virCommandAddArg(cmd, fdset);
-
-        chrSourcePriv->logFdset = g_strdup_printf("/dev/fdset/%zu", idx);
-    }
+    qemuFDPassTransferCommand(chrSourcePriv->logfd, cmd);
 
     if (!(charstr = qemuBuildChardevStr(dev, charAlias)))
         return -1;
@@ -2101,22 +2002,6 @@ qemuBuildDiskGetErrorPolicy(virDomainDiskDef *disk,
 }
 
 
-static void
-qemuBuildDiskFrontendAttributeErrorPolicy(virDomainDiskDef *disk,
-                                          virBuffer *buf)
-{
-    const char *wpolicy = NULL;
-    const char *rpolicy = NULL;
-
-    qemuBuildDiskGetErrorPolicy(disk, &wpolicy, &rpolicy);
-
-    if (wpolicy)
-        virBufferAsprintf(buf, ",werror=%s", wpolicy);
-    if (rpolicy)
-        virBufferAsprintf(buf, ",rerror=%s", rpolicy);
-}
-
-
 static char *
 qemuBuildDriveStr(virDomainDiskDef *disk,
                   virQEMUCaps *qemuCaps)
@@ -2142,8 +2027,17 @@ qemuBuildDriveStr(virDomainDiskDef *disk,
 
     /* werror/rerror are really frontend attributes, but older
      * qemu requires them on -drive instead of -device */
-    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_STORAGE_WERROR))
-        qemuBuildDiskFrontendAttributeErrorPolicy(disk, &opt);
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_STORAGE_WERROR)) {
+        const char *wpolicy = NULL;
+        const char *rpolicy = NULL;
+
+        qemuBuildDiskGetErrorPolicy(disk, &wpolicy, &rpolicy);
+
+        if (wpolicy)
+            virBufferAsprintf(&opt, ",werror=%s", wpolicy);
+        if (rpolicy)
+            virBufferAsprintf(&opt, ",rerror=%s", rpolicy);
+    }
 
     if (disk->src->readonly)
         virBufferAddLit(&opt, ",readonly=on");
@@ -5000,8 +4894,12 @@ qemuBuildVideoCommandLine(virCommand *cmd,
             qemuDomainChrSourcePrivate *chrsrcpriv = QEMU_DOMAIN_CHR_SOURCE_PRIVATE(chrsrc);
 
             chrsrc->type = VIR_DOMAIN_CHR_TYPE_UNIX;
-            chrsrcpriv->fd = videopriv->vhost_user_fd;
-            videopriv->vhost_user_fd = -1;
+            chrsrcpriv->sourcefd = qemuFDPassNewDirect(video->info.alias, priv);
+
+            if (qemuFDPassAddFD(chrsrcpriv->sourcefd,
+                                &videopriv->vhost_user_fd,
+                                "-vhost-user") < 0)
+                return -1;
 
             if (qemuBuildChardevCommand(cmd, chrsrc, chrAlias, priv->qemuCaps) < 0)
                 return -1;
@@ -7471,8 +7369,9 @@ qemuBuildMemCommandLine(virCommand *cmd,
          * regular memory because -mem-path and -mem-prealloc are obsolete.
          * However, if domain has one or more NUMA nodes then there is no
          * default RAM and we mustn't generate the memory object. */
-        if (!virDomainNumaGetNodeCount(def->numa))
-            qemuBuildMemCommandLineMemoryDefaultBackend(cmd, def, priv, defaultRAMid);
+        if (!virDomainNumaGetNodeCount(def->numa) &&
+            qemuBuildMemCommandLineMemoryDefaultBackend(cmd, def, priv, defaultRAMid) < 0)
+            return -1;
     } else {
         /*
          * Add '-mem-path' (and '-mem-prealloc') parameter here if
@@ -8732,6 +8631,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriver *driver,
                               size_t *nnicindexes,
                               int **nicindexes)
 {
+    qemuDomainObjPrivate *priv = vm->privateData;
     virDomainDef *def = vm->def;
     int ret = -1;
     g_autoptr(virJSONValue) nicprops = NULL;
@@ -8743,8 +8643,7 @@ qemuBuildInterfaceCommandLine(virQEMUDriver *driver,
     char **tapfdName = NULL;
     char **vhostfdName = NULL;
     g_autofree char *slirpfdName = NULL;
-    g_autofree char *vdpafdName = NULL;
-    int vdpafd = -1;
+    g_autoptr(qemuFDPass) vdpa = NULL;
     virDomainNetType actualType = virDomainNetGetActualType(net);
     const virNetDevBandwidth *actualBandwidth;
     bool requireNicdev = false;
@@ -8823,9 +8722,17 @@ qemuBuildInterfaceCommandLine(virQEMUDriver *driver,
 
         break;
 
-    case VIR_DOMAIN_NET_TYPE_VDPA:
+    case VIR_DOMAIN_NET_TYPE_VDPA: {
+        VIR_AUTOCLOSE vdpafd = -1;
+
         if ((vdpafd = qemuInterfaceVDPAConnect(net)) < 0)
             goto cleanup;
+
+        vdpa = qemuFDPassNew(net->info.alias, priv);
+
+        if (qemuFDPassAddFD(vdpa, &vdpafd, "-vdpa") < 0)
+            return -1;
+    }
         break;
 
     case VIR_DOMAIN_NET_TYPE_USER:
@@ -8958,26 +8865,13 @@ qemuBuildInterfaceCommandLine(virQEMUDriver *driver,
         vhostfd[i] = -1;
     }
 
-    if (vdpafd > 0) {
-        g_autofree char *fdset = NULL;
-        g_autofree char *addfdarg = NULL;
-        size_t idx;
-
-        virCommandPassFDIndex(cmd, vdpafd, VIR_COMMAND_PASS_FD_CLOSE_PARENT, &idx);
-        fdset = qemuBuildFDSet(vdpafd, idx);
-        vdpafdName = g_strdup_printf("/dev/fdset/%zu", idx);
-        /* set opaque to the devicepath so that we can look up the fdset later
-         * if necessary */
-        addfdarg = g_strdup_printf("%s,opaque=%s", fdset,
-                                   net->data.vdpa.devicepath);
-        virCommandAddArgList(cmd, "-add-fd", addfdarg, NULL);
-        vdpafd = -1;
-    }
+    qemuFDPassTransferCommand(vdpa, cmd);
 
     if (!(hostnetprops = qemuBuildHostNetProps(net,
                                                tapfdName, tapfdSize,
                                                vhostfdName, vhostfdSize,
-                                               slirpfdName, vdpafdName)))
+                                               slirpfdName,
+                                               qemuFDPassGetPath(vdpa))))
         goto cleanup;
 
     if (qemuBuildNetdevCommandlineFromJSON(cmd, hostnetprops, qemuCaps) < 0)
@@ -9035,7 +8929,6 @@ qemuBuildInterfaceCommandLine(virQEMUDriver *driver,
     VIR_FREE(tapfdName);
     VIR_FREE(vhostfd);
     VIR_FREE(tapfd);
-    VIR_FORCE_CLOSE(vdpafd);
     return ret;
 }
 
@@ -9788,10 +9681,14 @@ qemuBuildTPMDevCmd(virCommand *cmd,
 /* this function is exported so that tests can mock the FDs */
 int
 qemuBuildTPMOpenBackendFDs(const char *tpmdev,
-                           const char *cancel_path,
                            int *tpmfd,
                            int *cancelfd)
 {
+    g_autofree char *cancel_path = NULL;
+
+    if (!(cancel_path = virTPMCreateCancelPath(tpmdev)))
+        return -1;
+
     if ((*tpmfd = open(tpmdev, O_RDWR)) < 0) {
         virReportSystemError(errno, _("Could not open TPM device %s"),
                              tpmdev);
@@ -9811,45 +9708,22 @@ qemuBuildTPMOpenBackendFDs(const char *tpmdev,
 
 
 static char *
-qemuBuildTPMBackendStr(virCommand *cmd,
-                       virDomainTPMDef *tpm,
-                       int *tpmfd,
-                       int *cancelfd)
+qemuBuildTPMBackendStr(virDomainTPMDef *tpm,
+                       qemuFDPass *passtpm,
+                       qemuFDPass *passcancel)
 {
     g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
-    g_autofree char *cancel_path = NULL;
-    g_autofree char *devset = NULL;
-    g_autofree char *cancelset = NULL;
-    const char *tpmdev;
-
-    *tpmfd = -1;
-    *cancelfd = -1;
 
     virBufferAsprintf(&buf, "%s", virDomainTPMBackendTypeToString(tpm->type));
     virBufferAsprintf(&buf, ",id=tpm-%s", tpm->info.alias);
 
     switch (tpm->type) {
     case VIR_DOMAIN_TPM_TYPE_PASSTHROUGH:
-        tpmdev = tpm->data.passthrough.source->data.file.path;
-        if (!(cancel_path = virTPMCreateCancelPath(tpmdev)))
-            return NULL;
-
-        if (qemuBuildTPMOpenBackendFDs(tpmdev, cancel_path, tpmfd, cancelfd) < 0)
-            return NULL;
-
-        virCommandPassFD(cmd, *tpmfd, VIR_COMMAND_PASS_FD_CLOSE_PARENT);
-        virCommandPassFD(cmd, *cancelfd, VIR_COMMAND_PASS_FD_CLOSE_PARENT);
-
-        if (!(devset = qemuVirCommandGetDevSet(cmd, *tpmfd)) ||
-            !(cancelset = qemuVirCommandGetDevSet(cmd, *cancelfd)))
-            return NULL;
-
         virBufferAddLit(&buf, ",path=");
-        virQEMUBuildBufferEscapeComma(&buf, devset);
+        virQEMUBuildBufferEscapeComma(&buf, qemuFDPassGetPath(passtpm));
 
         virBufferAddLit(&buf, ",cancel-path=");
-        virQEMUBuildBufferEscapeComma(&buf, cancelset);
-
+        virQEMUBuildBufferEscapeComma(&buf, qemuFDPassGetPath(passcancel));
         break;
     case VIR_DOMAIN_TPM_TYPE_EMULATOR:
         virBufferAddLit(&buf, ",chardev=chrtpm");
@@ -9866,42 +9740,49 @@ static int
 qemuBuildTPMCommandLine(virCommand *cmd,
                         const virDomainDef *def,
                         virDomainTPMDef *tpm,
-                        virQEMUCaps *qemuCaps)
+                        qemuDomainObjPrivate *priv)
 {
     g_autofree char *tpmdevstr = NULL;
-    int tpmfd = -1;
-    int cancelfd = -1;
-    char *fdset;
+    g_autoptr(qemuFDPass) passtpm = NULL;
+    g_autoptr(qemuFDPass) passcancel = NULL;
 
-    if (tpm->type == VIR_DOMAIN_TPM_TYPE_EMULATOR) {
-        if (qemuBuildChardevCommand(cmd, tpm->data.emulator.source, "chrtpm", qemuCaps) < 0)
+    switch ((virDomainTPMBackendType) tpm->type) {
+    case VIR_DOMAIN_TPM_TYPE_PASSTHROUGH: {
+        VIR_AUTOCLOSE fdtpm = -1;
+        VIR_AUTOCLOSE fdcancel = -1;
+
+        if (qemuBuildTPMOpenBackendFDs(tpm->data.passthrough.source->data.file.path,
+                                       &fdtpm, &fdcancel) < 0)
+            return -1;
+
+        passtpm = qemuFDPassNew(tpm->info.alias, priv);
+        passcancel = qemuFDPassNew(tpm->info.alias, priv);
+
+        if (qemuFDPassAddFD(passtpm, &fdtpm, "-tpm") < 0 ||
+            qemuFDPassAddFD(passcancel, &fdcancel, "-cancel") < 0)
             return -1;
     }
+        break;
 
-    if (!(tpmdevstr = qemuBuildTPMBackendStr(cmd, tpm, &tpmfd, &cancelfd)))
+    case VIR_DOMAIN_TPM_TYPE_EMULATOR:
+        if (qemuBuildChardevCommand(cmd, tpm->data.emulator.source, "chrtpm", priv->qemuCaps) < 0)
+            return -1;
+        break;
+
+    case VIR_DOMAIN_TPM_TYPE_LAST:
+        virReportEnumRangeError(virDomainTPMBackendType, tpm->type);
+        return -1;
+    }
+
+    qemuFDPassTransferCommand(passtpm, cmd);
+    qemuFDPassTransferCommand(passcancel, cmd);
+
+    if (!(tpmdevstr = qemuBuildTPMBackendStr(tpm, passtpm, passcancel)))
         return -1;
 
     virCommandAddArgList(cmd, "-tpmdev", tpmdevstr, NULL);
 
-    if (tpmfd >= 0) {
-        fdset = qemuVirCommandGetFDSet(cmd, tpmfd);
-        if (!fdset)
-            return -1;
-
-        virCommandAddArgList(cmd, "-add-fd", fdset, NULL);
-        VIR_FREE(fdset);
-    }
-
-    if (cancelfd >= 0) {
-        fdset = qemuVirCommandGetFDSet(cmd, cancelfd);
-        if (!fdset)
-            return -1;
-
-        virCommandAddArgList(cmd, "-add-fd", fdset, NULL);
-        VIR_FREE(fdset);
-    }
-
-    if (qemuBuildTPMDevCmd(cmd, def, tpm, qemuCaps) < 0)
+    if (qemuBuildTPMDevCmd(cmd, def, tpm, priv->qemuCaps) < 0)
         return -1;
 
     return 0;
@@ -9932,16 +9813,15 @@ qemuBuildTPMProxyCommandLine(virCommand *cmd,
 static int
 qemuBuildTPMsCommandLine(virCommand *cmd,
                          const virDomainDef *def,
-                         virQEMUCaps *qemuCaps)
+                         qemuDomainObjPrivate *priv)
 {
     size_t i;
 
     for (i = 0; i < def->ntpms; i++) {
         if (def->tpms[i]->model == VIR_DOMAIN_TPM_MODEL_SPAPR_PROXY) {
-            if (qemuBuildTPMProxyCommandLine(cmd, def->tpms[i], qemuCaps) < 0)
+            if (qemuBuildTPMProxyCommandLine(cmd, def->tpms[i], priv->qemuCaps) < 0)
                 return -1;
-        } else if (qemuBuildTPMCommandLine(cmd, def,
-                                           def->tpms[i], qemuCaps) < 0) {
+        } else if (qemuBuildTPMCommandLine(cmd, def, def->tpms[i], priv) < 0) {
             return -1;
         }
     }
@@ -10685,7 +10565,7 @@ qemuBuildCommandLine(virQEMUDriver *driver,
     if (qemuBuildConsoleCommandLine(cmd, def, qemuCaps) < 0)
         return NULL;
 
-    if (qemuBuildTPMsCommandLine(cmd, def, qemuCaps) < 0)
+    if (qemuBuildTPMsCommandLine(cmd, def, priv) < 0)
         return NULL;
 
     if (qemuBuildInputCommandLine(cmd, def, qemuCaps) < 0)

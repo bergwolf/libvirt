@@ -124,8 +124,7 @@ qemuJobResetPrivate(void *opaque)
     priv->spiceMigration = false;
     priv->spiceMigrated = false;
     priv->dumpCompleted = false;
-    qemuMigrationParamsFree(priv->migParams);
-    priv->migParams = NULL;
+    g_clear_pointer(&priv->migParams, qemuMigrationParamsFree);
 }
 
 
@@ -657,6 +656,60 @@ qemuDomainMasterKeyCreate(virDomainObj *vm)
 }
 
 
+/**
+ * qemuDomainStorageIDNew:
+ * @priv: qemu VM private data object.
+ *
+ * Generate a new unique id for a storage object. Useful for node name generation.
+ */
+static unsigned int
+qemuDomainStorageIDNew(qemuDomainObjPrivate *priv)
+{
+    return ++priv->nodenameindex;
+}
+
+
+/**
+ * qemuDomainStorageIDReset:
+ * @priv: qemu VM private data object.
+ *
+ * Resets the data for the node name generator. The node names need to be unique
+ * for a single instance, so can be reset on VM shutdown.
+ */
+static void
+qemuDomainStorageIDReset(qemuDomainObjPrivate *priv)
+{
+    priv->nodenameindex = 0;
+}
+
+
+/**
+ * qemuDomainFDSetIDNew:
+ * @priv: qemu VM private data object.
+ *
+ * Generate a new unique id for a fdset. Note that this is necessary only for
+ * startup. When running qemu auto-assigns id for added fdset.
+ */
+unsigned int
+qemuDomainFDSetIDNew(qemuDomainObjPrivate *priv)
+{
+    return priv->fdsetindex++;
+}
+
+
+/**
+ * qemuDomainFDSetIDReset:
+ * @priv: qemu VM private data object.
+ *
+ * Resets the data for the fdset ID generator.
+ */
+static void
+qemuDomainFDSetIDReset(qemuDomainObjPrivate *priv)
+{
+    priv->fdsetindex = 0;
+}
+
+
 static void
 qemuDomainSecretInfoClear(qemuDomainSecretInfo *secinfo,
                           bool keepAlias)
@@ -821,6 +874,7 @@ qemuDomainVcpuPrivateDispose(void *obj)
     g_free(priv->type);
     g_free(priv->alias);
     virJSONValueFree(priv->props);
+    g_free(priv->qomPath);
     return;
 }
 
@@ -850,11 +904,6 @@ qemuDomainChrSourcePrivateNew(void)
     if (!(priv = virObjectNew(qemuDomainChrSourcePrivateClass)))
         return NULL;
 
-    priv->fd = -1;
-    priv->logfd = -1;
-
-    priv->passedFD = -1;
-
     return (virObject *) priv;
 }
 
@@ -864,13 +913,11 @@ qemuDomainChrSourcePrivateDispose(void *obj)
 {
     qemuDomainChrSourcePrivate *priv = obj;
 
-    VIR_FORCE_CLOSE(priv->fd);
-    VIR_FORCE_CLOSE(priv->logfd);
+    qemuFDPassFree(priv->sourcefd);
+    qemuFDPassFree(priv->logfd);
 
     g_free(priv->tlsCertPath);
 
-    g_free(priv->fdset);
-    g_free(priv->logFdset);
     g_free(priv->tlsCredsAlias);
 
     g_clear_pointer(&priv->secinfo, qemuDomainSecretInfoFree);
@@ -1617,19 +1664,13 @@ qemuDomainObjStopWorker(virDomainObj *dom)
 void
 qemuDomainObjPrivateDataClear(qemuDomainObjPrivate *priv)
 {
-    g_strfreev(priv->qemuDevices);
-    priv->qemuDevices = NULL;
-
-    virCgroupFree(priv->cgroup);
-    priv->cgroup = NULL;
-
-    virPerfFree(priv->perf);
-    priv->perf = NULL;
+    g_clear_pointer(&priv->qemuDevices, g_strfreev);
+    g_clear_pointer(&priv->cgroup, virCgroupFree);
+    g_clear_pointer(&priv->perf, virPerfFree);
 
     VIR_FREE(priv->machineName);
 
-    virObjectUnref(priv->qemuCaps);
-    priv->qemuCaps = NULL;
+    g_clear_pointer(&priv->qemuCaps, virObjectUnref);
 
     VIR_FREE(priv->pidfile);
 
@@ -1639,44 +1680,30 @@ qemuDomainObjPrivateDataClear(qemuDomainObjPrivate *priv)
     priv->memPrealloc = false;
 
     /* remove automatic pinning data */
-    virBitmapFree(priv->autoNodeset);
-    priv->autoNodeset = NULL;
-    virBitmapFree(priv->autoCpuset);
-    priv->autoCpuset = NULL;
-
-    /* remove address data */
-    virDomainPCIAddressSetFree(priv->pciaddrs);
-    priv->pciaddrs = NULL;
-    virDomainUSBAddressSetFree(priv->usbaddrs);
-    priv->usbaddrs = NULL;
-
-    virCPUDefFree(priv->origCPU);
-    priv->origCPU = NULL;
-
-    /* clear previously used namespaces */
-    virBitmapFree(priv->namespaces);
-    priv->namespaces = NULL;
+    g_clear_pointer(&priv->autoNodeset, virBitmapFree);
+    g_clear_pointer(&priv->autoCpuset, virBitmapFree);
+    g_clear_pointer(&priv->pciaddrs, virDomainPCIAddressSetFree);
+    g_clear_pointer(&priv->usbaddrs, virDomainUSBAddressSetFree);
+    g_clear_pointer(&priv->origCPU, virCPUDefFree);
+    g_clear_pointer(&priv->namespaces, virBitmapFree);
 
     priv->rememberOwner = false;
 
     priv->reconnectBlockjobs = VIR_TRISTATE_BOOL_ABSENT;
     priv->allowReboot = VIR_TRISTATE_BOOL_ABSENT;
 
-    virBitmapFree(priv->migrationCaps);
-    priv->migrationCaps = NULL;
+    g_clear_pointer(&priv->migrationCaps, virBitmapFree);
 
     virHashRemoveAll(priv->blockjobs);
 
-    virObjectUnref(priv->pflash0);
-    priv->pflash0 = NULL;
-    virObjectUnref(priv->pflash1);
-    priv->pflash1 = NULL;
-
-    virDomainBackupDefFree(priv->backup);
-    priv->backup = NULL;
+    g_clear_pointer(&priv->pflash0, virObjectUnref);
+    g_clear_pointer(&priv->pflash1, virObjectUnref);
+    g_clear_pointer(&priv->backup, virDomainBackupDefFree);
 
     /* reset node name allocator */
-    qemuDomainStorageIdReset(priv);
+    qemuDomainStorageIDReset(priv);
+
+    qemuDomainFDSetIDReset(priv);
 
     priv->dbusDaemonRunning = false;
 
@@ -2961,8 +2988,7 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
 
     if (priv->namespaces &&
         virBitmapIsAllClear(priv->namespaces)) {
-        virBitmapFree(priv->namespaces);
-        priv->namespaces = NULL;
+        g_clear_pointer(&priv->namespaces, virBitmapFree);
     }
 
     priv->rememberOwner = virXPathBoolean("count(./rememberOwner) > 0", ctxt);
@@ -3086,7 +3112,7 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
     if (qemuDomainObjPrivateXMLParseBackups(priv, ctxt) < 0)
         goto error;
 
-    qemuDomainStorageIdReset(priv);
+    qemuDomainStorageIDReset(priv);
     if (virXPathULongLong("string(./nodename/@index)", ctxt,
                           &priv->nodenameindex) == -2) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
@@ -3099,12 +3125,9 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
     return 0;
 
  error:
-    virBitmapFree(priv->namespaces);
-    priv->namespaces = NULL;
-    virObjectUnref(priv->monConfig);
-    priv->monConfig = NULL;
-    g_strfreev(priv->qemuDevices);
-    priv->qemuDevices = NULL;
+    g_clear_pointer(&priv->namespaces, virBitmapFree);
+    g_clear_pointer(&priv->monConfig, virObjectUnref);
+    g_clear_pointer(&priv->qemuDevices, g_strfreev);
     return -1;
 }
 
@@ -3556,9 +3579,8 @@ qemuDomainDefClearDefaultAudioBackend(virQEMUDriver *driver,
 
     if (virDomainAudioIsEqual(def->audios[0], audio)) {
         virDomainAudioDefFree(def->audios[0]);
-        g_free(def->audios);
+        g_clear_pointer(&def->audios, g_free);
         def->naudios = 0;
-        def->audios = NULL;
     }
     virDomainAudioDefFree(audio);
 
@@ -4429,7 +4451,9 @@ qemuDomainDefPostParse(virDomainDef *def,
         def->os.machine = g_strdup(machine);
     }
 
-    qemuDomainNVRAMPathGenerate(cfg, def);
+    if (virDomainDefHasOldStyleROUEFI(def) &&
+        !def->os.loader->nvram)
+        qemuDomainNVRAMPathFormat(cfg, def, &def->os.loader->nvram);
 
     if (qemuDomainDefAddDefaultDevices(driver, def, qemuCaps) < 0)
         return -1;
@@ -6838,11 +6862,12 @@ qemuDomainSnapshotWriteMetadata(virDomainObj *vm,
 static int
 qemuDomainSnapshotForEachQcow2Raw(virQEMUDriver *driver,
                                   virDomainDef *def,
-                                  const char *name,
+                                  virDomainMomentObj *snap,
                                   const char *op,
                                   bool try_all,
                                   int ndisks)
 {
+    virDomainSnapshotDef *snapdef = virDomainSnapshotObjGetDef(snap);
     const char *qemuimgbin;
     size_t i;
     bool skipped = false;
@@ -6855,11 +6880,12 @@ qemuDomainSnapshotForEachQcow2Raw(virQEMUDriver *driver,
 
     for (i = 0; i < ndisks; i++) {
         g_autoptr(virCommand) cmd = virCommandNewArgList(qemuimgbin, "snapshot",
-                                                         op, name, NULL);
+                                                         op, snap->def->name, NULL);
         int format = virDomainDiskGetFormat(def->disks[i]);
 
         /* FIXME: we also need to handle LVM here */
-        if (def->disks[i]->device != VIR_DOMAIN_DISK_DEVICE_DISK)
+        if (def->disks[i]->device != VIR_DOMAIN_DISK_DEVICE_DISK ||
+            snapdef->disks[i].snapshot == VIR_DOMAIN_SNAPSHOT_LOCATION_NONE)
             continue;
 
         if (!virStorageSourceIsLocalStorage(def->disks[i]->src)) {
@@ -6881,7 +6907,7 @@ qemuDomainSnapshotForEachQcow2Raw(virQEMUDriver *driver,
             } else if (STREQ(op, "-c") && i) {
                 /* We must roll back partial creation by deleting
                  * all earlier snapshots.  */
-                qemuDomainSnapshotForEachQcow2Raw(driver, def, name,
+                qemuDomainSnapshotForEachQcow2Raw(driver, def, snap,
                                                   "-d", false, i);
             }
             virReportError(VIR_ERR_OPERATION_INVALID,
@@ -6901,7 +6927,7 @@ qemuDomainSnapshotForEachQcow2Raw(virQEMUDriver *driver,
             } else if (STREQ(op, "-c") && i) {
                 /* We must roll back partial creation by deleting
                  * all earlier snapshots.  */
-                qemuDomainSnapshotForEachQcow2Raw(driver, def, name,
+                qemuDomainSnapshotForEachQcow2Raw(driver, def, snap,
                                                   "-d", false, i);
             }
             return -1;
@@ -6920,7 +6946,7 @@ qemuDomainSnapshotForEachQcow2(virQEMUDriver *driver,
                                const char *op,
                                bool try_all)
 {
-    return qemuDomainSnapshotForEachQcow2Raw(driver, def, snap->def->name,
+    return qemuDomainSnapshotForEachQcow2Raw(driver, def, snap,
                                              op, try_all, def->ndisks);
 }
 
@@ -9550,6 +9576,8 @@ qemuDomainRefreshVcpuInfo(virQEMUDriver *driver,
         vcpupriv->props = g_steal_pointer(&info[i].props);
         vcpupriv->enable_id = info[i].id;
         vcpupriv->qemu_id = info[i].qemu_id;
+        g_free(vcpupriv->qomPath);
+        vcpupriv->qomPath = g_steal_pointer(&info[i].qom_path);
 
         if (hotplug && state) {
             vcpu->online = info[i].online;
@@ -10644,7 +10672,7 @@ qemuDomainPrepareStorageSourceBlockdev(virDomainDiskDef *disk,
                                        qemuDomainObjPrivate *priv,
                                        virQEMUDriverConfig *cfg)
 {
-    src->id = qemuDomainStorageIdNew(priv);
+    src->id = qemuDomainStorageIDNew(priv);
 
     src->nodestorage = g_strdup_printf("libvirt-%u-storage", src->id);
     src->nodeformat = g_strdup_printf("libvirt-%u-format", src->id);
@@ -10771,7 +10799,7 @@ qemuDomainPrepareHostdev(virDomainHostdevDef *hostdev,
             src->readonly = hostdev->readonly;
 
             if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_BLOCKDEV_HOSTDEV_SCSI)) {
-                src->id = qemuDomainStorageIdNew(priv);
+                src->id = qemuDomainStorageIDNew(priv);
                 src->nodestorage = g_strdup_printf("libvirt-%d-backend", src->id);
                 backendalias = src->nodestorage;
             }
@@ -10914,33 +10942,6 @@ qemuDomainGetManagedPRSocketPath(qemuDomainObjPrivate *priv)
 }
 
 
-/**
- * qemuDomainStorageIdNew:
- * @priv: qemu VM private data object.
- *
- * Generate a new unique id for a storage object. Useful for node name generation.
- */
-unsigned int
-qemuDomainStorageIdNew(qemuDomainObjPrivate *priv)
-{
-    return ++priv->nodenameindex;
-}
-
-
-/**
- * qemuDomainStorageIdReset:
- * @priv: qemu VM private data object.
- *
- * Resets the data for the node name generator. The node names need to be unique
- * for a single instance, so can be reset on VM shutdown.
- */
-void
-qemuDomainStorageIdReset(qemuDomainObjPrivate *priv)
-{
-    priv->nodenameindex = 0;
-}
-
-
 virDomainEventResumedDetailType
 qemuDomainRunningReasonToResumeEvent(virDomainRunningReason reason)
 {
@@ -10981,20 +10982,10 @@ qemuDomainDiskIsMissingLocalOptional(virDomainDiskDef *disk)
 
 void
 qemuDomainNVRAMPathFormat(virQEMUDriverConfig *cfg,
-                            virDomainDef *def,
-                            char **path)
+                          virDomainDef *def,
+                          char **path)
 {
     *path = g_strdup_printf("%s/%s_VARS.fd", cfg->nvramDir, def->name);
-}
-
-
-void
-qemuDomainNVRAMPathGenerate(virQEMUDriverConfig *cfg,
-                            virDomainDef *def)
-{
-    if (virDomainDefHasOldStyleROUEFI(def) &&
-        !def->os.loader->nvram)
-        qemuDomainNVRAMPathFormat(cfg, def, &def->os.loader->nvram);
 }
 
 
@@ -11128,7 +11119,8 @@ qemuDomainInitializePflashStorageSource(virDomainObj *vm)
     pflash0->type = VIR_STORAGE_TYPE_FILE;
     pflash0->format = VIR_STORAGE_FILE_RAW;
     pflash0->path = g_strdup(def->os.loader->path);
-    pflash0->readonly = def->os.loader->readonly;
+    pflash0->readonly = false;
+    virTristateBoolToBool(def->os.loader->readonly, &pflash0->readonly);
     pflash0->nodeformat = g_strdup("libvirt-pflash0-format");
     pflash0->nodestorage = g_strdup("libvirt-pflash0-storage");
 

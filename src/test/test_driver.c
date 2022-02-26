@@ -1537,8 +1537,7 @@ testConnectOpen(virConnectPtr conn,
 
     /* Fake authentication. */
     if (testConnectAuthenticate(conn, auth) < 0) {
-        testDriverCloseInternal(conn->privateData);
-        conn->privateData = NULL;
+        g_clear_pointer(&conn->privateData, testDriverCloseInternal);
         return VIR_DRV_OPEN_ERROR;
     }
 
@@ -1549,8 +1548,7 @@ testConnectOpen(virConnectPtr conn,
 static int
 testConnectClose(virConnectPtr conn)
 {
-    testDriverCloseInternal(conn->privateData);
-    conn->privateData = NULL;
+    g_clear_pointer(&conn->privateData, testDriverCloseInternal);
     return 0;
 }
 
@@ -1669,6 +1667,11 @@ static int
 testConnectSupportsFeature(virConnectPtr conn G_GNUC_UNUSED,
                            int feature)
 {
+    int supported;
+
+    if (virDriverFeatureIsGlobal(feature, &supported))
+        return supported;
+
     switch ((virDrvFeature) feature) {
     case VIR_DRV_FEATURE_TYPED_PARAM_STRING:
     case VIR_DRV_FEATURE_NETWORK_UPDATE_HAS_CORRECT_ORDER:

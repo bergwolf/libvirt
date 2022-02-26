@@ -137,6 +137,49 @@ qemuDomainDeleteDevice(virDomainObj *vm,
 }
 
 
+/**
+ * qemuHotplugRemoveFDSet:
+ * @mon: monitor object
+ * @prefix: the prefix of FD names ('opaque' field) to delete
+ * @alternate: alternate name for FD, for historical usage (may be NULL)
+ *
+ * Looks up the 'fdset' by looking for a fd inside one of the fdsets which
+ * has the opaque string starting with @prefix. Removes the whole fdset which
+ * contains the fd. Alternatively if @alternate is specified fdsets having a fd
+ * with that exact 'opaque' string is removed too.
+ *
+ * Errors are logged, but this is a best-effort hot-unplug cleanup helper so it's
+ * pointless to return a value.
+ */
+static void
+qemuHotplugRemoveFDSet(qemuMonitor *mon,
+                       const char *prefix,
+                       const char *alternate)
+{
+    g_autoptr(qemuMonitorFdsets) fdsets = NULL;
+    size_t i;
+
+    if (qemuMonitorQueryFdsets(mon, &fdsets) < 0)
+        return;
+
+    for (i = 0; i < fdsets->nfdsets; i++) {
+        qemuMonitorFdsetInfo *set = &fdsets->fdsets[i];
+        size_t j;
+
+        for (j = 0; j < set->nfds; j++) {
+            qemuMonitorFdsetFdInfo *fdinfo = &set->fds[j];
+
+            if (fdinfo->opaque &&
+                (STRPREFIX(fdinfo->opaque, prefix) ||
+                 STREQ_NULLABLE(fdinfo->opaque, alternate))) {
+                ignore_value(qemuMonitorRemoveFdset(mon, set->id));
+                break;
+            }
+        }
+    }
+}
+
+
 static int
 qemuDomainDetachZPCIDevice(qemuMonitor *mon,
                            virDomainDeviceInfo *info)
@@ -645,8 +688,7 @@ qemuDomainChangeEjectableMedia(virQEMUDriver *driver,
     ignore_value(qemuDomainStorageSourceChainAccessRevoke(driver, vm, oldsrc));
 
     /* media was changed, so we can remove the old media definition now */
-    virObjectUnref(oldsrc);
-    oldsrc = NULL;
+    g_clear_pointer(&oldsrc, virObjectUnref);
 
     ret = 0;
 
@@ -2138,10 +2180,14 @@ qemuDomainAttachChrDeviceAssignAddr(virDomainObj *vm,
     return 0;
 }
 
-int qemuDomainAttachChrDevice(virQEMUDriver *driver,
-                              virDomainObj *vm,
-                              virDomainChrDef *chr)
+
+int
+qemuDomainAttachChrDevice(virQEMUDriver *driver,
+                          virDomainObj *vm,
+                          virDomainDeviceDef *dev)
 {
+    virDomainChrDef *chr = dev->data.chr;
+    qemuDomainChrSourcePrivate *charpriv = QEMU_DOMAIN_CHR_SOURCE_PRIVATE(chr->source);
     int ret = -1;
     qemuDomainObjPrivate *priv = vm->privateData;
     virErrorPtr orig_err;
@@ -2181,6 +2227,19 @@ int qemuDomainAttachChrDevice(virQEMUDriver *driver,
     if (qemuSetupChardevCgroup(vm, chr) < 0)
         goto cleanup;
     teardowncgroup = true;
+
+    if (qemuProcessPrepareHostBackendChardevHotplug(vm, dev) < 0)
+        goto cleanup;
+
+    if (charpriv->sourcefd || charpriv->logfd) {
+        qemuDomainObjEnterMonitor(driver, vm);
+
+        if (qemuFDPassTransferMonitor(charpriv->sourcefd, priv->mon) < 0 ||
+            qemuFDPassTransferMonitor(charpriv->logfd, priv->mon) < 0)
+            goto exit_monitor;
+
+        qemuDomainObjExitMonitor(driver, vm);
+    }
 
     if (guestfwd) {
         if (!(netdevprops = qemuBuildChannelGuestfwdNetdevProps(chr)))
@@ -2244,6 +2303,8 @@ int qemuDomainAttachChrDevice(virQEMUDriver *driver,
     /* detach associated chardev on error */
     if (chardevAttached)
         qemuMonitorDetachCharDev(priv->mon, charAlias);
+    qemuFDPassTransferMonitorRollback(charpriv->sourcefd, priv->mon);
+    qemuFDPassTransferMonitorRollback(charpriv->logfd, priv->mon);
     qemuDomainObjExitMonitor(driver, vm);
     virErrorRestore(&orig_err);
 
@@ -4426,8 +4487,7 @@ qemuDomainRemoveDiskDevice(virQEMUDriver *driver,
         if (diskPriv->blockjob) {
             /* the block job keeps reference to the disk chain */
             diskPriv->blockjob->disk = NULL;
-            virObjectUnref(diskPriv->blockjob);
-            diskPriv->blockjob = NULL;
+            g_clear_pointer(&diskPriv->blockjob, virObjectUnref);
         } else {
             if (!(diskBackend = qemuBlockStorageSourceChainDetachPrepareBlockdev(disk->src)))
                 goto cleanup;
@@ -4763,37 +4823,8 @@ qemuDomainRemoveNetDevice(virQEMUDriver *driver,
              */
         }
     } else if (actualType == VIR_DOMAIN_NET_TYPE_VDPA) {
-        int vdpafdset = -1;
-        g_autoptr(qemuMonitorFdsets) fdsets = NULL;
-
-        /* query qemu for which fdset is associated with the fd that we passed
-         * to qemu via 'add-fd' for this vdpa device. If we don't remove the
-         * fd, qemu will keep it open */
-        if (qemuMonitorQueryFdsets(priv->mon, &fdsets) == 0) {
-            for (i = 0; i < fdsets->nfdsets && vdpafdset < 0; i++) {
-                size_t j;
-                qemuMonitorFdsetInfo *set = &fdsets->fdsets[i];
-
-                for (j = 0; j < set->nfds; j++) {
-                    qemuMonitorFdsetFdInfo *fdinfo = &set->fds[j];
-                    if (STREQ_NULLABLE(fdinfo->opaque, net->data.vdpa.devicepath)) {
-                        vdpafdset = set->id;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (vdpafdset < 0) {
-            VIR_WARN("Cannot determine fdset for vdpa device");
-        } else {
-            if (qemuMonitorRemoveFdset(priv->mon, vdpafdset) < 0) {
-                /* if it fails, there's not much we can do... just carry on */
-                VIR_WARN("failed to close vdpa device");
-            }
-        }
+        qemuHotplugRemoveFDSet(priv->mon, net->info.alias, net->data.vdpa.devicepath);
     }
-
 
     qemuDomainObjExitMonitor(driver, vm);
 
@@ -4869,6 +4900,7 @@ qemuDomainRemoveChrDevice(virQEMUDriver *driver,
     if (monitor) {
         qemuDomainObjEnterMonitor(driver, vm);
         rc = qemuMonitorDetachCharDev(priv->mon, charAlias);
+        qemuHotplugRemoveFDSet(priv->mon, chr->info.alias, NULL);
         qemuDomainObjExitMonitor(driver, vm);
     }
 
@@ -5013,8 +5045,7 @@ qemuDomainRemoveWatchdog(virDomainObj *vm,
               watchdog->info.alias, vm, vm->def->name);
 
     qemuDomainReleaseDeviceAddress(vm, &watchdog->info);
-    virDomainWatchdogDefFree(vm->def->watchdog);
-    vm->def->watchdog = NULL;
+    g_clear_pointer(&vm->def->watchdog, virDomainWatchdogDefFree);
     return 0;
 }
 
@@ -5056,8 +5087,7 @@ qemuDomainRemoveVsockDevice(virDomainObj *vm,
               dev->info.alias, vm, vm->def->name);
 
     qemuDomainReleaseDeviceAddress(vm, &dev->info);
-    virDomainVsockDefFree(vm->def->vsock);
-    vm->def->vsock = NULL;
+    g_clear_pointer(&vm->def->vsock, virDomainVsockDefFree);
     return 0;
 }
 
