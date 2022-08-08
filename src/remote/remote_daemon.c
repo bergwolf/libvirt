@@ -32,7 +32,6 @@
 #include "virfile.h"
 #include "virlog.h"
 #include "virpidfile.h"
-#include "virprocess.h"
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
@@ -43,14 +42,12 @@
 #include "viruuid.h"
 #include "remote_driver.h"
 #include "viralloc.h"
-#include "virconf.h"
 #include "virnetlink.h"
 #include "virnetdaemon.h"
 #include "remote_daemon_dispatch.h"
 #include "virhook.h"
 #include "viraudit.h"
 #include "virstring.h"
-#include "locking/lock_manager.h"
 #include "viraccessmanager.h"
 #include "virutil.h"
 #include "virgettext.h"
@@ -77,7 +74,7 @@ virNetSASLContext *saslCtxt = NULL;
 virNetServerProgram *remoteProgram = NULL;
 virNetServerProgram *qemuProgram = NULL;
 
-volatile bool driversInitialized = false;
+volatile gint driversInitialized = 0;
 
 static void daemonErrorHandler(void *opaque G_GNUC_UNUSED,
                                virErrorPtr err G_GNUC_UNUSED)
@@ -214,25 +211,8 @@ daemonSetupNetworking(virNetServer *srv,
     unsigned int tcp_min_ssf = 0;
 #endif /* !WITH_SASL */
     g_autoptr(virSystemdActivation) act = NULL;
-    virSystemdActivationMap actmap[] = {
-        { .name = DAEMON_NAME ".socket", .family = AF_UNIX, .path = sock_path },
-        { .name = DAEMON_NAME "-ro.socket", .family = AF_UNIX, .path = sock_path_ro },
-        { .name = DAEMON_NAME "-admin.socket", .family = AF_UNIX, .path = sock_path_adm },
-#ifdef WITH_IP
-        { .name = DAEMON_NAME "-tcp.socket", .family = AF_INET },
-        { .name = DAEMON_NAME "-tls.socket", .family = AF_INET },
-#endif /* ! WITH_IP */
-    };
 
-#ifdef WITH_IP
-    if ((actmap[3].port = virSocketAddrResolveService(config->tcp_port)) < 0)
-        return -1;
-
-    if ((actmap[4].port = virSocketAddrResolveService(config->tls_port)) < 0)
-        return -1;
-#endif /* ! WITH_IP */
-
-    if (virSystemdGetActivation(actmap, G_N_ELEMENTS(actmap), &act) < 0)
+    if (virSystemdGetActivation(&act) < 0)
         return -1;
 
 #ifdef WITH_IP
@@ -470,8 +450,13 @@ static void daemonReloadHandlerThread(void *opaque G_GNUC_UNUSED)
     VIR_INFO("Reloading configuration on SIGHUP");
     virHookCall(VIR_HOOK_DRIVER_DAEMON, "-",
                 VIR_HOOK_DAEMON_OP_RELOAD, SIGHUP, "SIGHUP", NULL, NULL);
-    if (virStateReload() < 0)
+
+    if (virStateReload() < 0) {
         VIR_WARN("Error while reloading drivers");
+    }
+
+    /* Drivers are initialized again. */
+    g_atomic_int_set(&driversInitialized, 1);
 }
 
 static void daemonReloadHandler(virNetDaemon *dmn G_GNUC_UNUSED,
@@ -480,7 +465,7 @@ static void daemonReloadHandler(virNetDaemon *dmn G_GNUC_UNUSED,
 {
     virThread thr;
 
-    if (!driversInitialized) {
+    if (!g_atomic_int_compare_and_exchange(&driversInitialized, 1, 0)) {
         VIR_WARN("Drivers are not initialized, reload ignored");
         return;
     }
@@ -491,6 +476,10 @@ static void daemonReloadHandler(virNetDaemon *dmn G_GNUC_UNUSED,
          * Not much we can do on error here except log it.
          */
         VIR_ERROR(_("Failed to create thread to handle daemon restart"));
+
+        /* Drivers were initialized at the beginning, otherwise we wouldn't
+         * even get here. */
+        g_atomic_int_set(&driversInitialized, 1);
     }
 }
 
@@ -624,7 +613,7 @@ static void daemonRunStateInit(void *opaque)
         goto cleanup;
     }
 
-    driversInitialized = true;
+    g_atomic_int_set(&driversInitialized, 1);
 
     virNetDaemonSetShutdownCallbacks(dmn,
                                      virStateShutdownPrepare,
@@ -1134,8 +1123,8 @@ int main(int argc, char **argv) {
     }
 
     if (timeout > 0) {
-        VIR_DEBUG("Registering shutdown timeout %d", timeout);
-        virNetDaemonAutoShutdown(dmn, timeout);
+        if (virNetDaemonAutoShutdown(dmn, timeout) < 0)
+            goto cleanup;
     }
 
     if ((daemonSetupSignals(dmn)) < 0) {
@@ -1229,10 +1218,9 @@ int main(int argc, char **argv) {
  cleanup:
     virNetlinkEventServiceStopAll();
 
-    if (driversInitialized) {
+    if (g_atomic_int_compare_and_exchange(&driversInitialized, 1, 0)) {
         /* NB: Possible issue with timing window between driversInitialized
          * setting if virNetlinkEventServerStart fails */
-        driversInitialized = false;
         virStateCleanup();
     }
 

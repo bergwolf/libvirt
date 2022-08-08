@@ -20,11 +20,9 @@
 
 #include <config.h>
 
-#include "device_conf.h"
 #include "domain_capabilities.h"
 #include "domain_conf.h"
 #include "viralloc.h"
-#include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_CAPABILITIES
 
@@ -378,12 +376,14 @@ virDomainCapsCPUCustomFormat(virBuffer *buf,
 
     for (i = 0; i < custom->nmodels; i++) {
         virDomainCapsCPUModel *model = custom->models + i;
+
         virBufferAsprintf(buf, "<model usable='%s'",
                           virDomainCapsCPUUsableTypeToString(model->usable));
+
         if (model->deprecated)
             virBufferAddLit(buf, " deprecated='yes'");
-        virBufferAsprintf(buf, ">%s</model>\n",
-                          model->name);
+
+        virBufferAsprintf(buf, ">%s</model>\n", model->name);
     }
 
     virBufferAdjustIndent(buf, -2);
@@ -541,6 +541,7 @@ virDomainCapsDeviceTPMFormat(virBuffer *buf,
 
     ENUM_PROCESS(tpm, model, virDomainTPMModelTypeToString);
     ENUM_PROCESS(tpm, backendModel, virDomainTPMBackendTypeToString);
+    ENUM_PROCESS(tpm, backendVersion, virDomainTPMVersionTypeToString);
 
     FORMAT_EPILOGUE(tpm);
 }
@@ -591,21 +592,22 @@ virDomainCapsFeatureSEVFormat(virBuffer *buf,
 {
     if (!sev) {
         virBufferAddLit(buf, "<sev supported='no'/>\n");
-    } else {
-        virBufferAddLit(buf, "<sev supported='yes'>\n");
-        virBufferAdjustIndent(buf, 2);
-        virBufferAsprintf(buf, "<cbitpos>%d</cbitpos>\n", sev->cbitpos);
-        virBufferAsprintf(buf, "<reducedPhysBits>%d</reducedPhysBits>\n",
-                          sev->reduced_phys_bits);
-        virBufferAsprintf(buf, "<maxGuests>%d</maxGuests>\n",
-                          sev->max_guests);
-        virBufferAsprintf(buf, "<maxESGuests>%d</maxESGuests>\n",
-                          sev->max_es_guests);
-        virBufferAdjustIndent(buf, -2);
-        virBufferAddLit(buf, "</sev>\n");
+        return;
     }
 
-    return;
+    virBufferAddLit(buf, "<sev supported='yes'>\n");
+    virBufferAdjustIndent(buf, 2);
+    virBufferAsprintf(buf, "<cbitpos>%d</cbitpos>\n", sev->cbitpos);
+    virBufferAsprintf(buf, "<reducedPhysBits>%d</reducedPhysBits>\n",
+                      sev->reduced_phys_bits);
+    virBufferAsprintf(buf, "<maxGuests>%d</maxGuests>\n", sev->max_guests);
+    virBufferAsprintf(buf, "<maxESGuests>%d</maxESGuests>\n", sev->max_es_guests);
+
+    if (sev->cpu0_id != NULL)
+        virBufferAsprintf(buf, "<cpu0Id>%s</cpu0Id>\n", sev->cpu0_id);
+
+    virBufferAdjustIndent(buf, -2);
+    virBufferAddLit(buf, "</sev>\n");
 }
 
 

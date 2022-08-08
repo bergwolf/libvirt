@@ -25,8 +25,6 @@
   <flag name='memory-backend-file'/>
   <flag name='iothread'/>
   <flag name='migrate-rdma'/>
-  <flag name='migration-event'/>
-  <flag name='incoming-defer'/>
   <flag name='chardev-file-append'/>
   <flag name='vserport-change-event'/>
   <flag name='spice-gl'/>
@@ -50,7 +48,6 @@
   <flag name='memory-backend-file.discard-data'/>
   <flag name='screendump_device'/>
   <flag name='blockdev-del'/>
-  <flag name='chardev-fd-pass'/>
   <flag name='egl-headless'/>
   <flag name='blockdev'/>
   <flag name='memory-backend-memfd'/>
@@ -60,7 +57,6 @@
   <flag name='memory-backend-file.align'/>
   <flag name='memory-backend-file.pmem'/>
   <flag name='scsi-disk.device_id'/>
-  <flag name='overcommit'/>
   <flag name='query-current-machine'/>
   <flag name='bitmap-merge'/>
   <flag name='nbd-bitmap'/>
@@ -73,13 +69,9 @@
   <flag name='rng-builtin'/>
   <flag name='query-named-block-nodes.flat'/>
   <flag name='blockdev-snapshot.allow-write-only-overlay'/>
-  <flag name='storage.werror'/>
   <flag name='fsdev.multidevs'/>
   <flag name='aio.io_uring'/>
   <flag name='tcg'/>
-  <flag name='migration-param.bandwidth'/>
-  <flag name='migration-param.downtime'/>
-  <flag name='migration-param.xbzrle-cache-size'/>
   <flag name='numa.hmat'/>
   <flag name='blockdev-hostdev-scsi'/>
   <flag name='netdev.vhost-vdpa'/>
@@ -90,6 +82,7 @@
   <flag name='rotation-rate'/>
   <flag name='input-linux'/>
   <flag name='query-display-options'/>
+  <flag name='memory-backend-file.prealloc-threads'/>
   <version>5001000</version>
   <kvmVersion>0</kvmVersion>
   <microcodeVersion>0</microcodeVersion>

@@ -24,12 +24,12 @@
 
 #include "internal.h"
 #include "virbitmap.h"
+#include "virccw.h"
 #include "virpcivpd.h"
 #include "virscsihost.h"
 #include "virpci.h"
 #include "virvhba.h"
 #include "device_conf.h"
-#include "storage_adapter_conf.h"
 #include "virenum.h"
 
 #include <libxml/tree.h>
@@ -279,6 +279,7 @@ struct _virNodeDevCapCCW {
     unsigned int flags; /* enum virNodeDevCCWCapFlags */
     virMediatedDeviceType **mdev_types;
     size_t nmdev_types;
+    virCCWDeviceAddress *channel_dev_addr;
 };
 
 typedef struct _virNodeDevCapVDPA virNodeDevCapVDPA;

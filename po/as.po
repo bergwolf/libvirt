@@ -11,7 +11,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: libvirt 6.0.0\n"
 "Report-Msgid-Bugs-To: https://libvirt.org/bugs.html\n"
-"POT-Creation-Date: 2022-01-10 08:58+0000\n"
+"POT-Creation-Date: 2022-07-26 08:13+0000\n"
 "PO-Revision-Date: 2015-02-26 06:48+0000\n"
 "Last-Translator: Copied by Zanata <copied-by-zanata@zanata.org>\n"
 "Language-Team: Assamese (http://www.transifex.com/projects/p/libvirt/"
@@ -39,7 +39,6 @@ msgstr ""
 "\n"
 " (দলৰ কমান্ডসমূহৰ বাবে বিৱৰণৰ বাবে help <group> ধাৰ্য্য কৰক)\n"
 
-#. Print the description only if it's not empty.
 msgid ""
 "\n"
 "  DESCRIPTION\n"
@@ -340,7 +339,6 @@ msgstr ""
 msgid "    Bandwidth limit: %llu bytes/s (%-.3lf %s/s)"
 msgstr ""
 
-#. true if 'arg' works instead of '--opt arg'
 msgid "  NAME\n"
 msgstr "  NAME\n"
 
@@ -576,16 +574,6 @@ msgstr "এই QEMU লাইব্ৰেৰীত %s সমৰ্থিত ন�
 msgid "%s object has invalid dynamic type"
 msgstr "%s ৰ অবৈধ ডাইনামিক ধৰণ"
 
-#.
-#. * A required property must be != 0 (NULL for pointers, "undefined" == 0 for
-#. * enumeration values).
-#. *
-#. * To be used as part of ESX_VI__TEMPLATE__VALIDATE.
-#.
-#.
-#. * Macros to implement managed objects
-#.
-#. FIXME: This results in O(n^2) runtime in case of missing required, but      * unselected properties.
 #, c-format
 msgid "%s object is missing the required '%s' property"
 msgstr "%s অবজেক্টত প্ৰয়োজনীয় '%s' বৈশিষ্ট্য সন্ধানহীন"
@@ -823,9 +811,9 @@ msgstr ""
 msgid "%s: expected an unsigned integer for '%s' parameter"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "%s: failed to communicate with bridge helper: %s%s"
-msgstr "%s: লগ ফাইল লিখোঁতে ব্যৰ্থ: %s"
+#, c-format
+msgid "%s: failed to communicate with bridge helper: %s"
+msgstr ""
 
 #, c-format
 msgid "%s: failed to read temporary file: %s"
@@ -930,10 +918,6 @@ msgid "%s: try --help for more details\n"
 msgstr "%s: অধিক বিৱৰণৰ বাবে --help চেষ্টা কৰি চাওক"
 
 #, c-format
-msgid "%s: unable to determine access mode of fd %d"
-msgstr "%s: fd %d ৰ অভিগম অৱস্থা নিৰ্ধাৰণ কৰিবলে অক্ষম"
-
-#, c-format
 msgid "%s: unexpected URI transport '%s'\n"
 msgstr ""
 
@@ -987,6 +971,10 @@ msgstr ""
 
 #, c-format
 msgid "'%s'"
+msgstr ""
+
+#, c-format
+msgid "'%s' D-Bus address is not handled"
 msgstr ""
 
 #, fuzzy, c-format
@@ -1156,6 +1144,12 @@ msgstr "guest-get-vcpus ৰ উত্তৰত 'logical-id' নাই"
 msgid "'login-time' missing in reply of guest-get-users"
 msgstr "guest-get-vcpus ৰ উত্তৰত 'logical-id' নাই"
 
+msgid "'manual' memory snapshot mode not supported"
+msgstr ""
+
+msgid "'manual' snapshot mode is not supported by the test driver"
+msgstr ""
+
 #, fuzzy
 msgid "'max_sectors' is only supported by virtio-scsi controller"
 msgstr "'queues' কেৱল virtio-scsi নিয়ন্ত্ৰক দ্বাৰা সমৰ্থিত"
@@ -1184,6 +1178,9 @@ msgid "'name' missing in reply of guest-get-fsinfo"
 msgstr "guest-get-vcpus ৰ উত্তৰত 'online' নাই"
 
 msgid "'netns' namespace source can only be used with sharenet"
+msgstr ""
+
+msgid "'network' attribute is required for listen type 'network'"
 msgstr ""
 
 #, fuzzy
@@ -1221,10 +1218,6 @@ msgstr "'peak' আৰু 'burst' ৰ বাবে 'average' বৈশিষ্�
 msgid "'pool' and 'volume' must be specified together for 'pool' type source"
 msgstr "'pool' ধৰণ উৎসৰ বাবে  'pool' আৰু 'volume' একেলগে ধাৰ্য্য কৰিব লাগিব"
 
-#, c-format
-msgid "'queues' attribute must be positive number: %s"
-msgstr "'queues' বৈশিষ্ট্য ধনাত্মক সংখ্যা হব লাগিব: %s"
-
 msgid "'queues' is only supported by virtio-scsi controller"
 msgstr "'queues' কেৱল virtio-scsi নিয়ন্ত্ৰক দ্বাৰা সমৰ্থিত"
 
@@ -1241,14 +1234,6 @@ msgid ""
 "in memory element"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "'rx_queue_size' attribute must be positive number: %s"
-msgstr "'queues' বৈশিষ্ট্য ধনাত্মক সংখ্যা হব লাগিব: %s"
-
-#, fuzzy
-msgid "'sgio' is not supported for SCSI generic device yet "
-msgstr "sgio কেৱল scsi হস্ট ডিভাইচৰ বাবে সমৰ্থিত"
-
 #, c-format
 msgid "'sibling_id %d' does not refer to a valid cell within NUMA 'cell id %d'"
 msgstr ""
@@ -1260,9 +1245,6 @@ msgstr ""
 msgid "'ssh' protocol is not yet supported"
 msgstr "fs বিন্যাস %s সমৰ্থিত নহয়"
 
-msgid "'startupPolicy' is only valid for 'file' type volume"
-msgstr "'startupPolicy' কেৱল 'file' ধৰণ ভলিউমৰ বাবে বৈধ"
-
 msgid "'target' refers to a non-existent NUMA node"
 msgstr ""
 
@@ -1270,13 +1252,15 @@ msgstr ""
 msgid "'tftp' protocol is not supported with this QEMU binary"
 msgstr "এই QEMU বাইনাৰি দ্বাৰা SATA সমৰ্থিত হয়"
 
+msgid "'tlsHostname' field is not supported by this QEMU"
+msgstr ""
+
+msgid "'tlsHostname' field is supported only with NBD disks"
+msgstr ""
+
 #, fuzzy
 msgid "'trim' algorithm not supported"
 msgstr "এলগৰিথম %d মচি পেলোৱাটো সমৰ্থিত নহয়"
-
-#, fuzzy, c-format
-msgid "'tx_queue_size' attribute must be positive number: %s"
-msgstr "'queues' বৈশিষ্ট্য ধনাত্মক সংখ্যা হব লাগিব: %s"
 
 #, fuzzy
 msgid "'type' missing in reply of guest-get-fsinfo"
@@ -1359,7 +1343,6 @@ msgstr "(interface_definition)"
 msgid "(libxl_migration_cookie)"
 msgstr "(qemu_migration_cookie)"
 
-#. parse and modify the xml from the user
 msgid "(metadata_xml)"
 msgstr "(metadata_xml)"
 
@@ -1422,7 +1405,6 @@ msgstr ""
 msgid "(volume_definition)"
 msgstr "(volume_definition)"
 
-#. Capacity related information isn't available
 msgid "-"
 msgstr "-"
 
@@ -2045,6 +2027,9 @@ msgid ""
 "Both port and URI requested for disk migration while being mutually exclusive"
 msgstr ""
 
+msgid "Both secret and the secret header are required"
+msgstr ""
+
 msgid "Bounded"
 msgstr "বাউন্ড কৰা"
 
@@ -2351,14 +2336,10 @@ msgid ""
 "dirtyrate'."
 msgstr ""
 
-#.
-#. * Macros to implement dynamic dispatched functions
-#.
 #, c-format
 msgid "Call to %s for unexpected type '%s'"
 msgstr "অপ্ৰত্যাশিত ধৰণ '%s' ৰ বাবে %s লে কল"
 
-#. nothing
 #, c-format
 msgid "Call to %s for unexpected type '%s', expected '%s'"
 msgstr "অপ্ৰত্যাশিত ধৰণ '%s' ৰ বাবে %s লে কল, '%s' আশা কৰা হৈছিল"
@@ -2376,10 +2357,6 @@ msgid "Call to '%s' returned something, expecting an empty result"
 msgstr "'%s' লে কলে কিবা ঘুৰাই দিলে, এটা ৰিক্ত ফলাফল আশা কৰা হৈছিল"
 
 #, c-format
-msgid "Call to utsname failed: %d"
-msgstr "utsname লৈ কল ব্যৰ্থ হল: %d"
-
-#, c-format
 msgid "Calling %s from '%s' failed"
 msgstr "'%s' ৰ পৰা %s কল কৰিবলে ব্যৰ্থ"
 
@@ -2387,8 +2364,8 @@ msgid "Can only modify disk quota"
 msgstr "কেৱল ডিস্ক কুটা পৰিবৰ্তন কৰিব পাৰি"
 
 #, c-format
-msgid "Can only open VNC or SPICE graphics backends, not %s"
-msgstr "কেৱল VNC অথবা SPICE গ্ৰাফিক্স বেকএণ্ড খোলিব পাৰে, %s নোৱাৰে"
+msgid "Can only open VNC, SPICE or D-Bus p2p graphics backends, not %s"
+msgstr ""
 
 msgid "Can't add USB hub: USB is disabled for this domain"
 msgstr "USB হাব যোগ কৰিব নোৱাৰি: USB এই ডমেইনৰ বাবে অসামৰ্থবান কৰা আছে"
@@ -2616,10 +2593,6 @@ msgstr ""
 msgid "Cannot check address family on this platform"
 msgstr "এই প্লেটফৰ্মত macvlan ডিভাইচসমূহ সৃষ্টি কৰিব নোৱাৰি"
 
-#, c-format
-msgid "Cannot check dnsmasq binary %s"
-msgstr "dnsmasq বাইনাৰি %s নিৰীক্ষণ কৰিব নোৱাৰি"
-
 #, fuzzy, c-format
 msgid "Cannot chown uniq path: %s"
 msgstr "পথ '%s' খোলোঁতে ব্যৰ্থ"
@@ -2805,10 +2778,6 @@ msgstr "'%s' ডিভাইচৰ পৰিসংখ্যান সন্ধ�
 #, fuzzy, c-format
 msgid "Cannot find byte stats for block device '%s'"
 msgstr "'%s' ডিভাইচৰ পৰিসংখ্যান সন্ধান কৰিবলৈ ব্যৰ্থ"
-
-#, fuzzy, c-format
-msgid "Cannot find name for FD %d socket family %d"
-msgstr "প্ৰগ্ৰাম %d সংস্কৰণ %d সন্ধান কৰিব নোৱাৰি"
 
 #, c-format
 msgid "Cannot find program %d version %d"
@@ -3149,10 +3118,6 @@ msgstr "ব্যৱহাৰকাৰী স্টেট '%s' বিশ্ল�
 msgid "Cannot parse uuid attribute of element <address>"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "Cannot parse version string '%s'"
-msgstr "ব্যৱহাৰকাৰী স্টেট '%s' বিশ্লেষণ কৰিব নোৱাৰি"
-
 #, c-format
 msgid ""
 "Cannot plug '%s' interface into '%s' because new combined inbound floor=%llu "
@@ -3256,12 +3221,12 @@ msgstr "পৰিপ্ৰেক্ষতিত %s সংহতি কৰিব 
 msgid "Cannot set interface MAC on '%s'"
 msgstr "'%s' ত আন্তঃপৃষ্ঠ MAC সংহতি কৰিব নোৱাৰি"
 
-#, fuzzy, c-format
-msgid "Cannot set interface MAC to %s on '%s'"
-msgstr "'%s' ত আন্তঃপৃষ্ঠ MAC সংহতি কৰিব নোৱাৰি"
+#, c-format
+msgid "Cannot set interface MAC to %s for ifname %s vf %d"
+msgstr ""
 
 #, fuzzy, c-format
-msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
+msgid "Cannot set interface MAC to %s on '%s'"
 msgstr "'%s' ত আন্তঃপৃষ্ঠ MAC সংহতি কৰিব নোৱাৰি"
 
 #, c-format
@@ -3271,6 +3236,10 @@ msgstr "'%s' ত আন্তঃপৃষ্ঠ MTU সংহতি কৰিব
 #, c-format
 msgid "Cannot set interface flags on '%s'"
 msgstr "'%s' ত আন্তঃপৃষ্ঠ ফ্লেগসমূহ সংহতি কৰিব নোৱাৰি"
+
+#, c-format
+msgid "Cannot set interface vlanid to %d for ifname %s vf %d"
+msgstr ""
 
 msgid "Cannot set memory higher than max memory"
 msgstr ""
@@ -3550,7 +3519,6 @@ msgstr ""
 msgid "Checkpoints have inconsistent relations for domain %s"
 msgstr "স্নেপশ্বটসমূহৰ ডমেইন %s ৰ বাবে অস্থিৰ সম্পৰ্ক আছে"
 
-#. All bytes up to and including the checksum byte should add up to 0.
 msgid "Checksum validation has failed"
 msgstr ""
 
@@ -4019,10 +3987,6 @@ msgid "Could not destroy domain: %s"
 msgstr "ডমেইন ধ্বংস কৰিব নোৱাৰি: %s"
 
 #, c-format
-msgid "Could not determine kernel version from string %s"
-msgstr "স্ট্ৰিং %s ৰ পৰা কাৰনেল সংস্কৰণ নিৰ্ধাৰণ কৰিব নোৱাৰি"
-
-#, c-format
 msgid "Could not dlsym %s from '%s': %s"
 msgstr "'%s' ৰ পৰা %s dlsym কৰিব পৰা নগল: %s"
 
@@ -4167,9 +4131,9 @@ msgstr "MAC ঠিকনা '%s' ৰ সৈতে ভৌতিক NIC পোৱ�
 msgid "Could not find physical NIC with name '%s'"
 msgstr "নাম '%s' ৰ সৈতে ভৌতিক NIC পোৱা নগল"
 
-#, fuzzy, c-format
-msgid "Could not find placement for v1 controller %s at %s"
-msgstr "চলক '%s' ৰ বাবে মান পোৱা নগল"
+#, c-format
+msgid "Could not find placement for v1 controller %s"
+msgstr ""
 
 #, fuzzy
 msgid "Could not find placement for v2 controller"
@@ -4773,7 +4737,6 @@ msgstr ""
 msgid "Could not retrieve default Msvm_DiskDrive object"
 msgstr ""
 
-#. Something went wrong retrieving pool info, cope with it
 msgid "Could not retrieve pool information"
 msgstr "পুল তথ্য উদ্ধাৰ কৰিব পৰা নগল"
 
@@ -4868,10 +4831,6 @@ msgstr ""
 #, fuzzy, c-format
 msgid "Could not start 'slirp'. exitstatus: %d"
 msgstr "ডমেইন আৰম্ভ কৰিব পৰা নগল: %s"
-
-#, c-format
-msgid "Could not start 'swtpm'. exitstatus: %d, error: %s"
-msgstr ""
 
 #, c-format
 msgid "Could not start 'vhost-user-gpu'. exitstatus: %d"
@@ -5035,6 +4994,12 @@ msgstr "বৰ্তমান:"
 
 #, c-format
 msgid "Custom loader requires explicit %s configuration"
+msgstr ""
+
+msgid "D-Bus audio is not supported with this QEMU"
+msgstr ""
+
+msgid "D-Bus p2p with an address is not supported"
 msgstr ""
 
 msgid "DAC imagelabel couldn't be determined"
@@ -5659,7 +5624,6 @@ msgstr ""
 "ডমেইনৰ %d আন্তঃপৃষ্ঠসমূহ আছে। --mac ব্যৱহাৰ কৰি কোনটো অসংলগ্ন কৰা হব অনুগ্ৰহ কৰি "
 "ধাৰ্য্য কৰক"
 
-#. this is the 2nd match, so it's ambiguous
 #, c-format
 msgid ""
 "Domain has multiple interfaces matching MAC address %s. You must use detach-"
@@ -6872,27 +6836,20 @@ msgstr "%s নিৰ্মাণ কৰিবলৈ ব্যৰ্থ"
 msgid "Failed to create thread for receiving migration data"
 msgstr "হস্ট স্থগিত কৰাৰ বাবে থ্ৰেড সৃষ্টি কৰিবলে ব্যৰ্থ"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 #, fuzzy
 msgid "Failed to create thread to handle daemon restart"
 msgstr "হস্ট স্থগিত কৰাৰ বাবে থ্ৰেড সৃষ্টি কৰিবলে ব্যৰ্থ"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain death"
 msgstr ""
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 #, fuzzy
 msgid "Failed to create thread to handle domain shutdown"
 msgstr "হস্ট স্থগিত কৰাৰ বাবে থ্ৰেড সৃষ্টি কৰিবলে ব্যৰ্থ"
 
-#. Not much else can be done
+msgid "Failed to create thread to handle firewall reload/restart"
+msgstr ""
+
 #, fuzzy
 msgid "Failed to create thread to handle pool refresh"
 msgstr "হস্ট স্থগিত কৰাৰ বাবে থ্ৰেড সৃষ্টি কৰিবলে ব্যৰ্থ"
@@ -7435,10 +7392,6 @@ msgstr "লকক প্ৰশ্ন কৰিবলে ব্যৰ্থ"
 msgid "Failed to kill process %lld"
 msgstr ""
 
-#, c-format
-msgid "Failed to kill process %lld: %s"
-msgstr "প্ৰক্ৰিয়া %lld kill কৰিবলে ব্যৰ্থ: %s"
-
 msgid "Failed to list active domains"
 msgstr "সক্ৰিয় ডোমেইনৰ তালিকা নিৰ্মাণে ব্যৰ্থ"
 
@@ -7451,7 +7404,6 @@ msgstr "সক্ৰিয় নে'টৱৰ্কৰ তালিকা নি�
 msgid "Failed to list active pools"
 msgstr "সক্ৰিয় পুলৰ তালিকা সৃষ্টি কৰোঁতে বিফল"
 
-#. there was an error during the first or second call
 msgid "Failed to list domains"
 msgstr "ডমেইনসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
@@ -7467,28 +7419,22 @@ msgstr "নিষ্ক্ৰিয় নে'টৱৰ্কৰ তালিকা
 msgid "Failed to list inactive pools"
 msgstr "নিষ্ক্ৰিয় পুলৰ তালিকা সৃষ্টি কৰোঁতে বিফল"
 
-#. there was an error during the first or second call
 msgid "Failed to list interfaces"
 msgstr "আন্তঃপৃষ্ঠসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
-#. there was an error during the call
 #, fuzzy
 msgid "Failed to list network filter bindings"
 msgstr "নেটৱৰ্ক ফিল্টাৰসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
-#. there was an error during the call
 msgid "Failed to list network filters"
 msgstr "নেটৱৰ্ক ফিল্টাৰসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
-#. there was an error during the first or second call
 msgid "Failed to list networks"
 msgstr "নেটৱৰ্কসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
-#. there was an error during the call
 msgid "Failed to list node devices"
 msgstr "নিষ্ক্ৰিয় ডোমেইনৰ তালিকা নিৰ্মাণে ব্যৰ্থ"
 
-#. there was an error during the call
 msgid "Failed to list node secrets"
 msgstr "ন'ড গোপন তথ্যসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
@@ -7496,7 +7442,6 @@ msgstr "ন'ড গোপন তথ্যসমূহ তালিকাভু�
 msgid "Failed to list persistent guests on $uri"
 msgstr "$uri ত স্থায়ী অতিথিসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
-#. there was an error during the first or second call
 msgid "Failed to list pools"
 msgstr "পুলসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
@@ -7516,7 +7461,6 @@ msgstr "পৰিবৰ্তনশীল অতিথিসমূহ তাল�
 msgid "Failed to list vcpus for domain '%d' with libxenlight"
 msgstr "libxenlight ৰ সৈতে ডমেইন '%d' ৰ বাবে vcpus তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
-#. there was an error during the call
 msgid "Failed to list volumes"
 msgstr "ভলিউমসমূহ তালিকাভুক্ত কৰিবলে ব্যৰ্থ"
 
@@ -7724,6 +7668,10 @@ msgstr "tty %s খুলিবলৈ ব্যৰ্থ"
 msgid "Failed to parse %s: only com1 and com2 supported."
 msgstr "URl উপাদান %s ৰ মান বিশ্লেষণ কৰিবলে ব্যৰ্থ"
 
+#, c-format
+msgid "Failed to parse CCW address '%s'"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "Failed to parse MAC address from '%s'"
 msgstr "'%s' ৰ পৰা uid আৰু gid বিশ্লেষণ কৰিবলে ব্যৰ্থ"
@@ -7778,6 +7726,9 @@ msgstr "'%s' ৰ পৰা ধনাত্মক পূৰ্ণসংখ্য�
 #, fuzzy
 msgid "Failed to parse memory"
 msgstr "পোৰ্ট সংখ্যা বিশ্লেষণ কৰিবলে ব্যৰ্থ"
+
+msgid "Failed to parse memory allocation threads"
+msgstr ""
 
 #, fuzzy
 msgid "Failed to parse memory slot count"
@@ -8007,10 +7958,6 @@ msgstr "লক এৰিবলে ব্যৰ্থ"
 msgid "Failed to release lock: %s"
 msgstr "লক এৰিবলে ব্যৰ্থ"
 
-#, c-format
-msgid "Failed to release port %d"
-msgstr "পোৰ্ট %d উন্মোচন কৰিবলে ব্যৰ্থ"
-
 #, fuzzy, c-format
 msgid "Failed to remove capability %s: %d"
 msgstr "ক্ষমতা প্ৰয়োগ কৰিবলৈ ব্যৰ্থ: %d"
@@ -8105,9 +8052,6 @@ msgstr "libxenlight ৰ সৈতে ডমেইন '%d' অব্যাহত 
 msgid "Failed to resume domain '%s'"
 msgstr ""
 
-#. Hm, we already know we are in error here.  We don't want to
-#. * overwrite the previous error, though, so we just throw something
-#. * to the logs and hope for the best
 #, c-format
 msgid "Failed to resume guest %s after failure"
 msgstr "বিফলতাৰ পিছত গেস্ট %s পুনৰাৰম্ভ কৰিবলৈ ব্যৰ্থ"
@@ -8730,6 +8674,13 @@ msgstr ""
 msgid "Firmware entry must have either value or 'file' attribute"
 msgstr ""
 
+#, c-format
+msgid "Firmware flash mode value '%s' unexpected"
+msgstr ""
+
+msgid "Firmware flash mode value was malformed"
+msgstr ""
+
 msgid ""
 "First file-based harddisk has no source, cannot deduce datastore and path "
 "for VMX file"
@@ -8737,63 +8688,10 @@ msgstr ""
 "প্ৰথম ফাইল-ভিত্তিয় হাৰ্ডডিস্কৰ কোনো উৎস নাই, VMX ফাইলৰ বাবে তথ্যসংগ্ৰহ আৰু পথ কম "
 "কৰিব নোৱাৰি"
 
-#. Macros to help dealing with flag requirements.
-#. *
-#. * VIR_REQUIRE_FLAG_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @RET: Return value.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_REQUIRE_FLAG_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if required flag is not set.
-#.
 #, c-format
 msgid "Flag '%s' is required by flag '%s'"
 msgstr ""
 
-#. Macros to help dealing with mutually exclusive flags.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @RET: Return value.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, fuzzy, c-format
 msgid "Flags '%s' and '%s' are mutually exclusive"
 msgstr "বিকল্পসমূহ --%s আৰু --%s পাৰস্পৰিকভাৱে সূকীয়া"
@@ -9045,6 +8943,10 @@ msgstr "ডমেইনৰ হস্টনাম প্ৰিণ্ট কৰক
 msgid "Gets statistics about one or more (or all) domains"
 msgstr ""
 
+#, c-format
+msgid "Global feature %d should have already been handled"
+msgstr ""
+
 msgid "Got empty feature list from resctrl"
 msgstr ""
 
@@ -9090,10 +8992,6 @@ msgstr ""
 #, fuzzy
 msgid "HTM configuration is not supported by this QEMU binary"
 msgstr "nvram ডিভাইচ এই QEMU বাইনাৰি দ্বাৰা সমৰ্থিত নহয়"
-
-#, fuzzy
-msgid "HTP resizing is not supported by this QEMU binary"
-msgstr "এই QEMU বাইনাৰি দ্বাৰা ডিস্কাৰ্ড সমৰ্থিত নহয়"
 
 #, c-format
 msgid "HTTP response code %d for call to '%s'"
@@ -9171,6 +9069,11 @@ msgstr "হস্ট CPU এটা নিষিদ্ধ বৈশিষ্ট�
 
 msgid "Host SMBIOS information is not available"
 msgstr "হস্ট SMBIOS তথ্য উপলব্ধ নহয়"
+
+msgid ""
+"Host not compatible with KVM; HW virtualization CPU features not found. Only "
+"emulated CPUs are available; performance will be significantly limited"
+msgstr ""
 
 msgid "Host sysinfo extraction not supported on this platform"
 msgstr "এই প্লেটফৰ্মত হস্ট sysinfo নিষ্কাষণ সমৰ্থিত নহয়"
@@ -9306,7 +9209,19 @@ msgid "IOMMU device: '%s' is only supported with ARM Virt machines"
 msgstr ""
 
 #, c-format
+msgid "IOMMU device: '%s' is only supported with Q35 and ARM Virt machines"
+msgstr ""
+
+#, c-format
 msgid "IOMMU device: '%s' is only supported with Q35 machines"
+msgstr ""
+
+#, c-format
+msgid "IOMMU device: '%s' needs a PCI address"
+msgstr ""
+
+#, c-format
+msgid "IOMMU device: '%s' requires ACPI"
 msgstr ""
 
 msgid "IOMMU eim requires interrupt remapping to be enabled"
@@ -9600,10 +9515,6 @@ msgid "Invalid 'level' attribute in cache element for NUMA node %d"
 msgstr ""
 
 #, c-format
-msgid "Invalid 'removed' attribute for feature %s in model %s"
-msgstr ""
-
-#, c-format
 msgid "Invalid --with-loader-nvram list: %s"
 msgstr ""
 
@@ -9714,14 +9625,6 @@ msgstr "VM ৰ বাবে অবৈধ PID %d"
 msgid "Invalid STP state value %d received for '%s'. Must be -1, 0, or 1."
 msgstr "অবৈধ STP অৱস্থা মান %d প্ৰাপ্ত হৈছে '%s'। -1, 0, অথবা 1 হব লাগিব।"
 
-#, fuzzy
-msgid "Invalid TSC frequency"
-msgstr "অবৈধ টাইমাৰ কম্পনাংক"
-
-#, fuzzy
-msgid "Invalid TSC scaling attribute"
-msgstr "অবৈধ ফলবেক বৈশিষ্ট"
-
 #, c-format
 msgid "Invalid ULong value specified for prefix in definition of network '%s'"
 msgstr "নেটৱৰ্ক '%s' ৰ বিৱৰণৰ উপসৰ্গৰ বাবে অবৈধ ULong মান ধাৰ্য্যত"
@@ -9763,17 +9666,11 @@ msgstr "প্ৰাচল '%s' ৰ বাবে অবৈধ ধৰণ '%s', �
 msgid "Invalid address."
 msgstr "অবৈধ ঠিকনা।"
 
-#.
-#. * Don't check for *selectSet != NULL here because selectSet is a list
-#. * and might contain items already. This function appends to selectSet.
-#.
-#. optional
-#. optional
-#. nothing
-#. nothing
-#. nothing
 msgid "Invalid argument"
 msgstr "অবৈধ তৰ্ক"
+
+msgid "Invalid async job start"
+msgstr ""
 
 #, c-format
 msgid ""
@@ -9942,14 +9839,6 @@ msgstr ""
 msgid "Invalid disk read error policy: '%s'"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "Invalid dns enable setting '%s' in network '%s'"
-msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
-
-#, c-format
-msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
-msgstr "নেটৱৰ্ক '%s' ত অবৈধ dns forwardPlainNames সংহতি '%s'"
-
 #, fuzzy
 msgid "Invalid domain checkpoint"
 msgstr "অবৈধ ডোমেইন নিৰ্দেশক ডিভাইচ"
@@ -9957,10 +9846,6 @@ msgstr "অবৈধ ডোমেইন নিৰ্দেশক ডিভাই
 #, fuzzy, c-format
 msgid "Invalid domain checkpoint: %s"
 msgstr "%s ত অবৈধ ডোমেইন নিৰ্দেশক ডিভাইচ"
-
-#, fuzzy, c-format
-msgid "Invalid domain localOnly setting '%s' in network '%s'"
-msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
 
 #, fuzzy
 msgid "Invalid domain snapshot"
@@ -10062,10 +9947,6 @@ msgstr "নেটৱৰ্ক '%s' ত অবৈধ ফৰৱাৰ্ডাৰ 
 msgid "Invalid forwarder element, must contain at least one of addr or domain"
 msgstr "নেটৱৰ্ক %s ৰ <dns> ত অবৈধ <forwarder> উপাদান প্ৰাপ্ত হল"
 
-#, fuzzy, c-format
-msgid "Invalid guest rx filters trust setting '%s' "
-msgstr "অবৈধ নেটৱৰ্ক ফিল্টাৰ: %s"
-
 #, c-format
 msgid "Invalid harddisk device name: %s"
 msgstr "হাৰ্ড ডিস্ক ডিভাইচৰ নাম বৈধ নহয়: %s"
@@ -10090,9 +9971,6 @@ msgstr "অবৈধ অৱস্থা বৈশিষ্ট '%s'"
 msgid "Invalid integer value '%s' in file '%s'"
 msgstr "নেটৱৰ্ক '%s' ত অবৈধ নেটমাস্ক '%s'"
 
-msgid "Invalid ip address prefix value"
-msgstr "ip ঠিকনাৰ উপসৰ্গৰ অবৈধ মান"
-
 #, c-format
 msgid "Invalid ipv6 setting '%s' in network '%s'"
 msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
@@ -10116,10 +9994,6 @@ msgstr "অবৈধ ব্যৰ্থতা কাৰ্য্য: '%s'\n"
 #, fuzzy, c-format
 msgid "Invalid lifecycle type '%s'."
 msgstr "অবৈধ গোপণ ধৰণ '%s'"
-
-#, fuzzy, c-format
-msgid "Invalid localPtr value '%s' in network '%s'"
-msgstr "নেটৱৰ্ক '%s' ত অবৈধ বিলম্ব মান"
 
 #, c-format
 msgid "Invalid log destination '%s' for log output '%s'"
@@ -10155,13 +10029,6 @@ msgid "Invalid macTableManager setting '%s' in network port"
 msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
 
 #, fuzzy, c-format
-msgid "Invalid managed setting '%s' in network port"
-msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
-
-msgid "Invalid match attribute for CPU specification"
-msgstr "CPU ৰ মান নিৰ্ধাৰণকৰ্তা মিলৰ গুণ বৈধ নহয়"
-
-#, fuzzy, c-format
 msgid "Invalid match string '%s'"
 msgstr "অবৈধ অৱস্থা বৈশিষ্ট '%s'"
 
@@ -10172,10 +10039,6 @@ msgstr ""
 #, c-format
 msgid "Invalid maxGrantFrames: %i"
 msgstr ""
-
-#, c-format
-msgid "Invalid memory core dump attribute value '%s'"
-msgstr "অবৈধ মেমৰি কেন্দ্ৰ ডাম্প বৈশিষ্ট্য মান '%s'"
 
 #, c-format
 msgid "Invalid message prog=%d type=%d serial=%u proc=%d"
@@ -10246,10 +10109,6 @@ msgid "Invalid network port pointer: %s"
 msgstr "অবৈধ নেটৱৰ্ক ফিল্টাৰ: %s"
 
 #, fuzzy, c-format
-msgid "Invalid network prt plug type '%s'"
-msgstr "অবৈধ নেটৱৰ্ক ফিল্টাৰ: %s"
-
-#, fuzzy, c-format
 msgid "Invalid node id %u "
 msgstr "অবৈধ অৱস্থা: %s"
 
@@ -10298,6 +10157,10 @@ msgstr "virXPathULong() লৈ অবৈধ স্থিতিমাপ"
 #, fuzzy
 msgid "Invalid parameter type passed to free"
 msgstr "virXPathNode() লৈ অবৈধ স্থিতিমাপ"
+
+#, c-format
+msgid "Invalid parameters macaddr=%p allowRetry=%p"
+msgstr ""
 
 msgid "Invalid partial specification for virtio ccw address"
 msgstr "virtio ccw ঠিকনাৰ বাবে অবৈধ আংশিক ধাৰ্য্যকৰণ"
@@ -10442,14 +10305,6 @@ msgid ""
 "definition"
 msgstr "নেটৱৰ্ক '%s' IPv6 স্থিৰ হস্ট বিৱৰণত MAC ঠিকনা '%s' ধাৰ্য্য কৰাটো অবৈধ"
 
-#, fuzzy, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
-msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
-
-#, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in portgroup"
-msgstr ""
-
 #, c-format
 msgid "Invalid type '%s' requested for parameter '%s', actual type is '%s'"
 msgstr "প্ৰাচল '%s' ৰ বাবে অবৈধ ধৰণ '%s' অনুৰোধ কৰা হৈছে, প্ৰকৃত ধৰণ হল '%s'"
@@ -10510,6 +10365,18 @@ msgid ""
 msgstr ""
 
 #, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative integer value"
+msgstr ""
+
+#, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative value"
+msgstr ""
+
+#, c-format
 msgid "Invalid value for attribute '%s' in element '%s': Zero is not permitted"
 msgstr ""
 
@@ -10545,10 +10412,6 @@ msgstr "আৰম্ভণি CPU ৰ বাবে অবৈধ মান"
 
 msgid "Invalid value for timeout"
 msgstr "সময়অন্তৰ বাবে অবৈধ মান"
-
-#, c-format
-msgid "Invalid value in migratable attribute: '%s'"
-msgstr ""
 
 #, c-format
 msgid "Invalid value of %d for I/O weight"
@@ -10635,10 +10498,6 @@ msgstr "ইয়াতকৈ (বাইট) সৰু সংলগ্ন মুক
 #, fuzzy
 msgid "KVM device assignment is no longer supported on this system"
 msgstr "VFIO PCI ডিভাইচ ধাৰ্য্যকৰণ qemu ৰ এই সংস্কৰণ দ্বাৰা সমৰ্থিত নহয়"
-
-#, fuzzy, c-format
-msgid "KVM is not supported by '%s' on this host"
-msgstr "এই প্লেটফৰ্মত ৰ' I/O সমৰ্থিত নহয়"
 
 #, fuzzy
 msgid "KVM is not supported on this platform"
@@ -11030,6 +10889,10 @@ msgstr "সৰ্বোচ্চ মেমৰি:"
 msgid "Maximum CPUs greater than specified machine type limit %u"
 msgstr ""
 
+#, c-format
+msgid "Maximum supported number of ISA serial ports is '%d'"
+msgstr ""
+
 msgid "Media Registry is null"
 msgstr ""
 
@@ -11267,10 +11130,6 @@ msgstr ""
 msgid "Missing 'link' attribute for NIC"
 msgstr "NUMA কোষত সন্ধানহীন 'cpus' বৈশিষ্ট"
 
-#, fuzzy
-msgid "Missing 'model' attribute in mediated device's <hostdev> element"
-msgstr "আন্তঃপৃষ্ঠৰ <actual> উপাদানত সন্ধানহীন ধৰণ বৈশিষ্ট"
-
 #, c-format
 msgid "Missing 'name' property in %s lookup"
 msgstr "%s লুকআপত সন্ধানহীন 'name' বৈশিষ্ট্য"
@@ -11351,6 +11210,9 @@ msgstr "নেটৱৰ্ক '%s' DNS HOST ৰেকৰ্ডত IP ঠিক�
 #, c-format
 msgid "Missing IP address in static host definition for network '%s'"
 msgstr "নেটৱৰ্ক '%s' ৰ বাবে স্থিৰ হস্ট বিৱৰণত সন্ধানহীন IP ঠিকনা"
+
+msgid "Missing LISTEN_FDNAMES env from systemd socket activation"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "Missing PVR information for CPU model %s"
@@ -11657,18 +11519,9 @@ msgid ""
 "response"
 msgstr ""
 
-msgid "Missing or invalid fd in add-fd response"
-msgstr ""
-
-msgid "Missing or invalid fdset-id in add-fd response"
-msgstr ""
-
 #, fuzzy
 msgid "Missing or invalid name in query-rx-filter response"
 msgstr "CPU আৰ্হি %s ত সন্ধানহীন অথবা অবৈধ PVR মান"
-
-msgid "Missing or invalid return data in add-fd response"
-msgstr ""
 
 msgid "Missing or invalid scsi adapter 'unique_id' value"
 msgstr "সন্ধানহীন অথবা অবৈধ scsi adapter 'unique_id' মান"
@@ -12063,12 +11916,6 @@ msgstr "এই QEMU বাইনাৰি দ্বাৰা SATA সমৰ্�
 msgid "NVMe namespace can't be zero"
 msgstr "hugepage আকাৰ শূন্য হব নোৱাৰিব"
 
-#. Output old style header
-#. We only get here if the --details option was selected.
-#. Insert the header into table
-#. The old output format
-#. We only get here if the --details option was selected.
-#. Insert the header into table
 msgid "Name"
 msgstr "নাম"
 
@@ -12571,9 +12418,6 @@ msgstr "নেটৱৰ্ক '%s' ৰ কোনো সংলগ্ন আন্
 msgid "No open log file %s"
 msgstr "লগ ফাইল %s খোলিবলে অক্ষম"
 
-msgid "No output from iptables --version"
-msgstr ""
-
 msgid "No per-CPU stats available"
 msgstr "কোনো প্ৰতি-CPU পৰিসংখ্যা উপলব্ধ নাই"
 
@@ -12771,6 +12615,9 @@ msgstr "স্ট্ৰিমৰ পৰা পঢ়িব নোৱাৰি"
 #, c-format
 msgid "Not detaching active device %s"
 msgstr "কোনো অসংলগ্ন সক্ৰিয় ডিভাইচ %s নাই"
+
+msgid "Not enough arguments passed, nothing to set"
+msgstr ""
 
 #, c-format
 msgid "Not enough free space in pool for volume '%s'"
@@ -13028,6 +12875,9 @@ msgstr "কেৱল এটা প্ৰাথমিক ভিডিঅ' ডি�
 msgid "Only one primary video device is supported"
 msgstr "কেৱল এটা প্ৰাথমিক ভিডিঅ' ডিভাইচ সমৰ্থিত"
 
+msgid "Only one vgpu device can have 'ramfb' enabled"
+msgstr ""
+
 msgid "Only ploop disk images are supported by vz driver."
 msgstr ""
 
@@ -13114,20 +12964,6 @@ msgstr ""
 "ডিভাইচৰ বাবে প্ৰয়োজনীয় সূচী %u ৰ সৈতে PCI নিয়ন্ত্ৰকৰ বাবে ডিভাইচ এলিয়াচ সংহতি "
 "কৰা হোৱা নাছিল, ঠিকনা %s"
 
-#. Macros to help dealing with required options.
-#. VSH_REQUIRE_OPTION_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable).
-#. * @NAME2: String containing the name of required option.
-#. * @EXPR2: Expression to validate the variable (boolean variable).
-#. *
-#. * Check if required command options in virsh was set.  Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Option --%s is required by option --%s"
 msgstr ""
@@ -13147,20 +12983,6 @@ msgstr "বিকল্প তৰ্ক ৰিক্ত হয়"
 msgid "Optional flags or --rawstats are not supported by the daemon"
 msgstr ""
 
-#. Macros to help dealing with mutually exclusive options.
-#. VSH_EXCLUSIVE_OPTIONS_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable)
-#. * @NAME2: String containing the name of the option.
-#. * @EXPR2: Expression to validate the variable (boolean variable)
-#. *
-#. * Reject mutually exclusive command options in virsh. Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Options --%s and --%s are mutually exclusive"
 msgstr "বিকল্পসমূহ --%s আৰু --%s পাৰস্পৰিকভাৱে সূকীয়া"
@@ -13399,7 +13221,6 @@ msgstr "বিশ্লেষিত JSON উত্তৰ '%s' এটা অব�
 msgid "Partition path '%s' must start with '/'"
 msgstr "বিভাজন পথ '%s' , '/' ৰ সৈতে আৰম্ভ হ'ব লাগিব"
 
-#. warn users that the --base64 option passed from command line is wrong
 #, fuzzy
 msgid "Passing secret value as command-line argument is insecure!"
 msgstr "কোনো qemu কমান্ড-লাইন তৰ্ক ধাৰ্য্য কৰা হোৱা নাই"
@@ -13734,9 +13555,15 @@ msgstr ""
 msgid "QEMU does not support SEV guest"
 msgstr "QEMU বাইনৰিয়ে %s সমৰ্থন নকৰে"
 
+msgid "QEMU does not support calculating dirty page rate"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "QEMU does not support device assignment mode '%s'"
 msgstr "এই QEMU এ '-device usb-storage' নিয়ন্ত্ৰক সমৰ্থন নকৰে"
+
+msgid "QEMU does not support dirty page rate calculation mode."
+msgstr ""
 
 msgid "QEMU does not support multiple listens for one graphics device."
 msgstr ""
@@ -13764,6 +13591,9 @@ msgstr "QEMU মনিটৰ কমান্ড"
 
 msgid ""
 "QEMU reports invalid default CPU model \"host\" for non-kvm domain virt type"
+msgstr ""
+
+msgid "QEMU reports migration is still running"
 msgstr ""
 
 #, c-format
@@ -14255,7 +14085,6 @@ msgstr ""
 msgid "S4 state is disabled for this domain"
 msgstr "এই ডমেইনৰ বাবে S4 অৱস্থা অসামৰ্থবান কৰা আছে"
 
-#. Denied
 #, c-format
 msgid "SASL client identity '%s' not allowed by ACL"
 msgstr ""
@@ -14683,13 +14512,6 @@ msgstr ""
 msgid "Setting different SELinux label on %s which is already in use"
 msgstr ""
 
-#, c-format
-msgid "Setting disk %s is not allowed for disk of network type"
-msgstr "নেটৱৰ্ক ধৰণৰ ডিস্কৰ বাবে ডিস্ক %s সংহতি কৰাটো অনুমোদিত নহয়"
-
-msgid "Setting disk 'requisite' is allowed only for cdrom or floppy"
-msgstr "ডিস্ক 'requisite' সংহতি কৰাটো কেৱল cdrom অথবা floppy ৰ বাবে অনুমোদিত"
-
 #, fuzzy
 msgid "Setting disk block sizes is not supported by vz driver."
 msgstr "এই QEMU দ্বাৰা ide ডিস্কৰ বাবে wwn সংহতি কৰাটো সমৰ্থিত নহয়"
@@ -14805,9 +14627,6 @@ msgstr "CPU ৰ সময়:"
 msgid "Shared memory mapping is not supported with this QEMU"
 msgstr "এই QEMU দ্বাৰা spice গ্ৰাফিক্স সমৰ্থিত নহয়"
 
-#. XXX: Need to sort the returned params once new parameter
-#. * fields not of shared memory are added.
-#.
 msgid "Shared memory:\n"
 msgstr "অংশীদাৰী মেমৰি:\n"
 
@@ -14887,7 +14706,6 @@ msgstr "এই QEMU বাইনাৰি দ্বাৰা SATA সমৰ্�
 msgid "Snapshot"
 msgstr "স্নেপশ্বট তালিকা"
 
-#. Depending on flags, we re-edit even if XML is unchanged.
 #, c-format
 msgid "Snapshot %s XML configuration not changed.\n"
 msgstr "স্নেপশ্বট %s XML সংৰূপ পৰিৱৰ্তন কৰা হোৱা নাই।\n"
@@ -15008,6 +14826,9 @@ msgstr "ধাৰ্য্য কৰে যদি পৃথক numa ন'ডস�
 
 msgid "Specifying mount point is not supported for now"
 msgstr "মাউণ্ট পইণ্ট ধাৰ্য্য কৰাটো এতিয়াৰ বাবে সমৰ্থিত নহয়"
+
+msgid "Spice audio is not supported without spice graphics"
+msgstr ""
 
 #, fuzzy
 msgid "Start"
@@ -15363,10 +15184,6 @@ msgid "TPM 1.2 is not supported with the SPAPR device model"
 msgstr ""
 
 #, c-format
-msgid "TPM Proxy model %s is only available for PPC64 guests"
-msgstr ""
-
-#, c-format
 msgid "TPM Proxy model %s requires 'Passthrough' backend"
 msgstr ""
 
@@ -15374,15 +15191,10 @@ msgstr ""
 msgid "TPM device path %s is invalid"
 msgstr "TPM ডিভাইচ পথ %s অবৈধ"
 
-#, c-format
-msgid "TPM model '%s' is only available for x86 and aarch64 guests"
-msgstr ""
-
 #, fuzzy
 msgid "Table row cannot be empty"
 msgstr "%s ৰিক্ত হব নোৱাৰিব"
 
-#. title
 msgid "Target"
 msgstr "লক্ষ্য"
 
@@ -15986,6 +15798,10 @@ msgstr ""
 "লক্ষ্য পুনৰনিৰ্দেশ ডিভাইচ উৎস ধৰণ %s উৎস ডিভাইচ উৎস ধৰণ %s ৰ সৈতে মিল নাখায়"
 
 #, c-format
+msgid "Target serial model %s does not match source %s"
+msgstr ""
+
+#, c-format
 msgid "Target serial port %d does not match source %d"
 msgstr "লক্ষ্য ক্ৰমিক পোৰ্ট %d উৎস %d ৰ সৈতে মিল নাখায়"
 
@@ -16037,8 +15853,8 @@ msgid "Target timer %s does not match source %s"
 msgstr "লক্ষ্য টাইমাৰ %s এ উৎস %s ৰ সৈতে মিল নাখায়"
 
 #, c-format
-msgid "Target timer presence %d does not match source %d"
-msgstr "লক্ষ্য টাইমাৰ উপস্থিতি %d উৎস %d ৰ সৈতে মিল নাখায়"
+msgid "Target timer presence '%s' does not match source '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "Target type '%s' cannot have an associated address"
@@ -16190,6 +16006,9 @@ msgstr "QEMU এক্সিকিউটেবুল %s এ TPM আৰ্হি 
 msgid "The XML configuration was changed by another user."
 msgstr "XML সংৰূপ অন্য ব্যৱহাৰকাৰী দ্বাৰা পৰিবৰ্তন কৰা হৈছিল।"
 
+msgid "The associated audio is not of 'dbus' kind."
+msgstr ""
+
 #, c-format
 msgid "The certificate %s basic constraints do not show a CA"
 msgstr "প্ৰমাণপত্ৰ %s মৌলিক বাধাসমূহে এটা CA নেদেখুৱায়"
@@ -16250,6 +16069,10 @@ msgstr ""
 #, c-format
 msgid ""
 "The device at PCI address %s has unrecognized connection type flags 0x%.2x"
+msgstr ""
+
+#, c-format
+msgid "The device at PCI address %s needs to be an integrated device (bus=0)"
 msgstr ""
 
 #, c-format
@@ -16665,11 +16488,9 @@ msgstr "ত্ৰুটি অৱস্থাত চকেট লিখাৰ �
 msgid "Try again?"
 msgstr ""
 
-#. Better leak than crash
 msgid "Trying to free MultiCURL object that is still in use"
 msgstr "এতিয়াও ব্যৱহৃত MultiCURL অবজেক্ট মুক্ত কৰাৰ চেষ্টা কৰা হৈছে"
 
-#. Better leak than crash
 msgid "Trying to free SharedCURL object that is still in use"
 msgstr "ব্যৱহাৰত থকা SharedCURL অবজেক্ট মুক্ত কৰাৰ চেষ্টা কৰা হৈছে"
 
@@ -16862,10 +16683,6 @@ msgstr "সংৰূপ ফাইল %s অভিগম কৰিবলে অ�
 #, c-format
 msgid "Unable to access file descriptor %d"
 msgstr "ফাইল বিৱৰক %d অভিগম কৰিবলে অক্ষম"
-
-#, c-format
-msgid "Unable to access file descriptor %d path %s"
-msgstr ""
 
 #, fuzzy
 msgid "Unable to access kernel32.dll"
@@ -17107,10 +16924,6 @@ msgstr "%s বন্ধ কৰিবলে অক্ষম"
 #, fuzzy
 msgid "Unable to close disk children"
 msgstr "%s বন্ধ কৰিবলে অক্ষম"
-
-#, fuzzy, c-format
-msgid "Unable to close file '%s'"
-msgstr "ফাইল %s বন্ধ কৰিবলে অক্ষম"
 
 #, fuzzy
 msgid "Unable to close recursively all disks"
@@ -17427,6 +17240,9 @@ msgstr "'cpuacct' cgroups নিয়ন্ত্ৰক মাউণ্ট পা�
 msgid "Unable to find 'devices' cgroups controller mount"
 msgstr "'devices' cgroups মাউণ্ট সন্ধান কৰিবলে অক্ষম"
 
+msgid "Unable to find 'dnsmasq' binary in $PATH"
+msgstr ""
+
 msgid "Unable to find 'memory' cgroups controller mount"
 msgstr "'memory' cgroups নিয়ন্ত্ৰক মাউণ্ট সন্ধান কৰিবলে অক্ষম"
 
@@ -17528,10 +17344,6 @@ msgstr "সময়ৰ বিন্যাস দিবলে অক্ষম"
 #, fuzzy
 msgid "Unable to freeze filesystems"
 msgstr "ফাইলচিস্টেম %s খোলিব নোৱাৰি"
-
-#, c-format
-msgid "Unable to generate diffie-hellman parameters: %s"
-msgstr "diffie-hellman প্ৰাচলসমূহ সৃজন কৰিবলে অক্ষম: %s"
 
 #, fuzzy, c-format
 msgid "Unable to get ACLs on %s"
@@ -17659,10 +17471,6 @@ msgstr "সংযোগক্ষেত্ৰৰ তথ্য প্ৰাপ্�
 msgid "Unable to get daemon logging outputs information"
 msgstr "ডিস্ক সংক্ৰান্ত তথ্য প্ৰাপ্ত কৰোঁতে ব্যৰ্থ"
 
-#, c-format
-msgid "Unable to get device ID '%s'"
-msgstr "ডিভাইচ ID '%s' প্ৰাপ্ত কৰিবলে অক্ষম"
-
 #, fuzzy
 msgid "Unable to get device master from netlink on this platform"
 msgstr "এই প্লেটফৰ্মত ভাৰছুৱেল ফলনসমূহ প্ৰাপ্ত কৰিবলে অক্ষম"
@@ -17749,9 +17557,6 @@ msgstr "এই প্লেটফৰ্মত আন্তঃপৃষ্ঠ স
 msgid "Unable to get interface parameters"
 msgstr "আন্তঃপৃষ্ঠ প্ৰাচলসমূহ প্ৰাপ্ত কৰিবলে অক্ষম"
 
-msgid "Unable to get key length for diffie-hellman parameters"
-msgstr ""
-
 #, c-format
 msgid "Unable to get kvm descriptor: %s"
 msgstr "kvm বিৱৰক প্ৰাপ্ত কৰিবলে অক্ষম: %s"
@@ -17779,10 +17584,6 @@ msgstr "মেমৰি প্ৰাচলসমূহ প্ৰাপ্ত ক
 
 msgid "Unable to get memory stats"
 msgstr "মেমৰিৰ পৰিসংখ্যা প্ৰাপ্ত কৰিবলে অক্ষম"
-
-#, c-format
-msgid "Unable to get minor number of device '%s'"
-msgstr "ডিভাইচ '%s' ৰ গৌণ সংখ্যা প্ৰাপ্ত কৰিবলে অক্ষম"
 
 msgid "Unable to get node cpu stats"
 msgstr "ন'ড cpu ৰ পৰিসংখ্যা প্ৰাপ্ত কৰিবলে অক্ষম"
@@ -17913,10 +17714,6 @@ msgstr ""
 #, fuzzy
 msgid "Unable to initialize condition variable"
 msgstr "condition মান আৰম্ভ কৰিব নোৱাৰি"
-
-#, c-format
-msgid "Unable to initialize diffie-hellman parameters: %s"
-msgstr "diffie-hellman প্ৰাচলসমূহ আৰম্ভ কৰিবলে অক্ষম: %s"
 
 #, c-format
 msgid "Unable to initialize lease %s"
@@ -18576,6 +18373,9 @@ msgstr "প্ৰক্ৰিয়া %d লে %d সংকেত পঠাবল
 msgid "Unable to send SIGTERM to init pid %llu"
 msgstr "init pid %llu লে SIGTERM পঠাবলে অক্ষম"
 
+msgid "Unable to send a VF SETLINK request on this platform"
+msgstr ""
+
 msgid "Unable to send container continue message"
 msgstr "ধাৰণকৰ্তাৰ উদ্দেশ্যে কৰ্মে এগিয়ে যাওয়াৰ বাৰ্তা পঠিয়াবলৈ ব্যৰ্থ"
 
@@ -18634,6 +18434,15 @@ msgstr "এই প্লেটফৰ্মত %s ত STP সংহতি কৰ�
 #, fuzzy, c-format
 msgid "Unable to set XATTR %s on %s"
 msgstr "%s ত STP বিলম্ব সংহতি কৰিবলে অক্ষম"
+
+msgid "Unable to set a VF MAC on this platform"
+msgstr ""
+
+msgid "Unable to set a VF VLAN on this platform"
+msgstr ""
+
+msgid "Unable to set a VF config on this platform"
+msgstr ""
 
 #, fuzzy
 msgid "Unable to set agent close-on-exec flag"
@@ -19149,10 +18958,6 @@ msgstr "অপ্ৰত্যাশিত hostdev ড্ৰাইভাৰ ন�
 msgid "Unexpected signal received: %d"
 msgstr "অপ্ৰত্যাশিত সংকেত প্ৰাপ্ত হৈছে: %d"
 
-#, fuzzy, c-format
-msgid "Unexpected socket family %d"
-msgstr "অপ্ৰত্যাশিত উৎস অৱস্থা %d"
-
 #, c-format
 msgid "Unexpected state of feature '%s'"
 msgstr "বৈশিষ্ট্য '%s' ৰ অপ্ৰত্যাশিত অৱস্থা"
@@ -19215,10 +19020,6 @@ msgstr "অজ্ঞাত JSON উত্তৰ '%s'"
 #, fuzzy, c-format
 msgid "Unknown LXC namespace source '%s'"
 msgstr "অজ্ঞাত pci উৎসৰ ধৰণ '%s'"
-
-#, c-format
-msgid "Unknown PCI device <driver name='%s'/> has been specified"
-msgstr "অজ্ঞাত PCI ডিভাইচ <driver name='%s'/> ধাৰ্য্য কৰা হৈছে"
 
 #, fuzzy, c-format
 msgid "Unknown PCI header type '%d' for device '%s'"
@@ -19284,6 +19085,10 @@ msgid "Unknown cache type '%s'"
 msgstr "অজ্ঞাত auth ধৰণ '%s'"
 
 #, c-format
+msgid "Unknown calculation mode '%s'"
+msgstr ""
+
+#, c-format
 msgid "Unknown cgroup controller '%s'"
 msgstr "অপৰিচিত cgroup নিয়ন্ত্ৰক '%s'"
 
@@ -19310,6 +19115,10 @@ msgstr "অজ্ঞাত কাৰ্য্য স্তৰ %s"
 #, fuzzy, c-format
 msgid "Unknown data source '%s'"
 msgstr "অজ্ঞাত ধৰণৰ সোৰ্স মোড '%s'"
+
+#, c-format
+msgid "Unknown dirty page rate calculation mode: %s"
+msgstr ""
 
 #, c-format
 msgid "Unknown dirty rate status: %s"
@@ -19342,7 +19151,6 @@ msgstr "নেটৱাৰ্কত অজ্ঞাত forwardPlainNames ধৰ�
 msgid "Unknown error"
 msgstr "অজ্ঞাত ভুল"
 
-#. should never happen (tm)
 msgid "Unknown error value"
 msgstr "অজ্ঞাত ত্ৰুটি মান"
 
@@ -19369,14 +19177,6 @@ msgstr "নেটৱাৰ্কত অজ্ঞাত forwardPlainNames ধৰ�
 #, fuzzy
 msgid "Unknown input device type"
 msgstr "অজ্ঞাত নিবেশ ডিভাইচৰ ধৰণ '%s'"
-
-#, c-format
-msgid "Unknown interface <driver name='%s'> has been specified"
-msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ <driver name='%s'> ধাৰ্য্য কৰা হৈছে"
-
-#, c-format
-msgid "Unknown interface <driver txmode='%s'> has been specified"
-msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ <driver txmode='%s'> ধাৰ্য্য কৰা হৈছে"
 
 #, fuzzy
 msgid "Unknown invocation state"
@@ -20152,12 +19952,10 @@ msgstr "বাৰ্তা"
 msgid "Video adapters are not supported int containers."
 msgstr "এই QEMU দ্বাৰা spice গ্ৰাফিক্স সমৰ্থিত নহয়"
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, c-format
 msgid "Virsh command line tool of libvirt %s\n"
 msgstr "libvirt %s ৰ Virsh কমান্ড শাৰী সঁজুলি\n"
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, fuzzy, c-format
 msgid "Virt-admin command line tool of libvirt %s\n"
 msgstr "libvirt %s ৰ Virsh কমান্ড শাৰী সঁজুলি\n"
@@ -20568,6 +20366,10 @@ msgstr ""
 msgid "address of disk device"
 msgstr "ডিস্ক ডিভাইচৰ ঠিকনা"
 
+#, c-format
+msgid "address of type '%s' is supported only for hostdevs"
+msgstr ""
+
 msgid "address source: 'lease' or 'agent'"
 msgstr ""
 
@@ -20632,11 +20434,6 @@ msgstr ""
 msgid "allocate the new capacity, rather than leaving it sparse"
 msgstr "ইয়াক বিক্ষিপ্ত এৰাতকৈ, নতুন ক্ষমতা আবণ্টন কৰক"
 
-#.
-#. * we need to use an intermediary pointer to @data as compilers may sometimes
-#. * complain about @data not being a pointer type:
-#. * error: the address of 'foo' will always evaluate as 'true' [-Werror=address]
-#.
 msgid "allocated netlink buffer is too small"
 msgstr "আবণ্টন কৰা নেটলিঙ্ক বাফাৰ অত্যাধিক সৰু"
 
@@ -20694,6 +20491,10 @@ msgstr "গ্ৰাফিক্স শুনা ধৰণ ধাৰ্য্য
 #, fuzzy
 msgid "another backup job is already running"
 msgstr "ডমেইন ইতিমধ্যে চলি আছে"
+
+#, c-format
+msgid "another migration job is already running for domain '%s'"
+msgstr ""
 
 #, fuzzy
 msgid "any configuration"
@@ -20774,6 +20575,9 @@ msgid ""
 msgstr ""
 "শাৰী %d ত: %s%s\n"
 "%s"
+
+msgid "at most 1 fd can be passed to qemu along with a command"
+msgstr ""
 
 msgid "at most one CPU cache element may be specified"
 msgstr ""
@@ -20884,6 +20688,13 @@ msgstr ""
 msgid "authentication failed: %s"
 msgstr "প্ৰমাণীকৰণ বিফল হ'ল: %s"
 
+#, c-format
+msgid "authentication is not supported for protocol '%s'"
+msgstr ""
+
+msgid "authentication is supported only for network backed disks"
+msgstr ""
+
 msgid "authentication required"
 msgstr "প্ৰমাণীকৰণ আৱশ্যক"
 
@@ -20960,6 +20771,9 @@ msgstr "ন'ড সংহিত মেমৰি প্ৰাচলসমূহ �
 msgid "backing store protocol '%s' is not yet supported"
 msgstr "ক্ৰমিক কনচৌল সংলগ্ন কৰাটো সমৰ্থিত নহয়"
 
+msgid "backingStore is not supported with NVRAM"
+msgstr ""
+
 msgid "backingStore is not supported with vhostuser disk"
 msgstr ""
 
@@ -20972,15 +20786,14 @@ msgid ""
 "sense"
 msgstr ""
 
+msgid "backup"
+msgstr ""
+
 msgid "backup TLS directory not configured"
 msgstr ""
 
 msgid "backup is not supported with this QEMU"
 msgstr ""
-
-#, fuzzy
-msgid "backup job"
-msgstr "পটভূমি কাৰ্য্য"
 
 msgid "backup job data missing"
 msgstr ""
@@ -22044,6 +21857,10 @@ msgstr "%d প্ৰক্ৰিয়াৰ বাবে CPU এফিনিটি
 msgid "cannot get RSS for domain"
 msgstr "ডমেইনৰ বাবে RSS প্ৰাপ্ত কৰিব নোৱাৰি"
 
+#, c-format
+msgid "cannot get cert distinguished name: %s"
+msgstr ""
+
 #, fuzzy
 msgid "cannot get children disk"
 msgstr "বৰ্তমানMemorySize পৰীক্ষা কৰোঁতে ব্যৰ্থ"
@@ -22227,6 +22044,10 @@ msgstr "%d স্নেপশ্বটসমূহৰ সৈতে ডমেই�
 msgid "cannot migrate domain with I/O error"
 msgstr "I/O ত্ৰুটিৰ সৈতে ডমেইন প্ৰব্ৰজন কৰিব নোৱাৰি"
 
+#, c-format
+msgid "cannot migrate domain: %s"
+msgstr ""
+
 #, fuzzy
 msgid "cannot migrate this domain without dbus-vmstate support"
 msgstr "%d স্নেপশ্বটসমূহৰ সৈতে ডমেইন প্ৰব্ৰজন কৰিব নোৱাৰি"
@@ -22380,7 +22201,6 @@ msgstr "পথ '%s' খোলোঁতে ব্যৰ্থ"
 msgid "cannot open path '%s' in '%s'"
 msgstr "পথ '%s' খোলোঁতে ব্যৰ্থ"
 
-#. A dangling symlink now implies a TOCTTOU race; report it.
 #, c-format
 msgid "cannot open volume '%s'"
 msgstr "ভলিউম '%s' খোলোঁতে ব্যৰ্থ"
@@ -22404,10 +22224,6 @@ msgstr "তথ্য গ্ৰহণ কৰিব নোৱাৰি"
 #, fuzzy, c-format
 msgid "cannot parse MAC address '%s' from file '%s'"
 msgstr "নেটৱাৰক '%s' ত MAC ঠিকনা '%s' বিশ্লেষণ কৰিব নোৱাৰি"
-
-#, fuzzy, c-format
-msgid "cannot parse cache mode '%s' for virtiofs"
-msgstr "RAM ফাইলচিস্টেমৰ বাবে ব্যৱহাৰ '%s' বিশ্লেষণ কৰিব নোৱাৰি"
 
 #, fuzzy, c-format
 msgid "cannot parse cpu sys stat '%s'"
@@ -22465,13 +22281,13 @@ msgstr "RAM ফাইলচিস্টেমৰ বাবে ব্যৱহা
 msgid "cannot parse rdp port %s"
 msgstr "rdp প'ৰ্ট %s বিশ্লেষণ কৰিব নোৱাৰি"
 
-#, c-format
-msgid "cannot parse sandbox mode '%s' for virtiofs"
-msgstr ""
-
 #, fuzzy, c-format
 msgid "cannot parse target for lunStr '%s'"
 msgstr "লক্ষ্য '%s' বিশ্লেষণ কৰিব নোৱাৰি"
+
+#, c-format
+msgid "cannot parse thread pool size '%s' for virtiofs"
+msgstr ""
 
 #, c-format
 msgid "cannot parse usage '%s' for RAM filesystem"
@@ -22933,6 +22749,11 @@ msgstr "নেটৱাৰক '%s' ত MAC ঠিকনা '%s' বিশ্ল�
 msgid "cannot use custom tap device in session mode"
 msgstr "অধিবেশন বিচাৰি পোৱা ন'গ'ল"
 
+msgid ""
+"cannot use feature-based firmware autoselection when firmware autoselection "
+"is disabled"
+msgstr ""
+
 #, fuzzy
 msgid "cannot use namespaces in session mode"
 msgstr "অধিবেশন বিচাৰি পোৱা ন'গ'ল"
@@ -22995,12 +22816,11 @@ msgstr "cd: %s: %s"
 msgid "cd: command valid only in interactive mode"
 msgstr "cd: অকল ইন্টাৰেক্টিভ মোডত ব্যৱহাৰযোগ্য আদেশ"
 
+msgid "cdrom device with virtio bus isn't supported"
+msgstr ""
+
 msgid "cdrom device without source path not supported"
 msgstr "উৎস পথৰ অবিহনে cdrom ডিভাইচ সমৰ্থিত নহয়"
-
-#, fuzzy
-msgid "cdrom/floppy device hotplug isn't supported"
-msgstr "ড্ৰাইভ হটপ্লাগ সমৰ্থিত নহয়"
 
 #, fuzzy
 msgid "cell number must be non-negative integer or -1"
@@ -23060,6 +22880,9 @@ msgstr "ভাৰ্চুয়াল CPU সংখ্যা পৰিবৰ্ত
 
 msgid "change of nodeset for running domain requires restrictive numa mode"
 msgstr ""
+
+msgid "change of nodeset for running domain requires strict numa mode"
+msgstr "চলি থকা ডমেইনৰ বাবে ন'ডছেটৰ পৰিবৰ্তনৰ কঠোৰ numa অৱস্থাৰ প্ৰয়োজন"
 
 msgid "change the current directory"
 msgstr "বৰ্তমান পঞ্জিকা পৰিবৰ্তন কৰক"
@@ -23144,6 +22967,14 @@ msgstr "কেৰেক্টাৰ ডিভাইচৰ তথ্যত ফা
 msgid "character device name"
 msgstr "আখৰ ডিভাইচ নাম"
 
+#, c-format
+msgid "chardev '%s' not supported in this QEMU binary"
+msgstr ""
+
+#, c-format
+msgid "chardev '%s' not supported without spice graphics"
+msgstr ""
+
 msgid "chardev already exists"
 msgstr "chardev ইতিমধ্যে অস্তিত্ববান"
 
@@ -23194,7 +23025,6 @@ msgstr "নাম কৃত্তক কৰক"
 msgid "child didn't write error (status=%d)"
 msgstr ""
 
-#. in case of EACCES, the parent will retry
 #, c-format
 msgid "child failed to create directory '%s'"
 msgstr "চাইল্ড দ্বাৰা '%s' পঞ্জিকা নিৰ্মাণ কৰা নাযায়"
@@ -24110,6 +23940,9 @@ msgstr "বৰ্তমান"
 msgid "current bridge device name"
 msgstr "বৰ্তমান ব্ৰিজ ডিভাইচৰ নাম"
 
+msgid "current job is not outgoing migration in post-copy mode"
+msgstr ""
+
 msgid "current vcpu count must equal maximum"
 msgstr "বৰ্তমান vcpu গণনা সৰ্বাধিকৰ সৈতে সমান হব লাগিব"
 
@@ -24124,6 +23957,9 @@ msgid "custom alias name of interface device"
 msgstr ""
 
 msgid "custom configuration parameters specified"
+msgstr ""
+
+msgid "custom device configuration"
 msgstr ""
 
 msgid "custom device tree blob used"
@@ -24501,12 +24337,20 @@ msgstr ""
 msgid "directory to switch to (default: home or else root)"
 msgstr "পৰিবৰ্তনৰ বাবে চিহ্নিত পঞ্জিকা (ডিফল্ট: home বা root)"
 
+msgid ""
+"dirty page rate calculation mode, either of these 3 options 'page-sampling, "
+"dirty-bitmap, dirty-ring' can be specified."
+msgstr ""
+
 msgid "dirty ring must be power of 2 and ranges [1024, 65536]"
 msgstr ""
 
 #, c-format
 msgid ""
 "dirty ring size of KVM feature '%s' differs: source: '%d', destination: '%d'"
+msgstr ""
+
+msgid "dirty-ring calculation mode requires dirty-ring feature enabled."
 msgstr ""
 
 msgid "disable"
@@ -24737,6 +24581,13 @@ msgstr "কেৱল সংৰক্ষণ পুলৰ ধৰণ iscsi ৰ স�
 msgid "disk source path is missing"
 msgstr "ডিস্কৰ উৎসৰ পথ অনুপস্থিত"
 
+#, c-format
+msgid "disk startupPolicy '%s' is not allowed for disk of '%s' type"
+msgstr ""
+
+msgid "disk startupPolicy 'requisite' is allowed only for cdrom or floppy"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "disk target %s not found"
 msgstr "%s ডিষ্ক পোৱা ন'গ'ল"
@@ -24794,10 +24645,6 @@ msgstr "প্ৰব্ৰজনৰ প্ৰগতি প্ৰদৰ্শন 
 
 msgid "display the progress of save"
 msgstr "সংৰক্ষণৰ প্ৰগতি প্ৰদৰ্শন কৰক"
-
-#, c-format
-msgid "dnsmasq binary %s is not executable"
-msgstr "dnsmasq বাইনাৰি %s এক্সিকিউট কৰিব নোৱাৰি"
 
 #, c-format
 msgid "dnsmasq version >= %u.%u required but %lu.%lu found"
@@ -24941,8 +24788,8 @@ msgstr ""
 msgid "domain control interface state"
 msgstr "ডমেইন নিয়ন্ত্ৰণ আন্তঃপৃষ্ঠ অৱস্থা"
 
-msgid "domain core dump job"
-msgstr "ডমেইন কেনদ্ৰীয় ডাম্প কাৰ্য্য"
+msgid "domain core dump"
+msgstr ""
 
 msgid "domain display connection URI"
 msgstr "ডমেইন প্ৰদৰ্শন সংযোগ URl"
@@ -25056,8 +24903,8 @@ msgstr "ডোমেইনৰ নাম বা uuid"
 msgid "domain name, id or uuid"
 msgstr "ডোমেইনৰ নাম, id বা uuid"
 
-msgid "domain save job"
-msgstr "ডমেইন সংৰক্ষণ কাৰ্য্য"
+msgid "domain save"
+msgstr ""
 
 msgid "domain snapshot XML"
 msgstr "ডমেইন স্নেপশ্বট XML"
@@ -25372,6 +25219,9 @@ msgid "encryption format of inputvol must be LUKS"
 msgstr ""
 
 msgid "encryption is not supported with vhostuser disk"
+msgstr ""
+
+msgid "encryption is supported only with 'raw' and 'qcow2' image format"
 msgstr ""
 
 #, c-format
@@ -25783,6 +25633,10 @@ msgid "expecting a value"
 msgstr "মান প্ৰত্যাশিত"
 
 #, c-format
+msgid "expecting a value for value of type %s"
+msgstr ""
+
+#, c-format
 msgid "expecting absolute path: %s"
 msgstr "প্ৰকৃত পথ আশা কৰা হৈছে: %s"
 
@@ -25871,9 +25725,6 @@ msgstr "বিফল Xen syscall %s"
 #, c-format
 msgid "failed Xen syscall %s"
 msgstr "বিফল Xen syscall %s"
-
-msgid "failed due to I/O error"
-msgstr "I/O ত্ৰুটিৰ বাবে ব্যৰ্থ হল"
 
 #, fuzzy
 msgid "failed probing capabilities"
@@ -26045,9 +25896,9 @@ msgstr "স্নেপশ্বট %s মচি পেলাবলে ব্য
 msgid "failed to create a new XML namespace"
 msgstr "এটা নতুন XML নেইমস্পেইচ সৃষ্টি কৰিবলৈ ব্যৰ্থ"
 
-#, fuzzy, c-format
-msgid "failed to create channel dir '%s': %s"
-msgstr "সংৰক্ষণ ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলে ব্যৰ্থ: %s"
+#, c-format
+msgid "failed to create channel dir '%s'"
+msgstr ""
 
 msgid "failed to create connection to CH socket"
 msgstr ""
@@ -26060,9 +25911,9 @@ msgstr "ছকেট নিৰ্মাণ কৰিবলৈ ব্যৰ্থ
 msgid "failed to create directory '%s'"
 msgstr "'%s' পঞ্জিকা নিৰ্মাণ কৰিবলৈ ব্যৰ্থ"
 
-#, fuzzy, c-format
-msgid "failed to create dump dir '%s': %s"
-msgstr "lib dir '%s' নিৰ্মাণ কৰিবলৈ ব্যৰ্থ: %s"
+#, c-format
+msgid "failed to create dump dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create glfs object for '%s'"
@@ -26083,16 +25934,16 @@ msgid "failed to create json"
 msgstr "%s সৃষ্টি কৰিবলে ব্যৰ্থ"
 
 #, c-format
-msgid "failed to create lib dir '%s': %s"
-msgstr "lib dir '%s' নিৰ্মাণ কৰিবলৈ ব্যৰ্থ: %s"
+msgid "failed to create lib dir '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "failed to create libssh channel: %s"
 msgstr "ssh চেনেল খোলিবলে ব্যৰ্থ: %s"
 
 #, c-format
-msgid "failed to create log dir '%s': %s"
-msgstr "লগ ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলৈ ব্যৰ্থ: %s "
+msgid "failed to create log dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create logfile %s"
@@ -26105,8 +25956,8 @@ msgid "failed to create profile"
 msgstr "আলেখ্য সৃষ্টি কৰিবলে ব্যৰ্থ"
 
 #, c-format
-msgid "failed to create save dir '%s': %s"
-msgstr "সংৰক্ষণ ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলে ব্যৰ্থ: %s"
+msgid "failed to create save dir '%s'"
+msgstr ""
 
 msgid "failed to create socket"
 msgstr "ছকেট নিৰ্মাণ কৰিবলৈ ব্যৰ্থ"
@@ -26120,8 +25971,8 @@ msgid "failed to create socketpair"
 msgstr "ছকেট নিৰ্মাণ কৰিবলৈ ব্যৰ্থ"
 
 #, c-format
-msgid "failed to create state dir '%s': %s"
-msgstr "অৱস্থা ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলে ব্যৰ্থ: %s"
+msgid "failed to create state dir '%s'"
+msgstr ""
 
 msgid "failed to create the RADOS cluster"
 msgstr "RADOS থুপ সৃষ্টি কৰিবলে ব্যৰ্থ"
@@ -26650,9 +26501,15 @@ msgstr "'%s' ৰ পৰা uid আৰু gid বিশ্লেষণ কৰি�
 msgid "failed to parse node name index"
 msgstr "'%s' ধৰণ বিশ্লষণ কৰোঁতে ব্যৰ্থ"
 
+msgid "failed to parse original memlock size"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "failed to parse port number '%s'"
 msgstr "পোৰ্ট সংখ্যা বিশ্লেষণ কৰিবলে ব্যৰ্থ"
+
+msgid "failed to parse pre-migration memlock limit"
+msgstr ""
 
 #, fuzzy
 msgid "failed to parse qemu capabilities cpus"
@@ -26711,10 +26568,6 @@ msgstr "ফাইল '%s' ৰ পৰা স্নেপশ্বট XML বি�
 #, fuzzy, c-format
 msgid "failed to parse the index of the VMX key '%s'"
 msgstr "VLAN ডিভাইচ '%s' ৰ বাবে VID সন্ধান কৰিবলে ব্যৰ্থ"
-
-#, c-format
-msgid "failed to parse value of %s"
-msgstr "%s ৰ বাবে মান বিশ্লেষণ কৰিবলে ব্যৰ্থ"
 
 #, fuzzy, c-format
 msgid "failed to parse write_bps_device: '%s'"
@@ -27127,7 +26980,8 @@ msgstr "fd বৈধ হব লাগিব"
 msgid "fd passing is not supported by this connection"
 msgstr "এই ফলন সংযোগ ড্ৰাইভাৰ দ্বাৰা সমৰ্থিত নহয়"
 
-msgid "fdset must be valid"
+#, c-format
+msgid "fdset '%u' is already in use by qemu"
 msgstr ""
 
 msgid "fetch or set the currently defined set of logging filters on daemon"
@@ -27136,9 +26990,6 @@ msgstr ""
 msgid "fetch or set the currently defined set of logging outputs on daemon"
 msgstr ""
 
-#. parse inbound and outbound which are in the format of
-#. * 'average,peak,burst,floor', in which peak and burst are optional,
-#. * thus 'average,,burst' and 'average,peak' are also legal.
 #, fuzzy, c-format
 msgid "field '%s' is malformed"
 msgstr "বিন্যাসৰ মান %s ভুল"
@@ -27191,10 +27042,6 @@ msgstr "XML ডোমেইনৰ বিৱৰণসহ এটা ফাইল"
 
 msgid "file containing secret attributes in XML"
 msgstr "XML বিন্যাসে গোপনীয় গুণ সহ এটা ফাইল"
-
-#, c-format
-msgid "file descriptor %d has not been transferred"
-msgstr ""
 
 msgid "file format type raw,bochs,qcow,qcow2,qed,vmdk"
 msgstr "ফাইল বিন্যাস ধৰণ raw,bochs,qcow,qcow2,qed,vmdk"
@@ -27340,6 +27187,15 @@ msgstr ""
 msgid "firmware auto selection not implemented for this driver"
 msgstr "এই প্লেটফৰ্মত আন্তঃপৃষ্ঠ পৰিসংখ্যা প্ৰণয়ন কৰা হোৱা নাই"
 
+msgid ""
+"firmware feature 'enrolled-keys' cannot be enabled when firmware feature "
+"'secure-boot' is disabled"
+msgstr ""
+
+#, c-format
+msgid "firmware type '%s' does not support nvram"
+msgstr ""
+
 msgid "fixed audio settings requires mixing engine"
 msgstr ""
 
@@ -27359,6 +27215,9 @@ msgstr ""
 #, fuzzy
 msgid "floor attribute is not supported for this config"
 msgstr "ram ৰ বৈশিষ্ট্য কেৱল qxl ৰ ধৰণৰ বাবে সমৰ্থিত"
+
+msgid "floppy device hotplug isn't supported"
+msgstr ""
 
 msgid "fmode and dmode must be used with accessmode=mapped"
 msgstr ""
@@ -27476,9 +27335,6 @@ msgstr "fs ড্ৰাইভাৰ %s সমৰ্থিত নহয়"
 #, c-format
 msgid "fs format %s is not supported"
 msgstr "fs বিন্যাস %s সমৰ্থিত নহয়"
-
-msgid "fseek failed"
-msgstr "fseek ব্যৰ্থ হল"
 
 msgid "fully-qualified path of disk"
 msgstr "ডিস্কৰ সম্পূৰ্ণ-অৰ্হতাসম্পন্ন পথ"
@@ -27731,6 +27587,9 @@ msgstr "guest-get-vcpus উত্তৰত return তথ্য নাছিল"
 msgid "guest-get-vcpus reply was missing return data"
 msgstr "guest-get-vcpus উত্তৰত return তথ্য নাছিল"
 
+msgid "guestReset is not supported with this version of QEMU"
+msgstr ""
+
 msgid "guestfwd channel does not define a target address"
 msgstr "guestfwd চেনেল দ্বাৰা কোনো টাৰ্গেট ঠিকনা নিৰ্ধাৰণ কৰা নহয়"
 
@@ -27744,7 +27603,6 @@ msgstr "স্নেপশ্বট সৃষ্টি হোৱাৰ পিছ
 msgid "handler failed to wait on condition"
 msgstr "আদেশৰ বাবে অপেক্ষা কৰোঁতে ব্যৰ্থ: %s"
 
-#. caller's error
 msgid "hash lookup resulted in NULL pointer"
 msgstr "হেষ লুকআপৰ ফলস্বৰূপ NULL পইন্টাৰ সৃষ্টি হল"
 
@@ -28292,9 +28150,6 @@ msgstr "নেটৱৰ্ক চলি থকা নাই"
 msgid "interface mac"
 msgstr "সংযোগমাধ্যমৰ mac"
 
-msgid "interface misses the type attribute"
-msgstr "সংযোগমাধ্যমত type গুণ অনুপস্থিত"
-
 msgid "interface mtu value is improper"
 msgstr "সংযোগমাধ্যম mtu ৰ মান সঠিক নহয়"
 
@@ -28302,28 +28157,9 @@ msgid "interface name"
 msgstr "সংযোগমাধ্যমৰ নাম"
 
 #, c-format
-msgid "interface name %s does not fit into buffer "
-msgstr "আন্তঃপৃষ্ঠ নাম %s বাফাৰত খাপ নাখায়"
+msgid "interface name %s does not fit into buffer"
+msgstr ""
 
-#.
-#. * virsh-interface.c: Commands to manage host interface
-#. *
-#. * Copyright (C) 2005, 2007-2016 Red Hat, Inc.
-#. *
-#. * This library is free software; you can redistribute it and/or
-#. * modify it under the terms of the GNU Lesser General Public
-#. * License as published by the Free Software Foundation; either
-#. * version 2.1 of the License, or (at your option) any later version.
-#. *
-#. * This library is distributed in the hope that it will be useful,
-#. * but WITHOUT ANY WARRANTY; without even the implied warranty of
-#. * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#. * Lesser General Public License for more details.
-#. *
-#. * You should have received a copy of the GNU Lesser General Public
-#. * License along with this library.  If not, see
-#. * <http://www.gnu.org/licenses/>.
-#.
 msgid "interface name or MAC address"
 msgstr "সংযোগমাধ্যমৰ নাম বা MAC ঠিকনা"
 
@@ -28390,6 +28226,9 @@ msgstr ""
 #, fuzzy
 msgid "internal use only"
 msgstr "ভিতৰুৱা ভুল"
+
+msgid "interrupt post-copy migration"
+msgstr ""
 
 msgid "intr:"
 msgstr ""
@@ -28600,10 +28439,6 @@ msgstr "অবৈধ VM বিৱৰণ"
 msgid "invalid XML length: %d"
 msgstr "XML ৰ দৈৰ্ঘ্য বৈধ নহয়: %d"
 
-#, fuzzy, c-format
-msgid "invalid allowReboot value '%s'"
-msgstr "অবৈধ অনুবাদ মান '%s'"
-
 #, c-format
 msgid "invalid ap-adapter value '%s' for '%s'"
 msgstr ""
@@ -28629,9 +28464,6 @@ msgstr "অজ্ঞাত প্ৰোটোকল '%s'"
 #, fuzzy, c-format
 msgid "invalid backing protocol string '%s'"
 msgstr "%s ত অবৈধ ভঁৰাল পুলৰ পইন্টাৰ"
-
-msgid "invalid cache size in query-migrate-cache-size reply"
-msgstr ""
 
 #, fuzzy, c-format
 msgid "invalid capability_filters capability '%s'"
@@ -28702,7 +28534,7 @@ msgid "invalid disk target '%s', partitions can't appear in disk targets"
 msgstr ""
 
 #, c-format
-msgid "invalid dmode: '%s'"
+msgid "invalid dmode: '0%o'"
 msgstr ""
 
 msgid "invalid domain pointer in"
@@ -28735,14 +28567,6 @@ msgstr "অবৈধ ব্যৰ্থতা কাৰ্য্য: '%s'\n"
 msgid "invalid fd %d for %s"
 msgstr "অবৈধ fd %d %s"
 
-#, c-format
-msgid "invalid firmware feature enabled value '%s'"
-msgstr ""
-
-#, c-format
-msgid "invalid firmware feature name '%s'"
-msgstr ""
-
 msgid "invalid flag"
 msgstr "অবৈধ ফ্লেগ"
 
@@ -28751,7 +28575,7 @@ msgid "invalid flag combination: (0x%x)"
 msgstr "অবৈধ ফ্লেগ সংযুক্তি: (0x%x)"
 
 #, c-format
-msgid "invalid fmode: '%s'"
+msgid "invalid fmode: '0%o'"
 msgstr ""
 
 #, fuzzy
@@ -28856,16 +28680,6 @@ msgid ""
 "invalid mac address '%s' in 'unicast-table' array in query-rx-filter response"
 msgstr ""
 
-#, c-format
-msgid "invalid mac address check value: '%s'"
-msgstr ""
-
-#, c-format
-msgid ""
-"invalid mac address type value: '%s'. Valid values are \"generated\" and "
-"\"static\"."
-msgstr ""
-
 #, fuzzy, c-format
 msgid "invalid master key read, size=%zd"
 msgstr "অবৈধ মেমৰি আকাৰ %d প্ৰাপ্ত হৈছে"
@@ -28873,10 +28687,6 @@ msgstr "অবৈধ মেমৰি আকাৰ %d প্ৰাপ্ত হ�
 #, fuzzy
 msgid "invalid microcode version"
 msgstr "অবৈধ অৱস্থা"
-
-#, fuzzy
-msgid "invalid migratability value for host CPU model"
-msgstr "আৰম্ভণি CPU ৰ বাবে অবৈধ মান"
 
 msgid "invalid mode"
 msgstr "অবৈধ অৱস্থা"
@@ -28952,14 +28762,6 @@ msgid ""
 "invalid number value for '%s' host CPU model property in QEMU capabilities "
 "cache"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "invalid or missing decode/guest attribute in CPU model %s"
-msgstr "CPU টোপোলজিত 'core' নামক গুণ অনুপস্থিত"
-
-#, fuzzy, c-format
-msgid "invalid or missing decode/host attribute in CPU model %s"
-msgstr "CPU টোপোলজিত 'core' নামক গুণ অনুপস্থিত"
 
 #, c-format
 msgid "invalid parent device '%s'"
@@ -29055,10 +28857,6 @@ msgstr "অবৈধ স্নেপশ্বট নাম '%s': নামে '.
 msgid "invalid ssid value '%s' for '%s'"
 msgstr "VMX প্ৰবিষ্টি '%s' ৰ বাবে অবৈধ মান '%s'"
 
-#, c-format
-msgid "invalid storage pool cow feature state '%s'"
-msgstr ""
-
 msgid "invalid storage pool pointer in"
 msgstr "পুল ভিতৰ"
 
@@ -29112,6 +28910,9 @@ msgstr "'%s' ৰ বাবে অবৈধ unique_id দিয়া হৈছে"
 msgid "invalid use of command API"
 msgstr "কমান্ড API ৰ অবৈধ ব্যৱহাৰ"
 
+msgid "invalid use of conf API"
+msgstr ""
+
 msgid "invalid use with no flags"
 msgstr "কোনো ফ্লেগ নহোৱাকৈ অবৈধ ব্যৱহাৰ"
 
@@ -29131,18 +28932,12 @@ msgstr "VMX প্ৰবিষ্টি '%s' ৰ বাবে অবৈধ ম�
 msgid "invalid value '%s' for parameter '%s' of device '%s'"
 msgstr "প্ৰাচল '%s' ৰ বাবে অবৈধ ধৰণ '%s', প্ৰত্যাশিত '%s'"
 
-#, fuzzy, c-format
-msgid "invalid value for 'managed': %s"
-msgstr "'private' ৰ মান বৈধ নহয়"
-
-msgid "invalid value for boot menu timeout"
+#, c-format
+msgid "invalid value '%s' of 'value' attribute of 'qemu:property'"
 msgstr ""
 
 msgid "invalid value for boot menu timeout, must be in range [0,65535]"
 msgstr "বুট মেনু সময়অন্তৰ বাবে অবৈধ মান, বিস্তাৰ [0,65535] ত হব লাগিব"
-
-msgid "invalid value for rebootTimeout"
-msgstr ""
 
 msgid "invalid value for rebootTimeout, must be in range [-1,65535]"
 msgstr "rebootTimeout ৰ বাবে অবৈধ মান, বিস্তাৰ [-1,65535] ত হব লাগিব"
@@ -29192,6 +28987,10 @@ msgstr ""
 #, fuzzy
 msgid "iommu driver option is only supported for virtio devices"
 msgstr "rawio কেৱল scsi হস্ট ডিভাইচৰ বাবে সমৰ্থিত"
+
+#, c-format
+msgid "iommu model '%s' can't have address"
+msgstr ""
 
 msgid "iommu: aw_bits is not supported with this QEMU binary"
 msgstr ""
@@ -29244,8 +29043,8 @@ msgstr "ipset নামে অবৈধ আখৰসমূহ অন্তৰ্
 msgid "ipset name is too long"
 msgstr "ipset নাম অতি দীঘল নহয়"
 
-msgid "is not active"
-msgstr "সক্ৰিয় নহয়"
+msgid "isa-debug serial type only valid on x86 architecture"
+msgstr ""
 
 msgid "iscsi pool only supports 'chap' auth type"
 msgstr "iscsi পুলে কেৱল 'chap' auth ধৰণ সমৰ্থন কৰে"
@@ -29261,8 +29060,29 @@ msgstr ""
 msgid "ivshmem device is not supported with this QEMU binary"
 msgstr "nvram ডিভাইচ এই QEMU বাইনাৰি দ্বাৰা সমৰ্থিত নহয়"
 
-msgid "job"
-msgstr "কাৰ্য্য"
+#, c-format
+msgid "job '%s' canceled by client"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed due to I/O error"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed in post-copy phase"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed: %s"
+msgstr ""
+
+#, c-format
+msgid "job '%s' is not active"
+msgstr ""
+
+#, c-format
+msgid "job '%s' unexpectedly failed"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "job type '%s' does not support pivot"
@@ -29345,10 +29165,10 @@ msgstr "nl_recv ব্যৰ্থ হল"
 msgid "library call failed: %s"
 msgstr "লিখা ব্যৰ্থ হল: %s"
 
-msgid "librbd encryption engine only supports luks/luks2 formats"
+msgid "librbd encryption is not supported by this QEMU binary"
 msgstr ""
 
-msgid "librbd encryption is not supported by this QEMU binary"
+msgid "librbd encryption is supported only with RBD backed disks"
 msgstr ""
 
 #, fuzzy
@@ -29824,6 +29644,24 @@ msgstr ""
 msgid "live update of device '%s' is not supported"
 msgstr "ডিভাইচ '%s' ৰ জীৱন্ত আপডেইট সমৰ্থিত নহয়"
 
+msgid ""
+"loader attribute 'readonly' cannot be specified when firmware autoselection "
+"is enabled"
+msgstr ""
+
+msgid ""
+"loader attribute 'secure' cannot be specified when firmware autoselection is "
+"enabled"
+msgstr ""
+
+msgid ""
+"loader attribute 'type' cannot be specified when firmware autoselection is "
+"enabled"
+msgstr ""
+
+msgid "loader path cannot be specified when firmware autoselection is enabled"
+msgstr ""
+
 #, c-format
 msgid "loadparm value '%s' must be between 1 and 8 characters"
 msgstr ""
@@ -29843,6 +29681,9 @@ msgid "logical volume '%s' is sparse, volume wipe not supported"
 msgstr "%s ভলিউমসমূহৰ সৃষ্টি সমৰ্থিত নহয়"
 
 msgid "loop until timeout or interrupt, rather than one-shot"
+msgstr ""
+
+msgid "lower boundary for worker thread pool"
 msgstr ""
 
 msgid "luks2 is currently not supported by the qemu encryption engine"
@@ -30411,9 +30252,8 @@ msgstr "MiB/s ত প্ৰব্ৰজন বেণ্ডৱাইড্ত স
 msgid "migration canceled"
 msgstr "প্ৰব্ৰজন বাতিল কৰা হল"
 
-#, fuzzy
-msgid "migration in job"
-msgstr "প্ৰব্ৰজন বাতিল কৰা হল"
+msgid "migration in"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "migration of disk %s failed"
@@ -30423,14 +30263,21 @@ msgstr "'%s' ৰ stat কৰিবলৈ ব্যৰ্থবলৈ ব্য�
 msgid "migration of disk %s failed: %s"
 msgstr "কাৰ্য্যকৰণ বিফল: %s"
 
+#, c-format
+msgid "migration of domain %s is being actively monitored by another thread"
+msgstr ""
+
+#, c-format
+msgid "migration of domain %s is not in post-copy phase"
+msgstr ""
+
 msgid ""
 "migration of non-shared storage is not supported with tunnelled migration "
 "and this QEMU"
 msgstr ""
 
-#, fuzzy
-msgid "migration out job"
-msgstr "প্ৰব্ৰজন"
+msgid "migration out"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "migration parameter '%s' must be less than %llu"
@@ -30464,9 +30311,6 @@ msgstr "প্ৰব্ৰজন সক্ৰিয় অৱস্থাত, ক�
 
 msgid "migration was active, but RAM 'transferred' data was missing"
 msgstr "প্ৰব্ৰজন সক্ৰিয় অৱস্থাত, কিন্তু RAM সংক্ৰান্ত 'transferred' তথ্য অনুপস্থিত"
-
-msgid "migration was active, but no RAM info was set"
-msgstr "প্ৰব্ৰজন সক্ৰিয় অৱস্থাত, কিন্তু RAM সংক্ৰান্ত কোনো তথ্য নিৰ্ধাৰণ কৰা নহয়"
 
 msgid "migration with legacy shmem device is not supported"
 msgstr ""
@@ -30551,6 +30395,9 @@ msgstr ""
 msgid "missing 'DateTime' element"
 msgstr "root সামগ্ৰী অনুপস্থিত"
 
+msgid "missing 'alias' attribute for qemu:device"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "missing 'architecture' in '%s'"
 msgstr "CPU স্থাপত্য অনুপস্থিত"
@@ -30610,6 +30457,9 @@ msgid ""
 "cache"
 msgstr ""
 
+msgid "missing 'name' attribute for qemu:property"
+msgstr ""
+
 #, fuzzy
 msgid "missing 'namespace' attribute to disk source"
 msgstr "ডিস্ক উৎসৰ বাবে সন্ধানহীন নাম"
@@ -30632,6 +30482,9 @@ msgid "missing 'process' value in selinux lxc contexts file '%s'"
 msgstr ""
 
 msgid "missing 'server' attribute in JSON backing definition for NFS volume"
+msgstr ""
+
+msgid "missing 'start' attribute for clock with offset='absolute'"
 msgstr ""
 
 #, c-format
@@ -30668,6 +30521,9 @@ msgid ""
 "missing 'user' or 'group' attribute in JSON backing definition for NFS volume"
 msgstr ""
 
+msgid "missing 'value' attribute for 'qemu:property'"
+msgstr ""
+
 #, fuzzy
 msgid "missing 'value' attribute for HyperV feature 'vendor_id'"
 msgstr "KVM বৈশিষ্ট্য '%s' ৰ বাবে 'state' বৈশিষ্ট্য নাই"
@@ -30688,10 +30544,6 @@ msgstr "ইজাৰৰ বাবে সন্ধানহীন 'target' উপ
 
 msgid "missing <type> element in <capability> element"
 msgstr ""
-
-#, fuzzy
-msgid "missing @managed attribute for <reservations/>"
-msgstr "RAM ফাইলচিস্টেমৰ বাবে সন্ধানহীন 'usage' বৈশিষ্ট্য"
 
 #, fuzzy
 msgid "missing CPU data architecture"
@@ -30801,9 +30653,6 @@ msgstr "%s ডিভাইচৰ বাবে উৎসৰ তথ্য না�
 msgid "missing blocker name in QEMU capabilities cache"
 msgstr "প্ৰব্ৰজন ক্ষঙতাসমূহ তালিকাত প্ৰৱিষ্টি সন্ধানহীন"
 
-msgid "missing boot device"
-msgstr "হৰুৱা উৎসৰ ডিভাইচ"
-
 #, fuzzy
 msgid "missing capability name"
 msgstr "হৰুৱা কাৰ্য্যক্ষমতাৰ ধৰণ"
@@ -30854,6 +30703,10 @@ msgstr "স্থায়ী স্নেপশ্বটৰ পৰা সৃষ্
 #, fuzzy, c-format
 msgid "missing cssid value for '%s'"
 msgstr "হস্টৰ বাবে সন্ধানহীন নাম"
+
+#, c-format
+msgid "missing decode element in CPU model %s"
+msgstr ""
 
 #, c-format
 msgid "missing destination file for disk %s: %s"
@@ -31170,6 +31023,9 @@ msgstr ""
 #, fuzzy
 msgid "missing path for <reservations/>"
 msgstr "emulatorpin ৰ বাবে cpuset নাই"
+
+msgid "missing path to restore from"
+msgstr ""
 
 msgid "missing per-device path"
 msgstr "সন্ধানহীন প্ৰতি-ডিভাইচ পথ "
@@ -31496,6 +31352,9 @@ msgstr "ড্ৰাইভ হটপ্লাগ সমৰ্থিত নহয়
 msgid "model type"
 msgstr "আৰ্হিৰ ধৰণ"
 
+msgid "modern nvram specification is not supported by this qemu"
+msgstr ""
+
 #, fuzzy
 msgid "modifies an existing IOThread of the guest domain"
 msgstr "অতিথি ডমেইনত NMI সুমুৱাওক।"
@@ -31519,15 +31378,6 @@ msgstr "বিৱৰণৰ পৰিবৰ্তে শীৰ্ষক পৰি
 msgid "monitor failure"
 msgstr "মনিটৰ পথ %s খোলোঁতে ব্যৰ্থ"
 
-#. *
-#. * QEMU_CHECK_MONITOR_FULL:
-#. * @mon: monitor pointer variable to check, evaluated multiple times, no parentheses
-#. * @exit: statement that is used to exit the function
-#. *
-#. * This macro checks that the monitor is valid for given operation and exits
-#. * the function if not. The macro also adds a debug statement regarding the
-#. * monitor.
-#.
 msgid "monitor must not be NULL"
 msgstr "মনিটৰ NULL হব নোৱাৰিব"
 
@@ -31725,7 +31575,6 @@ msgstr "rawio ক্ষমতাৰ প্ৰয়োজন"
 msgid "negative size requires --shrink"
 msgstr ""
 
-#. 56 is good for Kerberos
 #, c-format
 msgid "negotiated SSF %d was not strong enough"
 msgstr "পাৰ কৰা SSF %d দৃঢ় নহয়"
@@ -32734,6 +32583,9 @@ msgstr "অংশীদাৰী মেমৰি সেৱা টোপনিত
 msgid "number of read operations:"
 msgstr "পঢ়া কাৰ্য্যসমূহ সংখ্যা:"
 
+msgid "number of seconds the daemon will run without any active connection"
+msgstr ""
+
 msgid "number of seconds to squelch traffic on newly connected ports"
 msgstr "নতুনকে সংযোগ কৰা পোৰ্টসমূহত ট্ৰাফিক স্কুৱেল্চ কৰিবলে ছেকেণ্ডৰ সংখ্যা"
 
@@ -32777,6 +32629,11 @@ msgstr "এই QEMU বাইনাৰিৰ সৈতে অসামৰ্থ�
 
 msgid "nvram address type must be spaprvio"
 msgstr "nvram ঠিকনা ধৰণ spaprvio হব লাগিব"
+
+msgid ""
+"nvram attribute 'template' cannot be specified when firmware autoselection "
+"is enabled"
+msgstr ""
 
 msgid "nvram device is not supported by this QEMU binary"
 msgstr "nvram ডিভাইচ এই QEMU বাইনাৰি দ্বাৰা সমৰ্থিত নহয়"
@@ -32859,7 +32716,8 @@ msgid "only 'pci' addresses are supported for the virtio-pmem device"
 msgstr ""
 
 msgid ""
-"only 1 graphics device of each type (sdl, vnc, spice, headless) is supported"
+"only 1 graphics device of each type (sdl, vnc, spice, headless, dbus) is "
+"supported"
 msgstr ""
 
 msgid "only JSON objects can be top level"
@@ -32908,6 +32766,10 @@ msgstr "অকল এটা watchdog ডিভাইচ সমৰ্থিত �
 #, fuzzy
 msgid "only bus 'virtio' is supported for 'passthrough' input devices"
 msgstr "sgio কেৱল scsi হস্ট ডিভাইচৰ বাবে সমৰ্থিত"
+
+#, c-format
+msgid "only bus 'virtio' is supported for input model '%s'"
+msgstr ""
 
 msgid "only can reboot running/paused domain"
 msgstr ""
@@ -33315,6 +33177,9 @@ msgstr "বিশ্লেষণ কৰোঁতাৰ ভুল"
 msgid "partial string to autocomplete"
 msgstr ""
 
+msgid "pass file descriptors N,M,... along with the command"
+msgstr ""
+
 msgid "pass file descriptors N,M,... to the guest"
 msgstr "ফাইল বিৱৰকসমূহ N,M,... অতিথিলৈ প্ৰেৰণ কৰক"
 
@@ -33399,8 +33264,8 @@ msgstr "ডিস্ক ড্ৰাইভাৰ %s সমৰ্থিত নহ
 msgid "pci device %s is not a PCI-Express device"
 msgstr "ডিভাইচ %s এটা PCI ডিভাইচ নহয়"
 
-msgid "pci device assignment backend driver (e.g. 'vfio' or 'kvm')"
-msgstr "pci ডিভাইচ ধাৰ্য্যকৰণ বেকএণ্ড ড্ৰাইভাৰ (উদাহৰণস্বৰূপ 'vfio' অথবা 'kvm')"
+msgid "pci device assignment backend driver (e.g. 'vfio' or 'xen')"
+msgstr ""
 
 msgid ""
 "pci-expander-bus controllers are only supported on 440fx-based machinetypes"
@@ -33491,6 +33356,9 @@ msgstr "ডিভাইচ '%s' ৰ স্থায়ী অসংলগ্ন স
 
 msgid "persistent detach of device is not supported"
 msgstr "ডিভাইচৰ স্থায়ী অসংলগ্ন সমৰ্থিত নহয়"
+
+msgid "persistent reservations are not supported with NVRAM"
+msgstr ""
 
 #, c-format
 msgid "persistent update of device '%s' is not supported"
@@ -33641,6 +33509,10 @@ msgstr "MiB/s ত প্ৰব্ৰজন বেণ্ডৱাইড্ত স
 msgid "post-copy migration is not supported with non-live or paused migration"
 msgstr "অফলাইন প্ৰব্ৰজন গন্তব্য হস্ট দ্বাৰা সমৰ্থিত নহয়"
 
+#, c-format
+msgid "post-copy migration of domain %s has not failed"
+msgstr ""
+
 msgid "potentially unsafe disk format probing"
 msgstr ""
 
@@ -33697,6 +33569,9 @@ msgstr "পূৰ্বআবণ্টন কেৱল ৰ' ধৰণ ভলি�
 
 msgid "preallocate metadata (for qcow2 instead of full allocation)"
 msgstr "পূৰ্বআবণ্টন মেটাডাটা (qcow2 ৰ বাবে সম্পূৰ্ণ আবণ্টনৰ পৰিৱৰ্তে)"
+
+msgid "preallocation threads are unsupported with this QEMU"
+msgstr ""
 
 #, fuzzy
 msgid "prefix too long"
@@ -33759,6 +33634,9 @@ msgstr "এটা প্ৰদান কৰা নেটৱৰ্ক বলৱ�
 msgid "print statistics for any kind of job (even failed ones)"
 msgstr ""
 
+msgid "print the XML used to start the copy job instead of starting the job"
+msgstr ""
+
 #, fuzzy
 msgid "print the admin server URI"
 msgstr "ডমেইনৰ হস্টনাম প্ৰিণ্ট কৰক"
@@ -33819,6 +33697,9 @@ msgstr "প্ৰোগ্ৰাম অমিল (প্ৰকৃত %x, প্�
 #, fuzzy, c-format
 msgid "prohibited character in DNS TXT record name '%s' of network %s"
 msgstr "নেটৱৰ্ক %s ৰ DNS TXT ৰেকৰ্ড নাম '%s' ৰ প্ৰয়োজনীয় মান বৈশিষ্ট্য নাই"
+
+msgid "property with name 'id' can't be overridden"
+msgstr ""
 
 #, c-format
 msgid "protocol '%s' accepts only one host"
@@ -33974,10 +33855,16 @@ msgstr "query-cpu-definitions উত্তৰ তথ্যত 'name' নাছ�
 msgid "query-cpu-model-comparison reply data was missing 'result'"
 msgstr "query-cpu-definitions উত্তৰ তথ্যত 'name' নাছিল"
 
+msgid "query-dirty-rate parsing 'vcpu-dirty-rate' in failure"
+msgstr ""
+
 msgid "query-dirty-rate reply was missing 'calc-time' data"
 msgstr ""
 
 msgid "query-dirty-rate reply was missing 'dirty-rate' data"
+msgstr ""
+
+msgid "query-dirty-rate reply was missing 'id' data"
 msgstr ""
 
 msgid "query-dirty-rate reply was missing 'return' data"
@@ -33990,9 +33877,6 @@ msgid "query-dirty-rate reply was missing 'status' data"
 msgstr ""
 
 msgid "query-fdsets reply was missing 'fdset-id'"
-msgstr ""
-
-msgid "query-fdsets return data missing 'fd'"
 msgstr ""
 
 msgid "query-fdsets return data missing fd array element"
@@ -34134,6 +34018,9 @@ msgstr ""
 
 msgid "rawio is only supported for scsi host device"
 msgstr "rawio কেৱল scsi হস্ট ডিভাইচৰ বাবে সমৰ্থিত"
+
+msgid "re-initialize NVRAM from its pristine template"
+msgstr ""
 
 msgid "read I/O operations limit per second"
 msgstr "প্ৰতি ছেকেণ্ডত পঢ়া I/O কাৰ্য্যসমূহ সীমা"
@@ -34300,6 +34187,9 @@ msgstr ""
 "সংযুক্ত সংৰক্ষণ ভলিউমসমূহ আতৰাওক (লক্ষ্যসমূহ অথবা উৎস পথসমূহৰ কমা পৃথকিত তালিকা) "
 "(domblklist চাওক)"
 
+msgid "remove domain logs"
+msgstr ""
+
 msgid "remove domain managed state file"
 msgstr "ডমেইন ব্যৱস্থাপিত অৱস্থা ফাইল আতৰাওক"
 
@@ -34437,7 +34327,8 @@ msgstr "অনুৰোধ কৰা cpu পৰিমাণ সৰ্বাধ�
 msgid "requested size must be an integer multiple of block size"
 msgstr ""
 
-msgid "requested size must be smaller than or equal to @size"
+#, c-format
+msgid "requested size must be smaller than or equal to @size (%lluKiB)"
 msgstr ""
 
 msgid "requested size of the cache (in bytes) used for compression"
@@ -34500,6 +34391,9 @@ msgstr "ডিস্ক ডিভাইচৰ গন্তব্য"
 msgid "reset the domain after core dump"
 msgstr "কেন্দ্ৰীয় ডাম্পৰ পিছত ডমেইনক পুনৰসংহতি কৰক"
 
+msgid "resetting of nvram is not supported with network backed nvram"
+msgstr ""
+
 msgid "resize a vol"
 msgstr "এটা vol ক পুনৰ আকাৰ দিয়ক"
 
@@ -34536,6 +34430,9 @@ msgstr "ফলাফল অতিপাত ডাঙৰ: %llu"
 msgid "resume a domain"
 msgstr "ডোমেইন পুনৰাৰম্ভ কৰক"
 
+msgid "resume failed post-copy migration"
+msgstr ""
+
 msgid "resume operation failed"
 msgstr "পুনৰাৰম্ভৰ কাৰ্য্য বিফল"
 
@@ -34544,6 +34441,16 @@ msgstr "ডাম্প বিফল হোৱাৰ পিছত পুনৰ�
 
 msgid "resuming after snapshot failed"
 msgstr "স্নেপশ্বট ব্যৰ্থ হোৱাৰ পিছত অব্যাহত ৰখা হৈছে"
+
+#, c-format
+msgid "resuming failed post-copy migration of domain %s already in progress"
+msgstr ""
+
+msgid "resuming failed post-copy migration requires change protection"
+msgstr ""
+
+msgid "resuming failed post-copy migration requires post-copy to be enabled"
+msgstr ""
 
 msgid "retrieve client's identity info from server"
 msgstr ""
@@ -34710,9 +34617,6 @@ msgstr "ডোমেইন '%s' ক '%s' লৈ ৰক্ষা কৰা হৈ
 msgid "sbbc configuration is not supported by this QEMU binary"
 msgstr "এই QEMU বাইনাৰি দ্বাৰা ডিস্কাৰ্ড সমৰ্থিত নহয়"
 
-msgid "scheduler information is not supported on this platform"
-msgstr ""
-
 #, fuzzy, c-format
 msgid "scheme and host are mandatory vz migration URI: %s"
 msgstr "প্ৰব্ৰজন URl ত হস্ট সন্ধানহীন: %s"
@@ -34831,7 +34735,9 @@ msgstr "সুৰক্ষা আৰ্হি সৰ্বাধিক অতি
 msgid "security model string exceeds max %d bytes"
 msgstr "সুৰক্ষা মডেলৰ শব্দৰ সংখ্যা সৰ্বাধিক %d bytes ৰ অধিক"
 
-msgid "select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\")"
+msgid ""
+"select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\", \"dbus"
+"\")"
 msgstr ""
 
 #, fuzzy
@@ -34918,6 +34824,9 @@ msgstr "blkio প্ৰাচলসমূহ প্ৰাপ্ত কৰক অ
 msgid "set server's client-related configuration limits"
 msgstr ""
 
+msgid "set the auto shutdown timeout of the daemon"
+msgstr ""
+
 #, fuzzy
 msgid "set the bandwidth limit in MiB/s"
 msgstr "MiB/s ত বেণ্ডৱাইড্ত সীমা"
@@ -34934,7 +34843,7 @@ msgstr ""
 msgid "set the user password inside the domain"
 msgstr "ডমেইন স্থগিত কৰোতে ত্ৰুটি"
 
-msgid "set the value for reduction of the IOThread polling time "
+msgid "set the value for reduction of the IOThread polling time"
 msgstr ""
 
 msgid "set the value to increase the IOThread polling time"
@@ -34944,6 +34853,11 @@ msgid "set threshold for block-threshold event for a block device"
 msgstr ""
 
 msgid "set to the time of the host running virsh"
+msgstr ""
+
+msgid ""
+"setting 'value' attribute of 'qemu:property' doesn't make sense with "
+"'remove' type"
 msgstr ""
 
 msgid "setting ACPI S3 not supported"
@@ -35023,17 +34937,6 @@ msgstr ""
 
 msgid "sgio is only supported for scsi host device"
 msgstr "sgio কেৱল scsi হস্ট ডিভাইচৰ বাবে সমৰ্থিত"
-
-#, c-format
-msgid "sgio of shared disk '%s' conflicts with other active domains"
-msgstr "অংশীদাৰী ডিস্ক '%s' ৰ sgio এ অন্য সক্ৰিয় ডমেইনসমূহৰ সৈতে দন্দ কৰে"
-
-#, c-format
-msgid ""
-"sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active domains"
-msgstr ""
-"অংশীদাৰী কৰা ডিস্ক 'pool=%s' 'volume=%s' ৰ sgio অন্য সক্ৰিয় ডমেইনসমূহৰ সৈতে দন্দ "
-"কৰে"
 
 #, c-format
 msgid "shallow copy of disk '%s' into a raw file is not possible"
@@ -35191,6 +35094,12 @@ msgstr "বাদ দিয়া অ-প্ৰকৃত পথ"
 msgid "skipped restricted file"
 msgstr "সীমাবদ্ধ ফাইল বাদ দিয়া হৈছে"
 
+msgid "slices are not supported with NVRAM"
+msgstr ""
+
+msgid "snapshot"
+msgstr ""
+
 #, c-format
 msgid "snapshot %s disappeared from list"
 msgstr "স্নেপশ্বট %s তালিকাৰ পৰা নাইকিয়া হল"
@@ -35209,10 +35118,6 @@ msgstr "স্নেপশ্বট '%s' ত ডমেইন '%s' ৰলবে�
 
 msgid "snapshot information"
 msgstr "স্নেপশ্বট তথ্য"
-
-#, fuzzy
-msgid "snapshot job"
-msgstr "স্নেপশ্বট নাম"
 
 msgid "snapshot name"
 msgstr "স্নেপশ্বট নাম"
@@ -35367,6 +35272,9 @@ msgstr ""
 msgid "ssl verification setting is not supported by this QEMU binary"
 msgstr "nvram ডিভাইচ এই QEMU বাইনাৰি দ্বাৰা সমৰ্থিত নহয়"
 
+msgid "start"
+msgstr ""
+
 msgid "start a (previously defined) inactive domain"
 msgstr "এটা (পূৰ্বে সংজ্ঞা কৰা) নিষ্ক্ৰিয় ডোমেইন আৰম্ভ কৰক"
 
@@ -35385,10 +35293,6 @@ msgstr "প্ৰকৃত হোস্ট সংযোগমাধ্যম আ
 #, c-format
 msgid "start cell %d out of range (0-%d)"
 msgstr "start cell %d সীমাৰ বাহিৰত (0-%d)"
-
-#, fuzzy
-msgid "start job"
-msgstr "আৰম্ভ কৰা হল"
 
 #, c-format
 msgid "start of range %s - %s in network %s/%d is the network address"
@@ -35520,9 +35424,9 @@ msgstr "সংৰক্ষণ পুলত auth ধৰণ নাই"
 msgid "storage pool only supports LUKS encrypted volumes"
 msgstr "সংগ্ৰহৰ পুল দ্বাৰা এনক্ৰিপ্ট কৰা ভলিউম সমৰ্থিত হয় ন"
 
-#, fuzzy, c-format
-msgid "storage pool protocol ver '%s' is malformed"
-msgstr "ভঁৰালৰ পুল '%s' ইতিমধ্যে সক্ৰিয়"
+#, c-format
+msgid "storage pool protocol ver '%s' must not contain ','"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "storage pool protocol ver unsupported for pool type '%s'"
@@ -35643,9 +35547,18 @@ msgid ""
 "VIR_MIGRATE_POSTCOPY flag"
 msgstr ""
 
-#, fuzzy
-msgid "swtpm failed to start"
-msgstr "অতিথি আৰম্ভ হবলে ব্যৰ্থ হল: %s"
+msgid "swtpm didn't show up"
+msgstr ""
+
+#, c-format
+msgid "swtpm died and reported: %s"
+msgstr ""
+
+msgid "swtpm died unexpectedly"
+msgstr ""
+
+msgid "swtpm socket did not show up"
+msgstr ""
 
 #, c-format
 msgid "syntax: %s DEVICE [-g]|[-p]\n"
@@ -35753,6 +35666,10 @@ msgid "target pci device "
 msgstr "লক্ষ্য ডিভাইচৰ প্ৰকৃতি"
 
 #, c-format
+msgid "target port '%d' already allocated"
+msgstr ""
+
+#, c-format
 msgid "target type must be specified for %s device"
 msgstr "%s ডিভাইচৰ বাবে লক্ষ্য ধৰণ ধাৰ্য্য কৰিব লাগিব"
 
@@ -35822,6 +35739,10 @@ msgstr "MAC ঠিকনা '%s' একাধিক আন্তঃপৃষ্�
 #, fuzzy
 msgid "the QEMU binary does not support the ISA panic device"
 msgstr "QEMU বাইনৰিয়ে %s সমৰ্থন নকৰে"
+
+#, c-format
+msgid "the accel '%s' is not supported by '%s' on this host"
+msgstr ""
 
 msgid ""
 "the address family of a dhcp range must match the address family of the dhcp "
@@ -36072,9 +35993,35 @@ msgstr "ডিস্ক ডিভাইচ '%s' এ স্নেপশ্বট 
 msgid "this storage volume exists already"
 msgstr "এই নে'টৱৰ্ক ইতিমধ্যে আছে"
 
-#, fuzzy
-msgid "this version of libxenlight does not support backend domain name"
-msgstr "libxenlight এ পৰিবৰ্তনশীল ডিস্কসমূহ সমৰ্থন নকৰে"
+#, c-format
+msgid "thread_pool_max (%d) must be a positive number or -1"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_max (%d) must be equal to or greater than 0 for live change"
+msgstr ""
+
+msgid "thread_pool_max must be a positive integer"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) can't be greater than thread_pool_max (%d)"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) must be equal to or greater than -1"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) must be equal to or greater than 0 for live change"
+msgstr ""
+
+msgid ""
+"thread_pool_min and thread_pool_max is not supported by this QEMU binary"
+msgstr ""
+
+msgid "thread_pool_min must be smaller or equal to thread_pool_max"
+msgstr ""
 
 #, fuzzy
 msgid "threshold as a scaled number (by default bytes)"
@@ -36515,6 +36462,9 @@ msgstr "বিপদজনক ঘটনাসমূহ অধিক চেষ্
 msgid "tty console"
 msgstr "tty কনসোল"
 
+msgid "tunnelFD argument is required for tunnelled migration"
+msgstr ""
+
 msgid "tunnelled migration"
 msgstr "টানেল কৰা প্ৰব্ৰজন"
 
@@ -36667,6 +36617,10 @@ msgstr ""
 "নেটৱৰ্ক '%s' ত আন্তঃপষ্ঠ '%s' মচিবলে অক্ষম। ইয়াক বৰ্তমানে %d ডমেইনসমূহ দ্বাৰা "
 "ব্যৱহাৰ কৰা হৈছে।"
 
+#, c-format
+msgid "unable to determine access mode of %s"
+msgstr ""
+
 #, fuzzy
 msgid "unable to determine if checkpoint has parent"
 msgstr "স্নেপশ্বট উপধায়ক আছে নে নিৰ্ধাৰণ কৰিবলে অক্ষম"
@@ -36739,7 +36693,6 @@ msgstr "init mutex কৰিবলে অক্ষম"
 msgid "unable to find valid requested VMware backend '%s'"
 msgstr "বৈধ অনুৰোধ কৰা VMware বেকএণ্ড '%s' সন্ধান কৰিবলৈ অক্ষম"
 
-#. fdatasync() may fail on some special FDs, e.g. pipes
 #, c-format
 msgid "unable to fsync %s"
 msgstr "%s ক fsync  কৰিবলে অক্ষম"
@@ -36804,9 +36757,6 @@ msgstr "'%s' ৰ পৰা uid আৰু gid বিশ্লেষণ কৰি�
 #, fuzzy, c-format
 msgid "unable to handle agent type: %s"
 msgstr "চিহ্নিত ধৰণৰ মনিটৰ ব্যৱস্থাপনা কৰিবলৈ ব্যৰ্থ: %s"
-
-msgid "unable to handle disk requests in snapshot"
-msgstr "স্নেপশ্বটত ডিস্ক অনুৰোধসমূহ নিয়ন্ত্ৰণ কৰিবলে অক্ষম"
 
 #, c-format
 msgid "unable to handle monitor type: %s"
@@ -37002,6 +36952,9 @@ msgid "unable to set ownership of '%s' to user %d:%d"
 msgstr ""
 "'%s' ৰ মালিকানা ব্যৱহাৰকৰ্তা %d ৰ বাবে স্থাপন কৰিবলৈ ব্যৰ্থ:%d নিৰ্ধাৰণ কৰিবলৈ ব্যৰ্থ"
 
+msgid "unable to set pipe size"
+msgstr ""
+
 #, c-format
 msgid "unable to set security context '%s'"
 msgstr "নিৰাপত্তাৰ সন্দৰ্ভ '%s' নিৰ্ধাৰণ কৰিবলৈ ব্যৰ্থনোৱাৰি '"
@@ -37041,6 +36994,10 @@ msgstr ""
 #, fuzzy, c-format
 msgid "unable to stat block copy target '%s'"
 msgstr "বান্ধনী লক্ষ্য %s বান্ধীবলে অক্ষম"
+
+#, c-format
+msgid "unable to stat file descriptor %d path %s"
+msgstr ""
 
 #, c-format
 msgid "unable to stat for disk %s: %s"
@@ -37349,6 +37306,10 @@ msgid "unexpected message type"
 msgstr "অপ্ৰত্যাশিত বাৰ্তাৰ ধৰণ %d"
 
 #, c-format
+msgid "unexpected migration schema: %d"
+msgstr ""
+
+#, c-format
 msgid "unexpected migration status in %s"
 msgstr "%s ত প্ৰব্ৰজনৰ অপ্ৰত্যাশিত অৱস্থা"
 
@@ -37497,22 +37458,6 @@ msgstr "অপ্ৰত্যাশিত উৎস অৱস্থা %d"
 msgid "unexpected sysinfo type model %d"
 msgstr "অপ্ৰত্যাশিত sysinfo ধৰণ আৰ্হি %d"
 
-#, c-format
-msgid "unexpected timer mode %d"
-msgstr "অপ্ৰত্যাশিত টাইমাৰ অৱস্থা %d"
-
-#, c-format
-msgid "unexpected timer name %d"
-msgstr "অপ্ৰত্যাশিত টাইমাৰ নাম %d"
-
-#, c-format
-msgid "unexpected timer tickpolicy %d"
-msgstr "অপ্ৰত্যাশিত টাইমাৰ tickpolicy %d"
-
-#, c-format
-msgid "unexpected timer track %d"
-msgstr "অপ্ৰত্যাশিত টাইমাৰ ট্ৰেক %d"
-
 #, fuzzy
 msgid "unexpected transport in <domainbackup>"
 msgstr "অপ্ৰত্যাশিত ৰুট উপাদান, প্ৰত্যাশিত <domain>"
@@ -37560,8 +37505,8 @@ msgstr "অপ্ৰত্যাশিত watchdog মডেল %d"
 msgid "unexpected zero/negative length request %lld"
 msgstr "অপ্ৰত্যাশিত শূন্য/ঋণাত্মক দৈৰ্ঘ্যৰ অনুৰোধ %lld"
 
-msgid "unexpectedly failed"
-msgstr "অপ্ৰত্যাশিতভাৱে ব্যৰ্থ হল"
+msgid "unfiltered sgio is no longer supported"
+msgstr ""
 
 #, c-format
 msgid "unimplemented parameter type %d"
@@ -37570,8 +37515,6 @@ msgstr "অপ্ৰণয়িত প্ৰাচল ধৰণ %d"
 msgid "unix"
 msgstr ""
 
-#. Something went wrong retrieving a volume path, cope with it
-#. Something went wrong retrieving volume info, cope with it
 msgid "unknown"
 msgstr "অজ্ঞাত"
 
@@ -37607,10 +37550,6 @@ msgid "unknown OS type '%s'"
 msgstr "অজ্ঞাত OS ৰ ধৰণ %s"
 
 #, c-format
-msgid "unknown PM state value %s"
-msgstr "অজ্ঞাত PM অৱস্থা মান %s"
-
-#, c-format
 msgid "unknown QEMU_AUDIO_DRV setting %s"
 msgstr ""
 
@@ -37633,18 +37572,6 @@ msgstr "SCSI হোস্টৰ অজ্ঞাত ক্ষমতাৰ ধৰ�
 #, c-format
 msgid "unknown SDL_AUDIODRIVER setting %s"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "unknown accel2d value '%s'"
-msgstr "অজ্ঞাত সামৰ্থবান মান '%s'"
-
-#, fuzzy, c-format
-msgid "unknown accel3d value '%s'"
-msgstr "অজ্ঞাত সামৰ্থবান মান '%s'"
-
-#, c-format
-msgid "unknown accessmode '%s'"
-msgstr "অজ্ঞাত accessmode '%s'"
 
 #, c-format
 msgid "unknown address type '%s'"
@@ -37698,10 +37625,6 @@ msgid "unknown bonding mode %s"
 msgstr "অজ্ঞাত bonding মোড %s"
 
 #, c-format
-msgid "unknown boot device '%s'"
-msgstr "অজ্ঞাত বুট ডিভাইচ: '%s'"
-
-#, c-format
 msgid "unknown capability type '%d' for '%s'"
 msgstr "অজ্ঞাত '%d' ক্ষমতাৰ ধৰণ '%s' ৰ কাৰণে"
 
@@ -37753,24 +37676,8 @@ msgid "unknown device type in '%s'"
 msgstr "অজ্ঞাত ডিভাইচ ধৰণ '%s'"
 
 #, c-format
-msgid "unknown dhcp peerdns value %s"
-msgstr "অজ্ঞাত dhcp peerdns মান %s"
-
-#, c-format
 msgid "unknown disk snapshot driver '%s'"
 msgstr "অজ্ঞাত ডিস্ক স্নেপশ্বট ড্ৰাইভাৰ '%s'"
-
-#, c-format
-msgid "unknown disk snapshot setting '%s'"
-msgstr "অজ্ঞাত ডিস্ক স্নেপশ্বট সংহতি '%s'"
-
-#, c-format
-msgid "unknown disk snapshot type '%s'"
-msgstr "অজ্ঞাত ডিস্ক স্নেপশ্বট ধৰণ '%s'"
-
-#, c-format
-msgid "unknown disk type '%s'"
-msgstr "অজ্ঞাত ডিষ্ক ধৰণ '%s'"
 
 #, c-format
 msgid "unknown driver format value '%s'"
@@ -37795,17 +37702,9 @@ msgstr "অজ্ঞাত সমস্যা"
 msgid "unknown event type %s"
 msgstr "অজ্ঞাত ডিভাইচ ধৰণ '%s'"
 
-#, c-format
-msgid "unknown filesystem type '%s'"
-msgstr "অজ্ঞাত ফাইলপ্ৰণালীৰ ধৰণ '%s'"
-
 #, fuzzy, c-format
 msgid "unknown firmware value %s"
 msgstr "অজ্ঞাত rom বাৰ মান '%s'"
-
-#, fuzzy, c-format
-msgid "unknown flock value '%s'"
-msgstr "অজ্ঞাত সম্পূৰ্ণপৰ্দ্দাৰ মান '%s'"
 
 #, c-format
 msgid "unknown forwarding type '%s'"
@@ -37838,14 +37737,6 @@ msgstr "অজ্ঞাত হস্ট ডিভাইচ উৎস ঠিক�
 msgid "unknown hostdev mode '%s'"
 msgstr "অজ্ঞাত hostdev ধৰণ '%s'"
 
-#, fuzzy, c-format
-msgid "unknown hostdev model '%s'"
-msgstr "অজ্ঞাত hostdev ধৰণ '%s'"
-
-#, c-format
-msgid "unknown hostdev rawio setting '%s'"
-msgstr "অজ্ঞাত hostdev rawio সংহতি '%s'"
-
 #, c-format
 msgid "unknown hub device type '%s'"
 msgstr "অজ্ঞাত হাব ডিভাইচ ধৰণ '%s'"
@@ -37871,24 +37762,12 @@ msgid "unknown inputvol storage vol type %d"
 msgstr "অজ্ঞাত ভঁৰাল সমষ্টিৰ ধৰণ %d"
 
 #, c-format
-msgid "unknown interface event_idx mode '%s'"
-msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ event_idx অৱস্থা '%s'"
-
-#, c-format
-msgid "unknown interface ioeventfd mode '%s'"
-msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ ioeventfd অৱস্থা '%s'"
-
-#, c-format
 msgid "unknown interface link state '%s'"
 msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ লিঙ্ক অৱস্থা '%s'"
 
 #, c-format
 msgid "unknown interface startmode %s"
 msgstr "অজ্ঞাত সংযোগমাধ্যম startmode %s"
-
-#, c-format
-msgid "unknown interface type %s"
-msgstr "অজ্ঞাত ধৰণৰ সংযোগমাধ্যম %s"
 
 #, fuzzy, c-format
 msgid "unknown interface type: '%s'"
@@ -37897,10 +37776,6 @@ msgstr "অজ্ঞাত সংযোগমাধ্যমৰ ধৰণ '%s'"
 #, fuzzy, c-format
 msgid "unknown ip address type '%s'"
 msgstr "অজ্ঞাত ধৰণৰ ঠিকনা '%s'"
-
-#, c-format
-msgid "unknown memory snapshot setting '%s'"
-msgstr "অজ্ঞাত মেমৰি স্নেপশ্বট সংহতি '%s'"
 
 #, fuzzy, c-format
 msgid "unknown memoryBacking/access/mode '%s'"
@@ -37917,10 +37792,6 @@ msgstr "অজ্ঞাত pci উৎসৰ ধৰণ '%s'"
 #, c-format
 msgid "unknown metadata type '%d'"
 msgstr "অজ্ঞাত মেটাডাটা ধৰণ '%d'"
-
-#, fuzzy, c-format
-msgid "unknown migratable value for '%s' host CPU model property"
-msgstr "%s 'type' বৈশিষ্ট্যৰ বাবে অজ্ঞাত মান '%s'"
 
 #, fuzzy, c-format
 msgid "unknown migration parameter '%s'"
@@ -37940,14 +37811,6 @@ msgstr "অজ্ঞাত মিৰৰ কাৰ্য্য ধৰণ '%s'"
 #, c-format
 msgid "unknown mirror ready state %s"
 msgstr "অজ্ঞাত মিৰৰ প্ৰস্তুত অৱস্থা %s"
-
-#, fuzzy, c-format
-msgid "unknown model '%s'"
-msgstr "অজ্ঞাত RNG আৰ্হি '%s'"
-
-#, fuzzy, c-format
-msgid "unknown multidevs '%s'"
-msgstr "অজ্ঞাত ধৰণ '%s'"
 
 #, fuzzy, c-format
 msgid "unknown network device feature '%s'"
@@ -37976,24 +37839,12 @@ msgid "unknown partition type"
 msgstr "অজ্ঞাত বিভাজন ধৰণ"
 
 #, c-format
-msgid "unknown pci writeFiltering setting '%s'"
-msgstr ""
-
-#, c-format
 msgid "unknown pool format number %d"
 msgstr "অজ্ঞাত ভঁৰাল সমষ্টিৰ ধৰণ %d"
 
 #, c-format
 msgid "unknown pool format type %s"
 msgstr "অজ্ঞাত auth ধৰণ '%s'"
-
-#, fuzzy, c-format
-msgid "unknown port isolated value '%s'"
-msgstr "অজ্ঞাত PM অৱস্থা মান %s"
-
-#, fuzzy, c-format
-msgid "unknown posix lock value '%s'"
-msgstr "অজ্ঞাত মাউছ অৱস্থা মান '%s'"
 
 #, c-format
 msgid "unknown procedure: %d"
@@ -38045,10 +37896,6 @@ msgstr "গোপনীয় ব্যৱহাৰৰ অজ্ঞাত ধৰণ
 #, c-format
 msgid "unknown secret usage type %s"
 msgstr "গোপনীয় ব্যৱহাৰৰ অজ্ঞাত ধৰণ %s"
-
-#, c-format
-msgid "unknown sgio mode '%s'"
-msgstr "অজ্ঞাত sgio অৱস্থা '%s'"
 
 #, c-format
 msgid "unknown smbios mode '%s'"
@@ -38119,10 +37966,6 @@ msgid "unknown timer name '%s'"
 msgstr "অজ্ঞাত টাইমাৰ নাম '%s'"
 
 #, c-format
-msgid "unknown timer present value '%s'"
-msgstr "অজ্ঞাত টাইমাৰ বৰ্তমান মান '%s'"
-
-#, c-format
 msgid "unknown timer tickpolicy '%s'"
 msgstr "অজ্ঞাত টাইমাৰ tickpolicy '%s' "
 
@@ -38137,14 +37980,6 @@ msgstr "অজ্ঞাত ধৰণ '%s'"
 #, c-format
 msgid "unknown type presented to host for character device: %s"
 msgstr "আখৰ ডিভাইচ হস্ট কৰিবলে অজ্ঞাত ধৰণ প্ৰস্তুত কৰা হৈছে: %s"
-
-#, fuzzy, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'display'"
-msgstr "বৈশিষ্ট্য eoi ৰ বাবে অজ্ঞাত মান: '%s'"
-
-#, fuzzy, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
-msgstr "বৈশিষ্ট্য eoi ৰ বাবে অজ্ঞাত মান: '%s'"
 
 #, fuzzy, c-format
 msgid "unknown value '%s' in attribute 'usable'"
@@ -38208,10 +38043,6 @@ msgstr "অজ্ঞাত ধৰণৰ watchdog মডেল '%s'"
 msgid "unknown write_policy value '%u'"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "unknown xattr value '%s'"
-msgstr "অজ্ঞাত rom বাৰ মান '%s'"
-
 msgid "unlimited"
 msgstr "অসীমিত"
 
@@ -38228,9 +38059,6 @@ msgstr "অবিৰামিত"
 
 msgid "unplug of device was rejected by the guest"
 msgstr ""
-
-msgid "unpriv_sgio is not supported by this kernel"
-msgstr "unpriv_sgio এই কাৰনেল দ্বাৰা সমৰ্থিত নহয়"
 
 #, c-format
 msgid "unprocessed hole of size %lld already in the queue"
@@ -38401,6 +38229,10 @@ msgstr "অসমৰ্থিত ডিস্ক ডিভাইচ"
 msgid "unsupported disk driver %s"
 msgstr "%s ধৰণৰ ডিস্ক সমৰ্থিত নহয়"
 
+#, c-format
+msgid "unsupported disk snapshot type '%s'"
+msgstr ""
+
 msgid "unsupported disk type"
 msgstr "অসমৰ্থিত ডিস্ক ধৰণ"
 
@@ -38448,28 +38280,6 @@ msgstr ""
 msgid "unsupported filesystem type '%s'"
 msgstr ""
 
-#. *
-#. * virCheckFlags:
-#. * @supported: an OR'ed set of supported flags
-#. * @retval: return value in case unsupported flags were passed
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Exits the caller function if unsupported flags were
-#. * passed to it.
-#.
-#. *
-#. * virCheckFlagsGoto:
-#. * @supported: an OR'ed set of supported flags
-#. * @label: label to jump to on error
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, c-format
 msgid "unsupported flags (0x%lx) in function %s"
 msgstr "অসমৰ্থিত ফ্লেগ (0x%lx) ফলন %s"
@@ -38537,6 +38347,10 @@ msgstr "অসমৰ্থিত ঘটনা ID %d"
 #, fuzzy, c-format
 msgid "unsupported numatune mode: '%d'"
 msgstr "অসমৰ্থিত numatune অৱস্থা '%d'"
+
+#, c-format
+msgid "unsupported nvram disk type '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "unsupported nvram template format '%s'"
@@ -38645,6 +38459,9 @@ msgstr "ডিভাইচ '%s' ৰ জীৱন্ত আপডেইট সম
 msgid "upload file contents to a volume"
 msgstr "ফাইলৰ সমলসমূহক এটা ভলিউমলে আপল'ড কৰক"
 
+msgid "upper boundary for worker thread pool"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "uptime file has unexpected format '%s'"
 msgstr "xsd:dateTime মান '%s' ৰ অপ্ৰত্যাশিত বিন্যাস"
@@ -38707,6 +38524,9 @@ msgstr ""
 
 msgid "use virDomainMigrateToURI3 for peer-to-peer migration"
 msgstr "peer-to-peer প্ৰব্ৰজনৰ বাবে virDomainMigrateToURI3 ব্যৱহাৰ কৰক"
+
+msgid "use zero-copy mechanism for migrating memory pages"
+msgstr ""
 
 msgid "user"
 msgstr "ব্যৱহাৰকাৰী"
@@ -39036,6 +38856,10 @@ msgid "video type %s is not supported by libxl"
 msgstr "%d প্ৰকৃতিৰ নে'টৱৰ্ক সমৰ্থিত নহয়"
 
 #, c-format
+msgid "video type '%s' doesn't support multiple 'heads'"
+msgstr ""
+
+#, c-format
 msgid "video type '%s' is only valid as primary video device"
 msgstr ""
 
@@ -39073,6 +38897,9 @@ msgstr "virDomainGetXMLDesc secure flag ৰ লগত"
 
 msgid "virDomainSnapshotGetXMLDesc with secure flag"
 msgstr "সুৰক্ষিত ফ্লেগৰ সৈতে virDomainSnapshotGetXMLDesc"
+
+msgid "virFileDiskCopy unsupported on this platform"
+msgstr ""
 
 msgid "virFileOpenAs is not implemented for WIN32"
 msgstr "virFileOpenAs ক WIN32 ৰ বাবে প্ৰণয়ন কৰা হোৱা নাই"
@@ -39161,6 +38988,12 @@ msgstr "অসমৰ্থিত ডিস্ক ঠিকনা ধৰণ '%s'"
 #, fuzzy
 msgid "virtio non-transitional model not supported for this qemu"
 msgstr "vport কাৰ্য্য '%s' সমৰ্থিত নহয় হস্ট %d"
+
+msgid "virtio rss hash report is not supported with this QEMU binary"
+msgstr ""
+
+msgid "virtio rss is not supported with this QEMU binary"
+msgstr ""
 
 #, c-format
 msgid "virtio rx_queue_size option %d is not same with tx_queue_size %d"
@@ -39272,6 +39105,10 @@ msgstr "QEMU ৰ এই সংস্কৰণ দ্বাৰা USB পুন�
 msgid "virtiofs only supports passthrough accessmode"
 msgstr "কেৱল পাছথ্ৰু অভিগমঅৱস্থা সমৰ্থন কৰে"
 
+#, c-format
+msgid "virtiofsd binary '%s' is not executable"
+msgstr ""
+
 msgid "virtiofsd died unexpectedly"
 msgstr ""
 
@@ -39312,6 +39149,10 @@ msgstr ""
 
 msgid "vlan trunking is not supported by SR-IOV network devices"
 msgstr "SR-IOV নেটৱৰ্ক ডিভাইচসমূহ দ্বাৰা vlan ট্টাঙ্কিং সমৰ্থিত নহয়"
+
+#, c-format
+msgid "vlanid out of range: %d"
+msgstr ""
 
 #, fuzzy
 msgid "vmcoreinfo is not available with this QEMU binary"
@@ -39360,22 +39201,6 @@ msgstr ""
 #, fuzzy, c-format
 msgid "vnuma vnode %zu contains invalid pnode value '%s'"
 msgstr "ডমেইন নামে অবৈধ এক্সেইপ চিকুৱেঞ্চ অন্তৰ্ভুক্ত কৰে"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu pnode '%s' too long for destination"
-msgstr "গন্তব্যৰ ক্ষেত্ৰত ব্ৰিজেৰ নাম %s অত্যাধিক দীঘল"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu size '%s' too long for destination"
-msgstr "CPU আৰ্হি %s গন্তব্যৰ বাবে অত্যাধিক দীঘল"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu vcpus '%s' too long for destination"
-msgstr "CPU আৰ্হি %s গন্তব্যৰ বাবে অত্যাধিক দীঘল"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu vdistances '%s' too long for destination"
-msgstr "গন্তব্যৰ ক্ষেত্ৰত ব্ৰিজেৰ নাম %s অত্যাধিক দীঘল"
 
 #, fuzzy, c-format
 msgid "vnuma vnode invalid format '%s'"
@@ -39597,6 +39422,9 @@ msgstr "--wait ৰ সৈতে, বাতিল সমাপ্ত হবলে
 msgid "with redefine, set current snapshot"
 msgstr "পুনৰবিৱৰণৰ সৈতে, বৰ্তমান স্নেপশ্বট সংহতি কৰক"
 
+msgid "wrap xpath results in an common root element"
+msgstr ""
+
 msgid "write I/O operations limit per second"
 msgstr "প্ৰতি ছেকেণ্ডত লিখা I/O কাৰ্য্যসমূহ সীমা"
 
@@ -39647,6 +39475,9 @@ msgstr "আমদানি কৰিব লগা xml তথ্যৰ ফাই�
 msgid "xml modification unsupported"
 msgstr "xml পৰিবৰ্তন অসমৰ্থিত"
 
+msgid "xpath expression to filter the XML document"
+msgstr ""
+
 #, c-format
 msgid "xsd:dateTime value '%s' has unexpected format"
 msgstr "xsd:dateTime মান '%s' ৰ অপ্ৰত্যাশিত বিন্যাস"
@@ -39661,6 +39492,9 @@ msgstr "হয়"
 msgid "zPCI %s %o is already reserved"
 msgstr "এটা বন্ধ কলবেক ইতিমধ্যে ৰেজিস্টাৰ্ড"
 
+msgid "zero-copy is only available for parallel migration"
+msgstr ""
+
 #, c-format
 msgid "zone %s requested for network %s but firewalld is not active"
 msgstr ""
@@ -39668,6 +39502,426 @@ msgstr ""
 #, c-format
 msgid "{[--%s] <string>}..."
 msgstr "{[--%s] <string>}..."
+
+#~ msgid "Unable to generate diffie-hellman parameters: %s"
+#~ msgstr "diffie-hellman প্ৰাচলসমূহ সৃজন কৰিবলে অক্ষম: %s"
+
+#~ msgid "Unable to initialize diffie-hellman parameters: %s"
+#~ msgstr "diffie-hellman প্ৰাচলসমূহ আৰম্ভ কৰিবলে অক্ষম: %s"
+
+#, fuzzy
+#~ msgid "cdrom/floppy device hotplug isn't supported"
+#~ msgstr "ড্ৰাইভ হটপ্লাগ সমৰ্থিত নহয়"
+
+#, fuzzy
+#~ msgid "storage pool protocol ver '%s' is malformed"
+#~ msgstr "ভঁৰালৰ পুল '%s' ইতিমধ্যে সক্ৰিয়"
+
+#~ msgid "unknown disk type '%s'"
+#~ msgstr "অজ্ঞাত ডিষ্ক ধৰণ '%s'"
+
+#~ msgid "'startupPolicy' is only valid for 'file' type volume"
+#~ msgstr "'startupPolicy' কেৱল 'file' ধৰণ ভলিউমৰ বাবে বৈধ"
+
+#, fuzzy
+#~ msgid "Could not find placement for v1 controller %s at %s"
+#~ msgstr "চলক '%s' ৰ বাবে মান পোৱা নগল"
+
+#~ msgid "Setting disk %s is not allowed for disk of network type"
+#~ msgstr "নেটৱৰ্ক ধৰণৰ ডিস্কৰ বাবে ডিস্ক %s সংহতি কৰাটো অনুমোদিত নহয়"
+
+#~ msgid "Setting disk 'requisite' is allowed only for cdrom or floppy"
+#~ msgstr "ডিস্ক 'requisite' সংহতি কৰাটো কেৱল cdrom অথবা floppy ৰ বাবে অনুমোদিত"
+
+#, fuzzy
+#~ msgid "backup job"
+#~ msgstr "পটভূমি কাৰ্য্য"
+
+#~ msgid "domain core dump job"
+#~ msgstr "ডমেইন কেনদ্ৰীয় ডাম্প কাৰ্য্য"
+
+#~ msgid "domain save job"
+#~ msgstr "ডমেইন সংৰক্ষণ কাৰ্য্য"
+
+#~ msgid "failed due to I/O error"
+#~ msgstr "I/O ত্ৰুটিৰ বাবে ব্যৰ্থ হল"
+
+#~ msgid "is not active"
+#~ msgstr "সক্ৰিয় নহয়"
+
+#~ msgid "job"
+#~ msgstr "কাৰ্য্য"
+
+#, fuzzy
+#~ msgid "migration in job"
+#~ msgstr "প্ৰব্ৰজন বাতিল কৰা হল"
+
+#, fuzzy
+#~ msgid "migration out job"
+#~ msgstr "প্ৰব্ৰজন"
+
+#~ msgid "migration was active, but no RAM info was set"
+#~ msgstr "প্ৰব্ৰজন সক্ৰিয় অৱস্থাত, কিন্তু RAM সংক্ৰান্ত কোনো তথ্য নিৰ্ধাৰণ কৰা নহয়"
+
+#, fuzzy
+#~ msgid "snapshot job"
+#~ msgstr "স্নেপশ্বট নাম"
+
+#, fuzzy
+#~ msgid "start job"
+#~ msgstr "আৰম্ভ কৰা হল"
+
+#~ msgid "unexpectedly failed"
+#~ msgstr "অপ্ৰত্যাশিতভাৱে ব্যৰ্থ হল"
+
+#~ msgid "%s: unable to determine access mode of fd %d"
+#~ msgstr "%s: fd %d ৰ অভিগম অৱস্থা নিৰ্ধাৰণ কৰিবলে অক্ষম"
+
+#~ msgid "Can only open VNC or SPICE graphics backends, not %s"
+#~ msgstr "কেৱল VNC অথবা SPICE গ্ৰাফিক্স বেকএণ্ড খোলিব পাৰে, %s নোৱাৰে"
+
+#~ msgid "Failed to release port %d"
+#~ msgstr "পোৰ্ট %d উন্মোচন কৰিবলে ব্যৰ্থ"
+
+#, fuzzy
+#~ msgid "%s: failed to communicate with bridge helper: %s%s"
+#~ msgstr "%s: লগ ফাইল লিখোঁতে ব্যৰ্থ: %s"
+
+#, fuzzy
+#~ msgid "HTP resizing is not supported by this QEMU binary"
+#~ msgstr "এই QEMU বাইনাৰি দ্বাৰা ডিস্কাৰ্ড সমৰ্থিত নহয়"
+
+#, fuzzy
+#~ msgid "failed to create channel dir '%s': %s"
+#~ msgstr "সংৰক্ষণ ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলে ব্যৰ্থ: %s"
+
+#, fuzzy
+#~ msgid "failed to create dump dir '%s': %s"
+#~ msgstr "lib dir '%s' নিৰ্মাণ কৰিবলৈ ব্যৰ্থ: %s"
+
+#~ msgid "failed to create lib dir '%s': %s"
+#~ msgstr "lib dir '%s' নিৰ্মাণ কৰিবলৈ ব্যৰ্থ: %s"
+
+#~ msgid "failed to create log dir '%s': %s"
+#~ msgstr "লগ ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলৈ ব্যৰ্থ: %s "
+
+#~ msgid "failed to create save dir '%s': %s"
+#~ msgstr "সংৰক্ষণ ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলে ব্যৰ্থ: %s"
+
+#~ msgid "failed to create state dir '%s': %s"
+#~ msgstr "অৱস্থা ডাইৰেকটৰি '%s' সৃষ্টি কৰিবলে ব্যৰ্থ: %s"
+
+#~ msgid "pci device assignment backend driver (e.g. 'vfio' or 'kvm')"
+#~ msgstr "pci ডিভাইচ ধাৰ্য্যকৰণ বেকএণ্ড ড্ৰাইভাৰ (উদাহৰণস্বৰূপ 'vfio' অথবা 'kvm')"
+
+#~ msgid "Call to utsname failed: %d"
+#~ msgstr "utsname লৈ কল ব্যৰ্থ হল: %d"
+
+#, fuzzy
+#~ msgid "Cannot parse version string '%s'"
+#~ msgstr "ব্যৱহাৰকাৰী স্টেট '%s' বিশ্লেষণ কৰিব নোৱাৰি"
+
+#~ msgid "Could not determine kernel version from string %s"
+#~ msgstr "স্ট্ৰিং %s ৰ পৰা কাৰনেল সংস্কৰণ নিৰ্ধাৰণ কৰিব নোৱাৰি"
+
+#~ msgid "Failed to kill process %lld: %s"
+#~ msgstr "প্ৰক্ৰিয়া %lld kill কৰিবলে ব্যৰ্থ: %s"
+
+#~ msgid "fseek failed"
+#~ msgstr "fseek ব্যৰ্থ হল"
+
+#~ msgid "interface name %s does not fit into buffer "
+#~ msgstr "আন্তঃপৃষ্ঠ নাম %s বাফাৰত খাপ নাখায়"
+
+#~ msgid "unable to handle disk requests in snapshot"
+#~ msgstr "স্নেপশ্বটত ডিস্ক অনুৰোধসমূহ নিয়ন্ত্ৰণ কৰিবলে অক্ষম"
+
+#~ msgid "unknown disk snapshot setting '%s'"
+#~ msgstr "অজ্ঞাত ডিস্ক স্নেপশ্বট সংহতি '%s'"
+
+#~ msgid "unknown disk snapshot type '%s'"
+#~ msgstr "অজ্ঞাত ডিস্ক স্নেপশ্বট ধৰণ '%s'"
+
+#~ msgid "unknown memory snapshot setting '%s'"
+#~ msgstr "অজ্ঞাত মেমৰি স্নেপশ্বট সংহতি '%s'"
+
+#~ msgid "'queues' attribute must be positive number: %s"
+#~ msgstr "'queues' বৈশিষ্ট্য ধনাত্মক সংখ্যা হব লাগিব: %s"
+
+#, fuzzy
+#~ msgid "'rx_queue_size' attribute must be positive number: %s"
+#~ msgstr "'queues' বৈশিষ্ট্য ধনাত্মক সংখ্যা হব লাগিব: %s"
+
+#, fuzzy
+#~ msgid "'sgio' is not supported for SCSI generic device yet "
+#~ msgstr "sgio কেৱল scsi হস্ট ডিভাইচৰ বাবে সমৰ্থিত"
+
+#, fuzzy
+#~ msgid "'tx_queue_size' attribute must be positive number: %s"
+#~ msgstr "'queues' বৈশিষ্ট্য ধনাত্মক সংখ্যা হব লাগিব: %s"
+
+#~ msgid "Cannot check dnsmasq binary %s"
+#~ msgstr "dnsmasq বাইনাৰি %s নিৰীক্ষণ কৰিব নোৱাৰি"
+
+#, fuzzy
+#~ msgid "Cannot find name for FD %d socket family %d"
+#~ msgstr "প্ৰগ্ৰাম %d সংস্কৰণ %d সন্ধান কৰিব নোৱাৰি"
+
+#, fuzzy
+#~ msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
+#~ msgstr "'%s' ত আন্তঃপৃষ্ঠ MAC সংহতি কৰিব নোৱাৰি"
+
+#, fuzzy
+#~ msgid "Invalid TSC frequency"
+#~ msgstr "অবৈধ টাইমাৰ কম্পনাংক"
+
+#, fuzzy
+#~ msgid "Invalid TSC scaling attribute"
+#~ msgstr "অবৈধ ফলবেক বৈশিষ্ট"
+
+#, fuzzy
+#~ msgid "Invalid dns enable setting '%s' in network '%s'"
+#~ msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
+
+#~ msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
+#~ msgstr "নেটৱৰ্ক '%s' ত অবৈধ dns forwardPlainNames সংহতি '%s'"
+
+#, fuzzy
+#~ msgid "Invalid domain localOnly setting '%s' in network '%s'"
+#~ msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
+
+#, fuzzy
+#~ msgid "Invalid guest rx filters trust setting '%s' "
+#~ msgstr "অবৈধ নেটৱৰ্ক ফিল্টাৰ: %s"
+
+#~ msgid "Invalid ip address prefix value"
+#~ msgstr "ip ঠিকনাৰ উপসৰ্গৰ অবৈধ মান"
+
+#, fuzzy
+#~ msgid "Invalid localPtr value '%s' in network '%s'"
+#~ msgstr "নেটৱৰ্ক '%s' ত অবৈধ বিলম্ব মান"
+
+#, fuzzy
+#~ msgid "Invalid managed setting '%s' in network port"
+#~ msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
+
+#~ msgid "Invalid match attribute for CPU specification"
+#~ msgstr "CPU ৰ মান নিৰ্ধাৰণকৰ্তা মিলৰ গুণ বৈধ নহয়"
+
+#~ msgid "Invalid memory core dump attribute value '%s'"
+#~ msgstr "অবৈধ মেমৰি কেন্দ্ৰ ডাম্প বৈশিষ্ট্য মান '%s'"
+
+#, fuzzy
+#~ msgid "Invalid network prt plug type '%s'"
+#~ msgstr "অবৈধ নেটৱৰ্ক ফিল্টাৰ: %s"
+
+#, fuzzy
+#~ msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
+#~ msgstr "নেটৱৰ্ক '%s' ত অবৈধ ipv6 সংহতি '%s'"
+
+#, fuzzy
+#~ msgid "KVM is not supported by '%s' on this host"
+#~ msgstr "এই প্লেটফৰ্মত ৰ' I/O সমৰ্থিত নহয়"
+
+#, fuzzy
+#~ msgid "Missing 'model' attribute in mediated device's <hostdev> element"
+#~ msgstr "আন্তঃপৃষ্ঠৰ <actual> উপাদানত সন্ধানহীন ধৰণ বৈশিষ্ট"
+
+#~ msgid "Target timer presence %d does not match source %d"
+#~ msgstr "লক্ষ্য টাইমাৰ উপস্থিতি %d উৎস %d ৰ সৈতে মিল নাখায়"
+
+#, fuzzy
+#~ msgid "Unable to close file '%s'"
+#~ msgstr "ফাইল %s বন্ধ কৰিবলে অক্ষম"
+
+#~ msgid "Unable to get device ID '%s'"
+#~ msgstr "ডিভাইচ ID '%s' প্ৰাপ্ত কৰিবলে অক্ষম"
+
+#~ msgid "Unable to get minor number of device '%s'"
+#~ msgstr "ডিভাইচ '%s' ৰ গৌণ সংখ্যা প্ৰাপ্ত কৰিবলে অক্ষম"
+
+#, fuzzy
+#~ msgid "Unexpected socket family %d"
+#~ msgstr "অপ্ৰত্যাশিত উৎস অৱস্থা %d"
+
+#~ msgid "Unknown PCI device <driver name='%s'/> has been specified"
+#~ msgstr "অজ্ঞাত PCI ডিভাইচ <driver name='%s'/> ধাৰ্য্য কৰা হৈছে"
+
+#~ msgid "Unknown interface <driver name='%s'> has been specified"
+#~ msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ <driver name='%s'> ধাৰ্য্য কৰা হৈছে"
+
+#~ msgid "Unknown interface <driver txmode='%s'> has been specified"
+#~ msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ <driver txmode='%s'> ধাৰ্য্য কৰা হৈছে"
+
+#, fuzzy
+#~ msgid "cannot parse cache mode '%s' for virtiofs"
+#~ msgstr "RAM ফাইলচিস্টেমৰ বাবে ব্যৱহাৰ '%s' বিশ্লেষণ কৰিব নোৱাৰি"
+
+#~ msgid "dnsmasq binary %s is not executable"
+#~ msgstr "dnsmasq বাইনাৰি %s এক্সিকিউট কৰিব নোৱাৰি"
+
+#~ msgid "failed to parse value of %s"
+#~ msgstr "%s ৰ বাবে মান বিশ্লেষণ কৰিবলে ব্যৰ্থ"
+
+#~ msgid "interface misses the type attribute"
+#~ msgstr "সংযোগমাধ্যমত type গুণ অনুপস্থিত"
+
+#, fuzzy
+#~ msgid "invalid allowReboot value '%s'"
+#~ msgstr "অবৈধ অনুবাদ মান '%s'"
+
+#, fuzzy
+#~ msgid "invalid migratability value for host CPU model"
+#~ msgstr "আৰম্ভণি CPU ৰ বাবে অবৈধ মান"
+
+#, fuzzy
+#~ msgid "invalid or missing decode/guest attribute in CPU model %s"
+#~ msgstr "CPU টোপোলজিত 'core' নামক গুণ অনুপস্থিত"
+
+#, fuzzy
+#~ msgid "invalid or missing decode/host attribute in CPU model %s"
+#~ msgstr "CPU টোপোলজিত 'core' নামক গুণ অনুপস্থিত"
+
+#, fuzzy
+#~ msgid "invalid value for 'managed': %s"
+#~ msgstr "'private' ৰ মান বৈধ নহয়"
+
+#, fuzzy
+#~ msgid "missing @managed attribute for <reservations/>"
+#~ msgstr "RAM ফাইলচিস্টেমৰ বাবে সন্ধানহীন 'usage' বৈশিষ্ট্য"
+
+#~ msgid "missing boot device"
+#~ msgstr "হৰুৱা উৎসৰ ডিভাইচ"
+
+#~ msgid "sgio of shared disk '%s' conflicts with other active domains"
+#~ msgstr "অংশীদাৰী ডিস্ক '%s' ৰ sgio এ অন্য সক্ৰিয় ডমেইনসমূহৰ সৈতে দন্দ কৰে"
+
+#~ msgid ""
+#~ "sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active "
+#~ "domains"
+#~ msgstr ""
+#~ "অংশীদাৰী কৰা ডিস্ক 'pool=%s' 'volume=%s' ৰ sgio অন্য সক্ৰিয় ডমেইনসমূহৰ সৈতে "
+#~ "দন্দ কৰে"
+
+#, fuzzy
+#~ msgid "swtpm failed to start"
+#~ msgstr "অতিথি আৰম্ভ হবলে ব্যৰ্থ হল: %s"
+
+#, fuzzy
+#~ msgid "this version of libxenlight does not support backend domain name"
+#~ msgstr "libxenlight এ পৰিবৰ্তনশীল ডিস্কসমূহ সমৰ্থন নকৰে"
+
+#~ msgid "unexpected timer mode %d"
+#~ msgstr "অপ্ৰত্যাশিত টাইমাৰ অৱস্থা %d"
+
+#~ msgid "unexpected timer name %d"
+#~ msgstr "অপ্ৰত্যাশিত টাইমাৰ নাম %d"
+
+#~ msgid "unexpected timer tickpolicy %d"
+#~ msgstr "অপ্ৰত্যাশিত টাইমাৰ tickpolicy %d"
+
+#~ msgid "unexpected timer track %d"
+#~ msgstr "অপ্ৰত্যাশিত টাইমাৰ ট্ৰেক %d"
+
+#~ msgid "unknown PM state value %s"
+#~ msgstr "অজ্ঞাত PM অৱস্থা মান %s"
+
+#, fuzzy
+#~ msgid "unknown accel2d value '%s'"
+#~ msgstr "অজ্ঞাত সামৰ্থবান মান '%s'"
+
+#, fuzzy
+#~ msgid "unknown accel3d value '%s'"
+#~ msgstr "অজ্ঞাত সামৰ্থবান মান '%s'"
+
+#~ msgid "unknown accessmode '%s'"
+#~ msgstr "অজ্ঞাত accessmode '%s'"
+
+#~ msgid "unknown boot device '%s'"
+#~ msgstr "অজ্ঞাত বুট ডিভাইচ: '%s'"
+
+#~ msgid "unknown dhcp peerdns value %s"
+#~ msgstr "অজ্ঞাত dhcp peerdns মান %s"
+
+#~ msgid "unknown filesystem type '%s'"
+#~ msgstr "অজ্ঞাত ফাইলপ্ৰণালীৰ ধৰণ '%s'"
+
+#, fuzzy
+#~ msgid "unknown flock value '%s'"
+#~ msgstr "অজ্ঞাত সম্পূৰ্ণপৰ্দ্দাৰ মান '%s'"
+
+#, fuzzy
+#~ msgid "unknown hostdev model '%s'"
+#~ msgstr "অজ্ঞাত hostdev ধৰণ '%s'"
+
+#~ msgid "unknown hostdev rawio setting '%s'"
+#~ msgstr "অজ্ঞাত hostdev rawio সংহতি '%s'"
+
+#~ msgid "unknown interface event_idx mode '%s'"
+#~ msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ event_idx অৱস্থা '%s'"
+
+#~ msgid "unknown interface ioeventfd mode '%s'"
+#~ msgstr "অজ্ঞাত আন্তঃপৃষ্ঠ ioeventfd অৱস্থা '%s'"
+
+#~ msgid "unknown interface type %s"
+#~ msgstr "অজ্ঞাত ধৰণৰ সংযোগমাধ্যম %s"
+
+#, fuzzy
+#~ msgid "unknown migratable value for '%s' host CPU model property"
+#~ msgstr "%s 'type' বৈশিষ্ট্যৰ বাবে অজ্ঞাত মান '%s'"
+
+#, fuzzy
+#~ msgid "unknown model '%s'"
+#~ msgstr "অজ্ঞাত RNG আৰ্হি '%s'"
+
+#, fuzzy
+#~ msgid "unknown multidevs '%s'"
+#~ msgstr "অজ্ঞাত ধৰণ '%s'"
+
+#, fuzzy
+#~ msgid "unknown port isolated value '%s'"
+#~ msgstr "অজ্ঞাত PM অৱস্থা মান %s"
+
+#, fuzzy
+#~ msgid "unknown posix lock value '%s'"
+#~ msgstr "অজ্ঞাত মাউছ অৱস্থা মান '%s'"
+
+#~ msgid "unknown sgio mode '%s'"
+#~ msgstr "অজ্ঞাত sgio অৱস্থা '%s'"
+
+#~ msgid "unknown timer present value '%s'"
+#~ msgstr "অজ্ঞাত টাইমাৰ বৰ্তমান মান '%s'"
+
+#, fuzzy
+#~ msgid "unknown value '%s' for <hostdev> attribute 'display'"
+#~ msgstr "বৈশিষ্ট্য eoi ৰ বাবে অজ্ঞাত মান: '%s'"
+
+#, fuzzy
+#~ msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
+#~ msgstr "বৈশিষ্ট্য eoi ৰ বাবে অজ্ঞাত মান: '%s'"
+
+#, fuzzy
+#~ msgid "unknown xattr value '%s'"
+#~ msgstr "অজ্ঞাত rom বাৰ মান '%s'"
+
+#~ msgid "unpriv_sgio is not supported by this kernel"
+#~ msgstr "unpriv_sgio এই কাৰনেল দ্বাৰা সমৰ্থিত নহয়"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu pnode '%s' too long for destination"
+#~ msgstr "গন্তব্যৰ ক্ষেত্ৰত ব্ৰিজেৰ নাম %s অত্যাধিক দীঘল"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu size '%s' too long for destination"
+#~ msgstr "CPU আৰ্হি %s গন্তব্যৰ বাবে অত্যাধিক দীঘল"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu vcpus '%s' too long for destination"
+#~ msgstr "CPU আৰ্হি %s গন্তব্যৰ বাবে অত্যাধিক দীঘল"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu vdistances '%s' too long for destination"
+#~ msgstr "গন্তব্যৰ ক্ষেত্ৰত ব্ৰিজেৰ নাম %s অত্যাধিক দীঘল"
 
 #~ msgid "Cannot find %s - Possibly the package isn't installed"
 #~ msgstr "%s বিচাৰি পোৱা নাযায় - সম্ভবত পেকেইজ ইনস্টল নাই"
@@ -39753,9 +40007,6 @@ msgstr "{[--%s] <string>}..."
 
 #~ msgid "Unable to wait on monitor condition"
 #~ msgstr "মনিটৰ চুক্তিত অপেক্ষা কৰিবলে অক্ষম"
-
-#~ msgid "change of nodeset for running domain requires strict numa mode"
-#~ msgstr "চলি থকা ডমেইনৰ বাবে ন'ডছেটৰ পৰিবৰ্তনৰ কঠোৰ numa অৱস্থাৰ প্ৰয়োজন"
 
 #~ msgid "couldn't write radvd config file '%s'"
 #~ msgstr "radvd সংৰূপ ফাইল '%s' লিখিব পৰা নগল"

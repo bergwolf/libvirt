@@ -55,6 +55,7 @@
       <feature policy='require' name='invtsc'/>
       <feature policy='require' name='amd-ssbd'/>
       <feature policy='require' name='virt-ssbd'/>
+      <feature policy='require' name='tsc-scale'/>
       <feature policy='require' name='svme-addr-chk'/>
       <feature policy='require' name='rdctl-no'/>
       <feature policy='require' name='skip-l1dfl-vmentry'/>
@@ -154,6 +155,7 @@
         <value>vnc</value>
         <value>spice</value>
         <value>egl-headless</value>
+        <value>dbus</value>
       </enum>
     </graphics>
     <video supported='yes'>
@@ -216,6 +218,9 @@
       <enum name='backendModel'>
         <value>passthrough</value>
         <value>emulator</value>
+      </enum>
+      <enum name='backendVersion'>
+        <value>2.0</value>
       </enum>
     </tpm>
   </devices>

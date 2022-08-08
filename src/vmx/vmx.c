@@ -24,7 +24,6 @@
 
 #include "internal.h"
 #include "virerror.h"
-#include "virfile.h"
 #include "virconf.h"
 #include "viralloc.h"
 #include "virlog.h"
@@ -32,6 +31,7 @@
 #include "viruri.h"
 #include "virstring.h"
 #include "virutil.h"
+#include "domain_postparse.h"
 
 VIR_LOG_INIT("vmx.vmx");
 
@@ -639,6 +639,7 @@ static virDomainDefParserConfig virVMXDomainDefParserConfig = {
     .domainPostParseCallback = virVMXDomainDefPostParse,
     .features = (VIR_DOMAIN_DEF_FEATURE_WIDE_SCSI |
                  VIR_DOMAIN_DEF_FEATURE_NAME_SLASH |
+                 VIR_DOMAIN_DEF_FEATURE_FW_AUTOSELECT |
                  VIR_DOMAIN_DEF_FEATURE_NO_BOOT_ORDER),
     .defArch = VIR_ARCH_I686,
 };
@@ -1425,8 +1426,7 @@ virVMXParseConfig(virVMXContext *ctx,
     if (encoding == NULL || STRCASEEQ(encoding, "UTF-8")) {
         /* nothing */
     } else {
-        virConfFree(conf);
-        conf = NULL;
+        g_clear_pointer(&conf, virConfFree);
 
         utf8 = virVMXConvertToUTF8(encoding, vmx);
 
@@ -2053,8 +2053,7 @@ virVMXParseVNC(virConf *conf, virDomainGraphicsDef **def)
 
  failure:
     VIR_FREE(listenAddr);
-    virDomainGraphicsDefFree(*def);
-    *def = NULL;
+    g_clear_pointer(def, virDomainGraphicsDefFree);
 
     return -1;
 }
@@ -2556,8 +2555,7 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt, virConf *conf,
 
  cleanup:
     if (result < 0) {
-        virDomainDiskDefFree(*def);
-        *def = NULL;
+        g_clear_pointer(def, virDomainDiskDefFree);
     }
 
     VIR_FREE(prefix);
@@ -2569,8 +2567,7 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt, virConf *conf,
     return result;
 
  ignore:
-    virDomainDiskDefFree(*def);
-    *def = NULL;
+    g_clear_pointer(def, virDomainDiskDefFree);
 
     result = 0;
 
@@ -2653,8 +2650,7 @@ virVMXParseFileSystem(virConf *conf, int number, virDomainFSDef **def)
 
  cleanup:
     if (result < 0) {
-        virDomainFSDefFree(*def);
-        *def = NULL;
+        g_clear_pointer(def, virDomainFSDefFree);
     }
 
     VIR_FREE(hostPath);
@@ -2830,7 +2826,7 @@ virVMXParseEthernet(virConf *conf, int controller, virDomainNetDef **def)
         STRCASEEQ(connectionType, "bridged") ||
         STRCASEEQ(connectionType, "custom")) {
         if (virVMXGetConfigString(conf, networkName_name, &networkName,
-                                  false) < 0)
+                                  true) < 0)
             goto cleanup;
     }
 
@@ -2841,7 +2837,20 @@ virVMXParseEthernet(virConf *conf, int controller, virDomainNetDef **def)
     }
 
     /* Setup virDomainNetDef */
-    if (connectionType == NULL || STRCASEEQ(connectionType, "bridged")) {
+    if (connectionType == NULL && networkName == NULL) {
+        /*
+         * Having neither a connectionType nor a network name can mean two
+         * things:
+         *
+         * 1) there is no connection of that nic
+         * 2) the nic is connected to VMWare Distributed Switch
+         *
+         * But we do not see any difference between these and hence we report
+         * the closest thing to at least make virt-v2v and others work when they
+         * read the domain XML.
+         */
+        (*def)->type = VIR_DOMAIN_NET_TYPE_DUMMY;
+    } else if (connectionType == NULL || STRCASEEQ(connectionType, "bridged")) {
         (*def)->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
         (*def)->data.bridge.brname = g_steal_pointer(&networkName);
     } else if (STRCASEEQ(connectionType, "hostonly")) {
@@ -2869,8 +2878,7 @@ virVMXParseEthernet(virConf *conf, int controller, virDomainNetDef **def)
 
  cleanup:
     if (result < 0) {
-        virDomainNetDefFree(*def);
-        *def = NULL;
+        g_clear_pointer(def, virDomainNetDefFree);
     }
 
     VIR_FREE(networkName);
@@ -2901,15 +2909,15 @@ virVMXParseSerial(virVMXContext *ctx, virConf *conf, int port,
     bool startConnected = false;
 
     char fileType_name[48] = "";
-    char *fileType = NULL;
+    g_autofree char *fileType = NULL;
 
     char fileName_name[48] = "";
-    char *fileName = NULL;
+    g_autofree char *fileName = NULL;
 
     char network_endPoint_name[48] = "";
-    char *network_endPoint = NULL;
+    g_autofree char *network_endPoint = NULL;
 
-    virURI *parsedUri = NULL;
+    g_autoptr(virURI) parsedUri = NULL;
 
     if (def == NULL || *def != NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("Invalid argument"));
@@ -3051,14 +3059,8 @@ virVMXParseSerial(virVMXContext *ctx, virConf *conf, int port,
 
  cleanup:
     if (result < 0) {
-        virDomainChrDefFree(*def);
-        *def = NULL;
+        g_clear_pointer(def, virDomainChrDefFree);
     }
-
-    VIR_FREE(fileType);
-    VIR_FREE(fileName);
-    VIR_FREE(network_endPoint);
-    virURIFree(parsedUri);
 
     return result;
 }
@@ -3153,8 +3155,7 @@ virVMXParseParallel(virVMXContext *ctx, virConf *conf, int port,
 
  cleanup:
     if (result < 0) {
-        virDomainChrDefFree(*def);
-        *def = NULL;
+        g_clear_pointer(def, virDomainChrDefFree);
     }
 
     VIR_FREE(fileType);
@@ -3191,8 +3192,7 @@ virVMXParseSVGA(virConf *conf, virDomainVideoDef **def)
 
  cleanup:
     if (result < 0) {
-        virDomainVideoDefFree(*def);
-        *def = NULL;
+        g_clear_pointer(def, virDomainVideoDefFree);
     }
 
     return result;
@@ -3444,6 +3444,7 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
           case VIR_DOMAIN_GRAPHICS_TYPE_DESKTOP:
           case VIR_DOMAIN_GRAPHICS_TYPE_SPICE:
           case VIR_DOMAIN_GRAPHICS_TYPE_EGL_HEADLESS:
+          case VIR_DOMAIN_GRAPHICS_TYPE_DBUS:
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("Unsupported graphics type '%s'"),
                            virDomainGraphicsTypeToString(def->graphics[i]->type));
@@ -3937,7 +3938,7 @@ virVMXFormatEthernet(virDomainNetDef *def, int controller,
 
     /* def:type, def:ifname -> vmx:connectionType */
     switch (def->type) {
-      case VIR_DOMAIN_NET_TYPE_BRIDGE:
+    case VIR_DOMAIN_NET_TYPE_BRIDGE:
         virBufferAsprintf(buffer, "ethernet%d.networkName = \"%s\"\n",
                           controller, def->data.bridge.brname);
 
@@ -3953,22 +3954,25 @@ virVMXFormatEthernet(virDomainNetDef *def, int controller,
 
         break;
 
-      case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_USER:
         virBufferAsprintf(buffer, "ethernet%d.connectionType = \"nat\"\n",
                           controller);
         break;
 
-      case VIR_DOMAIN_NET_TYPE_ETHERNET:
-      case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
-      case VIR_DOMAIN_NET_TYPE_SERVER:
-      case VIR_DOMAIN_NET_TYPE_CLIENT:
-      case VIR_DOMAIN_NET_TYPE_MCAST:
-      case VIR_DOMAIN_NET_TYPE_NETWORK:
-      case VIR_DOMAIN_NET_TYPE_INTERNAL:
-      case VIR_DOMAIN_NET_TYPE_DIRECT:
-      case VIR_DOMAIN_NET_TYPE_HOSTDEV:
-      case VIR_DOMAIN_NET_TYPE_UDP:
-      case VIR_DOMAIN_NET_TYPE_VDPA:
+    case VIR_DOMAIN_NET_TYPE_DUMMY:
+        break;
+
+    case VIR_DOMAIN_NET_TYPE_ETHERNET:
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_NETWORK:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_DIRECT:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
+    case VIR_DOMAIN_NET_TYPE_VDPA:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("Unsupported net type '%s'"),
                        virDomainNetTypeToString(def->type));
         return -1;

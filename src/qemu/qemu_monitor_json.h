@@ -24,7 +24,6 @@
 #include "internal.h"
 
 #include "qemu_monitor.h"
-#include "virbitmap.h"
 #include "cpu/cpu.h"
 #include "util/virgic.h"
 
@@ -32,7 +31,7 @@ int
 qemuMonitorJSONIOProcessLine(qemuMonitor *mon,
                              const char *line,
                              qemuMonitorMessage *msg)
-    G_GNUC_NO_INLINE;
+    G_NO_INLINE;
 
 int
 qemuMonitorJSONIOProcess(qemuMonitor *mon,
@@ -43,6 +42,7 @@ qemuMonitorJSONIOProcess(qemuMonitor *mon,
 int
 qemuMonitorJSONHumanCommand(qemuMonitor *mon,
                             const char *cmd,
+                            int fd,
                             char **reply);
 
 int
@@ -153,21 +153,6 @@ qemuMonitorJSONSavePhysicalMemory(qemuMonitor *mon,
                                   const char *path);
 
 int
-qemuMonitorJSONSetMigrationSpeed(qemuMonitor *mon,
-                                 unsigned long bandwidth);
-
-int
-qemuMonitorJSONSetMigrationDowntime(qemuMonitor *mon,
-                                    unsigned long long downtime);
-
-int
-qemuMonitorJSONGetMigrationCacheSize(qemuMonitor *mon,
-                                     unsigned long long *cacheSize);
-int
-qemuMonitorJSONSetMigrationCacheSize(qemuMonitor *mon,
-                                     unsigned long long cacheSize);
-
-int
 qemuMonitorJSONGetMigrationParams(qemuMonitor *mon,
                                   virJSONValue **params);
 int
@@ -199,12 +184,18 @@ qemuMonitorJSONMigrate(qemuMonitor *mon,
                        unsigned int flags,
                        const char *uri);
 int
+qemuMonitorJSONGetMigrationBlockers(qemuMonitor *mon,
+                                    char ***blockers);
+int
 qemuMonitorJSONGetSpiceMigrationStatus(qemuMonitor *mon,
                                        bool *spice_migrated);
 
 
 int
 qemuMonitorJSONMigrateCancel(qemuMonitor *mon);
+
+int
+qemuMonitorJSONMigratePause(qemuMonitor *mon);
 
 int
 qemuMonitorJSONQueryDump(qemuMonitor *mon,
@@ -252,12 +243,11 @@ int
 qemuMonitorJSONAddFileHandleToSet(qemuMonitor *mon,
                                   int fd,
                                   int fdset,
-                                  const char *opaque,
-                                  qemuMonitorAddFdInfo *info);
+                                  const char *opaque);
 
 int
 qemuMonitorJSONRemoveFdset(qemuMonitor *mon,
-                           int fdset);
+                           unsigned int fdset);
 
 int
 qemuMonitorJSONQueryFdsets(qemuMonitor *mon,
@@ -369,6 +359,7 @@ qemuMonitorJSONDiskNameLookup(qemuMonitor *mon,
 int
 qemuMonitorJSONArbitraryCommand(qemuMonitor *mon,
                                 const char *cmd_str,
+                                int fd,
                                 char **reply_str);
 
 int
@@ -647,18 +638,15 @@ qemuMonitorJSONGetDeviceAliases(qemuMonitor *mon,
                                 char ***aliases);
 
 int
-qemuMonitorJSONGetCPUx86Data(qemuMonitor *mon,
-                             const char *property,
-                             virCPUData **cpudata);
-
-int
 qemuMonitorJSONGetGuestCPUx86(qemuMonitor *mon,
+                              const char *cpuQOMPath,
                               virCPUData **data,
                               virCPUData **disabled);
 
 int
 qemuMonitorJSONGetGuestCPU(qemuMonitor *mon,
                            virArch arch,
+                           const char *cpuQOMPath,
                            qemuMonitorCPUFeatureTranslationCallback translate,
                            void *opaque,
                            virCPUData **enabled,
@@ -851,11 +839,13 @@ qemuMonitorJSONSetDBusVMStateIdList(qemuMonitor *mon,
 
 int
 qemuMonitorJSONGetCPUMigratable(qemuMonitor *mon,
+                                const char *cpuQOMPath,
                                 bool *migratable);
 
 int
 qemuMonitorJSONStartDirtyRateCalc(qemuMonitor *mon,
-                                  int seconds);
+                                  int seconds,
+                                  qemuMonitorDirtyRateCalcMode mode);
 
 int
 qemuMonitorJSONQueryDirtyRate(qemuMonitor *mon,
@@ -872,3 +862,7 @@ int
 qemuMonitorJSONChangeMemoryRequestedSize(qemuMonitor *mon,
                                          const char *alias,
                                          unsigned long long requestedsize);
+
+int
+qemuMonitorJSONMigrateRecover(qemuMonitor *mon,
+                              const char *uri);

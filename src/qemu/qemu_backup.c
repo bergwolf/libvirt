@@ -23,9 +23,7 @@
 #include "qemu_conf.h"
 #include "qemu_capabilities.h"
 #include "qemu_monitor.h"
-#include "qemu_process.h"
 #include "qemu_backup.h"
-#include "qemu_monitor_json.h"
 #include "qemu_checkpoint.h"
 #include "qemu_command.h"
 #include "qemu_security.h"
@@ -35,9 +33,6 @@
 #include "virerror.h"
 #include "virlog.h"
 #include "virbuffer.h"
-#include "viralloc.h"
-#include "virxml.h"
-#include "virstring.h"
 #include "backup_conf.h"
 #include "virdomaincheckpointobjlist.h"
 
@@ -132,7 +127,7 @@ qemuBackupDiskDataCleanupOne(virDomainObj *vm,
         if (dd->added) {
             qemuDomainObjEnterMonitor(priv->driver, vm);
             qemuBlockStorageSourceAttachRollback(priv->mon, dd->crdata->srcdata[0]);
-            qemuDomainObjExitMonitor(priv->driver, vm);
+            qemuDomainObjExitMonitor(vm);
         }
 
         if (dd->created) {
@@ -466,15 +461,15 @@ qemuBackupDiskPrepareOneStorage(virDomainObj *vm,
 
         if (qemuBlockStorageSourceCreate(vm, dd->store, dd->backingStore, NULL,
                                          dd->crdata->srcdata[0],
-                                         QEMU_ASYNC_JOB_BACKUP) < 0)
+                                         VIR_ASYNC_JOB_BACKUP) < 0)
             return -1;
     } else {
-        if (qemuDomainObjEnterMonitorAsync(priv->driver, vm, QEMU_ASYNC_JOB_BACKUP) < 0)
+        if (qemuDomainObjEnterMonitorAsync(priv->driver, vm, VIR_ASYNC_JOB_BACKUP) < 0)
             return -1;
 
         rc = qemuBlockStorageSourceAttachApply(priv->mon, dd->crdata->srcdata[0]);
 
-        qemuDomainObjExitMonitor(priv->driver, vm);
+        qemuDomainObjExitMonitor(vm);
         if (rc < 0)
             return -1;
     }
@@ -555,7 +550,7 @@ qemuBackupBeginPullExportDisks(virDomainObj *vm,
 
 void
 qemuBackupJobTerminate(virDomainObj *vm,
-                       qemuDomainJobStatus jobstatus)
+                       virDomainJobStatus jobstatus)
 
 {
     qemuDomainObjPrivate *priv = vm->privateData;
@@ -583,7 +578,7 @@ qemuBackupJobTerminate(virDomainObj *vm,
             !(priv->backup->apiFlags & VIR_DOMAIN_BACKUP_BEGIN_REUSE_EXTERNAL) &&
             (priv->backup->type == VIR_DOMAIN_BACKUP_TYPE_PULL ||
              (priv->backup->type == VIR_DOMAIN_BACKUP_TYPE_PUSH &&
-              jobstatus != QEMU_DOMAIN_JOB_STATUS_COMPLETED))) {
+              jobstatus != VIR_DOMAIN_JOB_STATUS_COMPLETED))) {
 
             uid_t uid;
             gid_t gid;
@@ -600,15 +595,19 @@ qemuBackupJobTerminate(virDomainObj *vm,
     }
 
     if (priv->job.current) {
-        qemuDomainJobInfoUpdateTime(priv->job.current);
+        qemuDomainJobDataPrivate *privData = NULL;
 
-        g_clear_pointer(&priv->job.completed, qemuDomainJobInfoFree);
-        priv->job.completed = qemuDomainJobInfoCopy(priv->job.current);
+        qemuDomainJobDataUpdateTime(priv->job.current);
 
-        priv->job.completed->stats.backup.total = priv->backup->push_total;
-        priv->job.completed->stats.backup.transferred = priv->backup->push_transferred;
-        priv->job.completed->stats.backup.tmp_used = priv->backup->pull_tmp_used;
-        priv->job.completed->stats.backup.tmp_total = priv->backup->pull_tmp_total;
+        g_clear_pointer(&priv->job.completed, virDomainJobDataFree);
+        priv->job.completed = virDomainJobDataCopy(priv->job.current);
+
+        privData = priv->job.completed->privateData;
+
+        privData->stats.backup.total = priv->backup->push_total;
+        privData->stats.backup.transferred = priv->backup->push_transferred;
+        privData->stats.backup.tmp_used = priv->backup->pull_tmp_used;
+        privData->stats.backup.tmp_total = priv->backup->pull_tmp_total;
 
         priv->job.completed->status = jobstatus;
         priv->job.completed->errmsg = g_strdup(priv->backup->errmsg);
@@ -616,11 +615,10 @@ qemuBackupJobTerminate(virDomainObj *vm,
         qemuDomainEventEmitJobCompleted(priv->driver, vm);
     }
 
-    virDomainBackupDefFree(priv->backup);
-    priv->backup = NULL;
+    g_clear_pointer(&priv->backup, virDomainBackupDefFree);
 
-    if (priv->job.asyncJob == QEMU_ASYNC_JOB_BACKUP)
-        qemuDomainObjEndAsyncJob(priv->driver, vm);
+    if (priv->job.asyncJob == VIR_ASYNC_JOB_BACKUP)
+        qemuDomainObjEndAsyncJob(vm);
 }
 
 
@@ -678,7 +676,7 @@ qemuBackupJobCancelBlockjobs(virDomainObj *vm,
 
         rc = qemuMonitorBlockJobCancel(priv->mon, job->name, true);
 
-        qemuDomainObjExitMonitor(priv->driver, vm);
+        qemuDomainObjExitMonitor(vm);
 
         if (rc == 0) {
             backupdisk->state = VIR_DOMAIN_BACKUP_DISK_STATE_CANCELLING;
@@ -687,7 +685,7 @@ qemuBackupJobCancelBlockjobs(virDomainObj *vm,
     }
 
     if (terminatebackup && !has_active)
-        qemuBackupJobTerminate(vm, QEMU_DOMAIN_JOB_STATUS_CANCELED);
+        qemuBackupJobTerminate(vm, VIR_DOMAIN_JOB_STATUS_CANCELED);
 }
 
 
@@ -788,14 +786,15 @@ qemuBackupBegin(virDomainObj *vm,
      * infrastructure for async jobs. We'll allow standard modify-type jobs
      * as the interlocking of conflicting operations is handled on the block
      * job level */
-    if (qemuDomainObjBeginAsyncJob(priv->driver, vm, QEMU_ASYNC_JOB_BACKUP,
+    if (qemuDomainObjBeginAsyncJob(priv->driver, vm, VIR_ASYNC_JOB_BACKUP,
                                    VIR_DOMAIN_JOB_OPERATION_BACKUP, flags) < 0)
         return -1;
 
-    qemuDomainObjSetAsyncJobMask(vm, (QEMU_JOB_DEFAULT_MASK |
-                                      JOB_MASK(QEMU_JOB_SUSPEND) |
-                                      JOB_MASK(QEMU_JOB_MODIFY)));
-    priv->job.current->statsType = QEMU_DOMAIN_JOB_STATS_TYPE_BACKUP;
+    qemuDomainObjSetAsyncJobMask(vm, (VIR_JOB_DEFAULT_MASK |
+                                      JOB_MASK(VIR_JOB_SUSPEND) |
+                                      JOB_MASK(VIR_JOB_MODIFY)));
+    qemuDomainJobSetStatsType(priv->job.current,
+                              QEMU_DOMAIN_JOB_STATS_TYPE_BACKUP);
 
     if (!virDomainObjIsActive(vm)) {
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
@@ -852,7 +851,7 @@ qemuBackupBegin(virDomainObj *vm,
             goto endjob;
     }
 
-    if (!(blockNamedNodeData = qemuBlockGetNamedNodeData(vm, QEMU_ASYNC_JOB_BACKUP)))
+    if (!(blockNamedNodeData = qemuBlockGetNamedNodeData(vm, VIR_ASYNC_JOB_BACKUP)))
         goto endjob;
 
     if ((ndd = qemuBackupDiskPrepareData(vm, def, blockNamedNodeData, actions,
@@ -870,7 +869,7 @@ qemuBackupBegin(virDomainObj *vm,
 
     priv->backup = g_steal_pointer(&def);
 
-    if (qemuDomainObjEnterMonitorAsync(priv->driver, vm, QEMU_ASYNC_JOB_BACKUP) < 0)
+    if (qemuDomainObjEnterMonitorAsync(priv->driver, vm, VIR_ASYNC_JOB_BACKUP) < 0)
         goto endjob;
 
     if (pull) {
@@ -889,7 +888,7 @@ qemuBackupBegin(virDomainObj *vm,
     if (rc == 0)
         rc = qemuMonitorTransaction(priv->mon, &actions);
 
-    qemuDomainObjExitMonitor(priv->driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         goto endjob;
 
@@ -906,15 +905,15 @@ qemuBackupBegin(virDomainObj *vm,
     }
 
     if (pull) {
-        if (qemuDomainObjEnterMonitorAsync(priv->driver, vm, QEMU_ASYNC_JOB_BACKUP) < 0)
+        if (qemuDomainObjEnterMonitorAsync(priv->driver, vm, VIR_ASYNC_JOB_BACKUP) < 0)
             goto endjob;
         /* note that if the export fails we've already created the checkpoint
          * and we will not delete it */
         rc = qemuBackupBeginPullExportDisks(vm, dd, ndd);
-        qemuDomainObjExitMonitor(priv->driver, vm);
+        qemuDomainObjExitMonitor(vm);
 
         if (rc < 0) {
-            qemuBackupJobCancelBlockjobs(vm, priv->backup, false, QEMU_ASYNC_JOB_BACKUP);
+            qemuBackupJobCancelBlockjobs(vm, priv->backup, false, VIR_ASYNC_JOB_BACKUP);
             goto endjob;
         }
     }
@@ -928,14 +927,14 @@ qemuBackupBegin(virDomainObj *vm,
     qemuCheckpointRollbackMetadata(vm, chk);
 
     if (!job_started && (nbd_running || tlsAlias || tlsSecretAlias) &&
-        qemuDomainObjEnterMonitorAsync(priv->driver, vm, QEMU_ASYNC_JOB_BACKUP) == 0) {
+        qemuDomainObjEnterMonitorAsync(priv->driver, vm, VIR_ASYNC_JOB_BACKUP) == 0) {
         if (nbd_running)
             ignore_value(qemuMonitorNBDServerStop(priv->mon));
         if (tlsAlias)
             ignore_value(qemuMonitorDelObject(priv->mon, tlsAlias, false));
         if (tlsSecretAlias)
             ignore_value(qemuMonitorDelObject(priv->mon, tlsSecretAlias, false));
-        qemuDomainObjExitMonitor(priv->driver, vm);
+        qemuDomainObjExitMonitor(vm);
     }
 
     if (ret < 0 && !job_started && priv->backup)
@@ -944,7 +943,7 @@ qemuBackupBegin(virDomainObj *vm,
     if (ret == 0)
         qemuDomainObjReleaseAsyncJob(vm);
     else
-        qemuDomainObjEndAsyncJob(priv->driver, vm);
+        qemuDomainObjEndAsyncJob(vm);
 
     return ret;
 }
@@ -985,7 +984,7 @@ qemuBackupNotifyBlockjobEnd(virDomainObj *vm,
     bool has_cancelling = false;
     bool has_cancelled = false;
     bool has_failed = false;
-    qemuDomainJobStatus jobstatus = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
+    virDomainJobStatus jobstatus = VIR_DOMAIN_JOB_STATUS_COMPLETED;
     virDomainBackupDef *backup = priv->backup;
     size_t i;
 
@@ -1003,7 +1002,7 @@ qemuBackupNotifyBlockjobEnd(virDomainObj *vm,
             ignore_value(qemuMonitorDelObject(priv->mon, backup->tlsAlias, false));
         if (backup->tlsSecretAlias)
             ignore_value(qemuMonitorDelObject(priv->mon, backup->tlsSecretAlias, false));
-        qemuDomainObjExitMonitor(priv->driver, vm);
+        qemuDomainObjExitMonitor(vm);
 
         /* update the final statistics with the current job's data */
         backup->pull_tmp_used += cur;
@@ -1082,9 +1081,9 @@ qemuBackupNotifyBlockjobEnd(virDomainObj *vm,
         /* all sub-jobs have stopped */
 
         if (has_failed)
-            jobstatus = QEMU_DOMAIN_JOB_STATUS_FAILED;
+            jobstatus = VIR_DOMAIN_JOB_STATUS_FAILED;
         else if (has_cancelled && backup->type == VIR_DOMAIN_BACKUP_TYPE_PUSH)
-            jobstatus = QEMU_DOMAIN_JOB_STATUS_CANCELED;
+            jobstatus = VIR_DOMAIN_JOB_STATUS_CANCELED;
 
         qemuBackupJobTerminate(vm, jobstatus);
     }
@@ -1135,9 +1134,10 @@ qemuBackupGetJobInfoStatsUpdateOne(virDomainObj *vm,
 int
 qemuBackupGetJobInfoStats(virQEMUDriver *driver,
                           virDomainObj *vm,
-                          qemuDomainJobInfo *jobInfo)
+                          virDomainJobData *jobData)
 {
-    qemuDomainBackupStats *stats = &jobInfo->stats.backup;
+    qemuDomainJobDataPrivate *privJob = jobData->privateData;
+    qemuDomainBackupStats *stats = &privJob->stats.backup;
     qemuDomainObjPrivate *priv = vm->privateData;
     qemuMonitorJobInfo **blockjobs = NULL;
     size_t nblockjobs = 0;
@@ -1151,16 +1151,16 @@ qemuBackupGetJobInfoStats(virQEMUDriver *driver,
         return -1;
     }
 
-    if (qemuDomainJobInfoUpdateTime(jobInfo) < 0)
+    if (qemuDomainJobDataUpdateTime(jobData) < 0)
         return -1;
 
-    jobInfo->status = QEMU_DOMAIN_JOB_STATUS_ACTIVE;
+    jobData->status = VIR_DOMAIN_JOB_STATUS_ACTIVE;
 
     qemuDomainObjEnterMonitor(driver, vm);
 
     rc = qemuMonitorGetJobInfo(priv->mon, &blockjobs, &nblockjobs);
 
-    qemuDomainObjExitMonitor(driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         goto cleanup;
 

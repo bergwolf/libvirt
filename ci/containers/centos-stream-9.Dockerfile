@@ -6,20 +6,22 @@
 
 FROM quay.io/centos/centos:stream9
 
-RUN dnf update -y && \
+RUN dnf distro-sync -y && \
     dnf install 'dnf-command(config-manager)' -y && \
     dnf config-manager --set-enabled -y crb && \
+    dnf install -y epel-release && \
+    dnf install -y epel-next-release && \
     dnf install -y \
         audit-libs-devel \
         augeas \
         bash-completion \
         ca-certificates \
+        ccache \
         clang \
         cpp \
         cyrus-sasl-devel \
         device-mapper-devel \
         diffutils \
-        dnsmasq \
         dwarves \
         ebtables \
         firewalld-filesystem \
@@ -48,6 +50,7 @@ RUN dnf update -y && \
         librbd-devel \
         libselinux-devel \
         libssh-devel \
+        libssh2-devel \
         libtirpc-devel \
         libwsman-devel \
         libxml2 \
@@ -79,9 +82,14 @@ RUN dnf update -y && \
         yajl-devel && \
     dnf autoremove -y && \
     dnf clean all -y && \
-    rpm -qa | sort > /packages.txt
+    rpm -qa | sort > /packages.txt && \
+    mkdir -p /usr/libexec/ccache-wrappers && \
+    ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/cc && \
+    ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/clang && \
+    ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/gcc
 
 ENV LANG "en_US.UTF-8"
 ENV MAKE "/usr/bin/make"
 ENV NINJA "/usr/bin/ninja"
 ENV PYTHON "/usr/bin/python3"
+ENV CCACHE_WRAPPERSDIR "/usr/libexec/ccache-wrappers"

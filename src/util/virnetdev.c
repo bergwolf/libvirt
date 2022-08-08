@@ -1642,7 +1642,9 @@ virNetDevSetVfMac(const char *ifname, int vf,
     };
 
     if (macaddr == NULL || allowRetry == NULL) {
-        virReportError(EINVAL, "%s", _("Invalid parameters: %d"));
+        virReportError(EINVAL,
+                       _("Invalid parameters macaddr=%p allowRetry=%p"),
+                       macaddr, allowRetry);
         return -EINVAL;
     }
 
@@ -1680,7 +1682,8 @@ virNetDevSetVfConfig(const char *ifname,
 {
     int ret = -1;
 
-    if ((ret = virNetDevSetVfMac(ifname, vf, macaddr, allowRetry)) < 0)
+    if (macaddr &&
+        (ret = virNetDevSetVfMac(ifname, vf, macaddr, allowRetry)) < 0)
         return ret;
     if ((ret = virNetDevSetVfVlan(ifname, vf, vlanid)) < 0)
         return ret;
@@ -1974,7 +1977,7 @@ virNetDevSaveNetConfig(const char *linkdev, int vf,
     if (!(fileStr = virJSONValueToString(configJSON, true)))
         return -1;
 
-    if (virFileWriteStr(filePath, fileStr, O_CREAT|O_TRUNC|O_WRONLY) < 0) {
+    if (virFileWriteStr(filePath, fileStr, 0600) < 0) {
         virReportSystemError(errno, _("Unable to preserve mac/vlan tag "
                                       "for device = %s, vf = %d"), linkdev, vf);
         return -1;
@@ -2363,7 +2366,7 @@ virNetDevSetNetConfig(const char *linkdev, int vf,
         }
     }
 
-    if (adminMAC) {
+    if (adminMAC || vlanTag) {
         /* Set vlanTag and admin MAC using an RTM_SETLINK request sent to
          * PFdevname+VF#, if mac != NULL this will set the "admin MAC" via
          * the PF, *not* the actual VF MAC - the admin MAC only takes
@@ -2948,8 +2951,7 @@ int virNetDevGetRxFilter(const char *ifname,
     ret = 0;
  cleanup:
     if (ret < 0) {
-        virNetDevRxFilterFree(fil);
-        fil = NULL;
+        g_clear_pointer(&fil, virNetDevRxFilterFree);
     }
 
     *filter = fil;
@@ -3569,12 +3571,10 @@ virNetDevReserveName(const char *name)
     idstr = name + strlen(virNetDevGenNames[type].prefix);
 
     if (virStrToLong_ui(idstr, NULL, 10, &id) >= 0) {
-        virMutexLock(&virNetDevGenNames[type].mutex);
+        VIR_LOCK_GUARD lock = virLockGuardLock(&virNetDevGenNames[type].mutex);
 
         if (virNetDevGenNames[type].lastID < (int)id)
             virNetDevGenNames[type].lastID = id;
-
-        virMutexUnlock(&virNetDevGenNames[type].mutex);
     }
 }
 
@@ -3600,7 +3600,6 @@ virNetDevReserveName(const char *name)
 int
 virNetDevGenerateName(char **ifname, virNetDevGenNameType type)
 {
-    int id;
     const char *prefix = virNetDevGenNames[type].prefix;
     double maxIDd = pow(10, IFNAMSIZ - 1 - strlen(prefix));
     int maxID = INT_MAX;
@@ -3618,16 +3617,15 @@ virNetDevGenerateName(char **ifname, virNetDevGenNameType type)
 
     do {
         g_autofree char *try = NULL;
+        int id = 0;
 
-        virMutexLock(&virNetDevGenNames[type].mutex);
+        VIR_WITH_MUTEX_LOCK_GUARD(&virNetDevGenNames[type].mutex) {
+            id = ++virNetDevGenNames[type].lastID;
 
-        id = ++virNetDevGenNames[type].lastID;
-
-        /* reset before overflow */
-        if (virNetDevGenNames[type].lastID >= maxID)
-            virNetDevGenNames[type].lastID = -1;
-
-        virMutexUnlock(&virNetDevGenNames[type].mutex);
+            /* reset before overflow */
+            if (virNetDevGenNames[type].lastID >= maxID)
+                virNetDevGenNames[type].lastID = -1;
+        }
 
         if (*ifname)
             try = g_strdup_printf(*ifname, id);

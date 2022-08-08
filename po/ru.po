@@ -11,13 +11,14 @@
 # Yulia <yulia.poyarkova@redhat.com>, 2012, 2013, 2014
 # yuliya <ypoyarko@redhat.com>, 2015, 2016
 # Olesya Gerasimenko <gammaray@basealt.ru>, 2020.
+# Sergey A. <sw@atrus.ru>, 2022.
 msgid ""
 msgstr ""
 "Project-Id-Version: libvirt 6.0.0\n"
 "Report-Msgid-Bugs-To: https://libvirt.org/bugs.html\n"
-"POT-Creation-Date: 2022-01-10 08:58+0000\n"
-"PO-Revision-Date: 2020-09-29 12:11+0000\n"
-"Last-Translator: Olesya Gerasimenko <gammaray@basealt.ru>\n"
+"POT-Creation-Date: 2022-07-26 08:13+0000\n"
+"PO-Revision-Date: 2022-07-04 01:18+0000\n"
+"Last-Translator: Sergey A. <sw@atrus.ru>\n"
 "Language-Team: Russian <https://translate.fedoraproject.org/projects/libvirt/"
 "libvirt/ru/>\n"
 "Language: ru\n"
@@ -26,7 +27,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
 "%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;\n"
-"X-Generator: Weblate 4.2.2\n"
+"X-Generator: Weblate 4.13\n"
 
 msgid ""
 "\n"
@@ -45,7 +46,6 @@ msgstr ""
 "\n"
 "  (используйте help <группа> для получения информации о командах в группе)\n"
 
-#. Print the description only if it's not empty.
 msgid ""
 "\n"
 "  DESCRIPTION\n"
@@ -449,7 +449,6 @@ msgstr ""
 msgid "    Bandwidth limit: %llu bytes/s (%-.3lf %s/s)"
 msgstr "    Ограничение пропускной способности: %llu байт/с (%-.3lf %s/s)"
 
-#. true if 'arg' works instead of '--opt arg'
 msgid "  NAME\n"
 msgstr "  ИМЯ\n"
 
@@ -464,16 +463,16 @@ msgid " %s (help keyword '%s'):\n"
 msgstr " %s (ключевое слово «%s»):\n"
 
 msgid " Hypervisors:"
-msgstr "Гипервизоры:"
+msgstr " Гипервизоры:"
 
 msgid " Miscellaneous:"
-msgstr "Прочее:"
+msgstr " Прочее:"
 
 msgid " Networking:"
-msgstr "Сеть:"
+msgstr " Работа в сети:"
 
 msgid " Storage:"
-msgstr "Пространство данных:"
+msgstr " Хранилище данных:"
 
 #, c-format
 msgid ""
@@ -695,16 +694,6 @@ msgstr "этот исполняемый файл QEMU не поддержива�
 msgid "%s object has invalid dynamic type"
 msgstr "Недопустимый динамический тип объекта %s"
 
-#.
-#. * A required property must be != 0 (NULL for pointers, "undefined" == 0 for
-#. * enumeration values).
-#. *
-#. * To be used as part of ESX_VI__TEMPLATE__VALIDATE.
-#.
-#.
-#. * Macros to implement managed objects
-#.
-#. FIXME: This results in O(n^2) runtime in case of missing required, but      * unselected properties.
 #, c-format
 msgid "%s object is missing the required '%s' property"
 msgstr "Объект %s должен содержать обязательное свойство «%s»"
@@ -968,9 +957,8 @@ msgid "%s: expected an unsigned integer for '%s' parameter"
 msgstr "%s: для параметра «%s» ожидалось целое число без знака"
 
 #, c-format
-msgid "%s: failed to communicate with bridge helper: %s%s"
+msgid "%s: failed to communicate with bridge helper: %s"
 msgstr ""
-"%s: не удалось обменяться данными со вспомогательным средством моста: %s%s"
 
 #, c-format
 msgid "%s: failed to read temporary file: %s"
@@ -1091,10 +1079,6 @@ msgid "%s: try --help for more details\n"
 msgstr "%s: для получения подробной информации используйте --help\n"
 
 #, c-format
-msgid "%s: unable to determine access mode of fd %d"
-msgstr "%s: не удалось определить режим доступа дескриптора файла %d"
-
-#, c-format
 msgid "%s: unexpected URI transport '%s'\n"
 msgstr "%s: непредвиденный транспорт URI «%s»\n"
 
@@ -1151,6 +1135,10 @@ msgid "'%s'"
 msgstr "«%s»"
 
 #, c-format
+msgid "'%s' D-Bus address is not handled"
+msgstr ""
+
+#, c-format
 msgid "'%s' architecture is not supported by CPU driver"
 msgstr "драйвер процессора не поддерживает архитектуру «%s»"
 
@@ -1160,11 +1148,11 @@ msgstr "атрибуты «%s» «%s» не должны перекрывать�
 
 #, c-format
 msgid "'%s' controller cannot be hot plugged."
-msgstr "Контроллер «%s»  не может быть подключён в режиме горячей замены."
+msgstr "Контроллер «%s» не может быть подключён в режиме горячей замены."
 
 #, c-format
 msgid "'%s' controller cannot be hot unplugged."
-msgstr "Контроллер «%s»  не может быть отключён в режиме горячей замены."
+msgstr "Контроллер «%s» не может быть отключён в режиме горячей замены."
 
 #, c-format
 msgid "'%s' controller only supports up to '%u' ports"
@@ -1225,7 +1213,7 @@ msgstr "«%s» начиная с %llu имеет только %zd доступн
 msgid ""
 "'--wipe-storage' requires '--storage <string>' or '--remove-all-storage'"
 msgstr ""
-"--wipe-storage  должен использоваться вместе с параметром --storage <строка> "
+"--wipe-storage должен использоваться вместе с параметром --storage <строка> "
 "или --remove-all-storage"
 
 #, c-format
@@ -1238,7 +1226,7 @@ msgstr ""
 "«adapter»"
 
 msgid "'address' is not supported for 'ramfb' video devices"
-msgstr "«address» не поддерживается для видеоустройств «ramfb» "
+msgstr "«address» не поддерживается для видеоустройств «ramfb»"
 
 msgid "'address' must be specified for scsi hostdev source"
 msgstr ""
@@ -1317,6 +1305,12 @@ msgstr "Ответ guest-get-vcpus не содержит «logical-id»"
 msgid "'login-time' missing in reply of guest-get-users"
 msgstr "Ответ guest-get-users не содержит «login-time»"
 
+msgid "'manual' memory snapshot mode not supported"
+msgstr ""
+
+msgid "'manual' snapshot mode is not supported by the test driver"
+msgstr ""
+
 msgid "'max_sectors' is only supported by virtio-scsi controller"
 msgstr "«max_sectors» поддерживается только контроллером virtio-scsi"
 
@@ -1346,6 +1340,9 @@ msgstr "ответ guest-get-fsinfo не содержит «name»"
 msgid "'netns' namespace source can only be used with sharenet"
 msgstr ""
 "источник пространства имён «netns» можно использовать только с sharenet"
+
+msgid "'network' attribute is required for listen type 'network'"
+msgstr ""
 
 msgid "'network' attribute is valid only for listen type 'network'"
 msgstr ""
@@ -1381,10 +1378,6 @@ msgstr "«peak» и «burst» требуют наличия атрибута «a
 msgid "'pool' and 'volume' must be specified together for 'pool' type source"
 msgstr "Для источника типа «pool» необходимо определить «pool» и «volume»"
 
-#, c-format
-msgid "'queues' attribute must be positive number: %s"
-msgstr "Атрибут «queues» должен быть положительным целым числом: %s"
-
 msgid "'queues' is only supported by virtio-scsi controller"
 msgstr "«queues» поддерживается только контроллером virtio-scsi"
 
@@ -1401,13 +1394,6 @@ msgid ""
 msgstr ""
 
 #, c-format
-msgid "'rx_queue_size' attribute must be positive number: %s"
-msgstr "Атрибут «rx_queue_size» должен быть положительным целым числом: %s"
-
-msgid "'sgio' is not supported for SCSI generic device yet "
-msgstr "«sgio» не поддерживается для устройств семейства SCSI"
-
-#, c-format
 msgid "'sibling_id %d' does not refer to a valid cell within NUMA 'cell id %d'"
 msgstr ""
 "«sibling_id %d» не ссылается на действительную ячейку в пределах «cell id "
@@ -1419,21 +1405,20 @@ msgstr "атрибут «socket» является корректным толь
 msgid "'ssh' protocol is not yet supported"
 msgstr "протокол «ssh» не поддерживается"
 
-msgid "'startupPolicy' is only valid for 'file' type volume"
-msgstr "«startupPolicy» используется только для томов типа «file»"
-
 msgid "'target' refers to a non-existent NUMA node"
 msgstr "«target» ссылается на несуществующий узел NUMA"
 
 msgid "'tftp' protocol is not supported with this QEMU binary"
 msgstr "этот исполняемый файл QEMU не поддерживает протокол «tftp»"
 
+msgid "'tlsHostname' field is not supported by this QEMU"
+msgstr ""
+
+msgid "'tlsHostname' field is supported only with NBD disks"
+msgstr ""
+
 msgid "'trim' algorithm not supported"
 msgstr "алгоритм «trim» не поддерживается"
-
-#, c-format
-msgid "'tx_queue_size' attribute must be positive number: %s"
-msgstr "Атрибут «tx_queue_size» должен быть положительным целым числом: %s"
 
 msgid "'type' missing in reply of guest-get-fsinfo"
 msgstr "ответ guest-get-fsinfo не содержит «type»"
@@ -1453,7 +1438,7 @@ msgstr ""
 
 msgid "'wwnn' and 'wwpn' must be specified for adapter type 'fchost'"
 msgstr ""
-"для адаптера типа «fc_host» необходимо указать атрибуты «wwnn» и «wwpn» "
+"для адаптера типа «fc_host» необходимо указать атрибуты «wwnn» и «wwpn»"
 
 msgid "(<null>)"
 msgstr ""
@@ -1509,7 +1494,6 @@ msgstr "(определение_интерфейса)"
 msgid "(libxl_migration_cookie)"
 msgstr "(cookie_миграции_libxl)"
 
-#. parse and modify the xml from the user
 msgid "(metadata_xml)"
 msgstr "(xml_метаданных)"
 
@@ -1567,7 +1551,6 @@ msgstr "(проверить драйвер)"
 msgid "(volume_definition)"
 msgstr "(определение_тома)"
 
-#. Capacity related information isn't available
 msgid "-"
 msgstr "-"
 
@@ -1621,7 +1604,7 @@ msgid "--descendants requires either --from or --current"
 msgstr "--descendants требует указания --from или --current"
 
 msgid "--format only works with --memory-only"
-msgstr "--format может использоваться только вместе с  --memory-only"
+msgstr "--format может использоваться только вместе с --memory-only"
 
 msgid ""
 "--listen parameter not permitted with systemd activation sockets, see 'man "
@@ -1745,7 +1728,7 @@ msgid ""
 "<virtualport type='%s'> not supported for network '%s' which uses an SR-IOV "
 "Virtual Function via PCI passthrough"
 msgstr ""
-"<virtualport type='%s'> не поддерживается для сети «%s», так как эта сеть  "
+"<virtualport type='%s'> не поддерживается для сети «%s», так как эта сеть "
 "использует виртуальные функции SR-IOV для сквозного режима PCI"
 
 #, c-format
@@ -1757,8 +1740,8 @@ msgid ""
 "<virtualport> element unsupported for type='%s' in interface's <actual> "
 "element"
 msgstr ""
-"<virtualport>  не поддерживается, если секция интерфейса <actual> содержит "
-"«type='%s'» "
+"<virtualport> не поддерживается, если секция интерфейса <actual> содержит "
+"«type='%s'»"
 
 #, c-format
 msgid ""
@@ -1811,7 +1794,7 @@ msgid ""
 "A single <secret type='passphrase'...> element is expected in encryption "
 "description"
 msgstr ""
-"В описании шифрования ожидается один элемент <secret type='passphrase'...> "
+"В описании шифрования ожидается один элемент <secret type='passphrase'...>"
 
 msgid "A storage driver is already registered"
 msgstr "Драйвер управления доступом к данным уже зарегистрирован"
@@ -2209,6 +2192,9 @@ msgid ""
 msgstr ""
 "Для миграции диска запрошены порт и URI, но они являются взаимоисключающими"
 
+msgid "Both secret and the secret header are required"
+msgstr ""
+
 msgid "Bounded"
 msgstr "Связано"
 
@@ -2499,8 +2485,8 @@ msgid ""
 "Cache allocation of size %llu is smaller than the minimum allowed allocation "
 "%llu"
 msgstr ""
-"Размер получаемой памяти для кэша, llu, меньше минимального допустимого "
-"размера %llu"
+"Распределение кэша размером %llu меньше, чем минимально допустимое "
+"распределение %llu"
 
 #, c-format
 msgid "Cache level %d does not support tuning"
@@ -2535,14 +2521,10 @@ msgid ""
 "dirtyrate'."
 msgstr ""
 
-#.
-#. * Macros to implement dynamic dispatched functions
-#.
 #, c-format
 msgid "Call to %s for unexpected type '%s'"
 msgstr "Вызов %s для непредвиденного типа «%s»"
 
-#. nothing
 #, c-format
 msgid "Call to %s for unexpected type '%s', expected '%s'"
 msgstr "Вызов %s для непредвиденного типа «%s» (ожидается «%s»)"
@@ -2560,10 +2542,6 @@ msgid "Call to '%s' returned something, expecting an empty result"
 msgstr "Вызов «%s» должен вернуть пустой результат"
 
 #, c-format
-msgid "Call to utsname failed: %d"
-msgstr "Ошибка вызова utsname: %d"
-
-#, c-format
 msgid "Calling %s from '%s' failed"
 msgstr "Ошибка вызова %s из «%s»"
 
@@ -2571,8 +2549,8 @@ msgid "Can only modify disk quota"
 msgstr "Разрешено изменять только квоту диска"
 
 #, c-format
-msgid "Can only open VNC or SPICE graphics backends, not %s"
-msgstr "Возможно открыть только графические модули VNC или SPICE, но не %s"
+msgid "Can only open VNC, SPICE or D-Bus p2p graphics backends, not %s"
+msgstr ""
 
 msgid "Can't add USB hub: USB is disabled for this domain"
 msgstr "Не удалось концентратор USB: функции USB для этого домена отключены"
@@ -2811,10 +2789,6 @@ msgid "Cannot check address family on this platform"
 msgstr "Не удалось проверить семейство адресов на этой платформе"
 
 #, c-format
-msgid "Cannot check dnsmasq binary %s"
-msgstr "Не удалось проверить двоичный файл dnsmasq: %s"
-
-#, c-format
 msgid "Cannot chown uniq path: %s"
 msgstr "Не удалось сменить владельца уникального пути: %s"
 
@@ -2995,10 +2969,6 @@ msgstr "Не удалось найти байтовую статистику «%
 #, c-format
 msgid "Cannot find byte stats for block device '%s'"
 msgstr "Не удалось найти байтовую статистику для блочного устройства «%s»"
-
-#, c-format
-msgid "Cannot find name for FD %d socket family %d"
-msgstr "Не удалось найти имя для файлового дескриптора %d семейства сокетов %d"
 
 #, c-format
 msgid "Cannot find program %d version %d"
@@ -3318,10 +3288,6 @@ msgid "Cannot parse uuid attribute of element <address>"
 msgstr "Не удалось обработать атрибут uuid элемента <address>"
 
 #, c-format
-msgid "Cannot parse version string '%s'"
-msgstr "Не удалось обработать строку версии «%s»"
-
-#, c-format
 msgid ""
 "Cannot plug '%s' interface into '%s' because new combined inbound floor=%llu "
 "would overcommit average=%llu on network '%s'"
@@ -3430,13 +3396,12 @@ msgid "Cannot set interface MAC on '%s'"
 msgstr "Не удалось настроить МАС-адрес интерфейса на «%s»"
 
 #, c-format
-msgid "Cannot set interface MAC to %s on '%s'"
-msgstr "Не удалось установить МАС-адрес интерфейса в %s на «%s»"
+msgid "Cannot set interface MAC to %s for ifname %s vf %d"
+msgstr ""
 
 #, c-format
-msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
-msgstr ""
-"Не удалось установить МАС-адрес/vlanid интерфейса в %s/%d для ifname %s vf %d"
+msgid "Cannot set interface MAC to %s on '%s'"
+msgstr "Не удалось установить МАС-адрес интерфейса в %s на «%s»"
 
 #, c-format
 msgid "Cannot set interface MTU on '%s'"
@@ -3445,6 +3410,10 @@ msgstr "Не удалось установить MTU интерфейса в  «
 #, c-format
 msgid "Cannot set interface flags on '%s'"
 msgstr "Не удалось установить флаги интерфейса для «%s»"
+
+#, c-format
+msgid "Cannot set interface vlanid to %d for ifname %s vf %d"
+msgstr ""
 
 msgid "Cannot set memory higher than max memory"
 msgstr "Объём памяти не может превышать максимальный размер"
@@ -3742,7 +3711,6 @@ msgstr "Список контрольных точек"
 msgid "Checkpoints have inconsistent relations for domain %s"
 msgstr "Некорректные взаимосвязи между контрольными точками домена %s"
 
-#. All bytes up to and including the checksum byte should add up to 0.
 msgid "Checksum validation has failed"
 msgstr ""
 
@@ -4205,10 +4173,6 @@ msgid "Could not destroy domain: %s"
 msgstr "Не удалось разрушить домен: %s"
 
 #, c-format
-msgid "Could not determine kernel version from string %s"
-msgstr "Не удалось получить версию ядра из строки %s"
-
-#, c-format
 msgid "Could not dlsym %s from '%s': %s"
 msgstr "Не удалось выполнить dlsym для %s из %s: %s"
 
@@ -4354,8 +4318,8 @@ msgid "Could not find physical NIC with name '%s'"
 msgstr "Сетевая карта «%s»  не найдена."
 
 #, c-format
-msgid "Could not find placement for v1 controller %s at %s"
-msgstr "Не удалось найти размещение для контроллера v1 %s в %s"
+msgid "Could not find placement for v1 controller %s"
+msgstr ""
 
 msgid "Could not find placement for v2 controller"
 msgstr "Не удалось найти размещение для контроллера v2"
@@ -4941,7 +4905,6 @@ msgstr ""
 msgid "Could not retrieve default Msvm_DiskDrive object"
 msgstr ""
 
-#. Something went wrong retrieving pool info, cope with it
 msgid "Could not retrieve pool information"
 msgstr "Не удалось получить информацию о пуле"
 
@@ -5038,10 +5001,6 @@ msgstr "Не удалось указать адрес пространства �
 #, c-format
 msgid "Could not start 'slirp'. exitstatus: %d"
 msgstr "Не удалось запустить «slirp». Состояние выхода: %d"
-
-#, c-format
-msgid "Could not start 'swtpm'. exitstatus: %d, error: %s"
-msgstr "Не удалось запустить «swtpm». Состояние выхода: %d, ошибка: %s"
 
 #, c-format
 msgid "Could not start 'vhost-user-gpu'. exitstatus: %d"
@@ -5203,6 +5162,12 @@ msgid "Custom loader requires explicit %s configuration"
 msgstr ""
 "Для дополнительного загрузчика необходимо предоставить конфигурацию %s в "
 "явном виде"
+
+msgid "D-Bus audio is not supported with this QEMU"
+msgstr ""
+
+msgid "D-Bus p2p with an address is not supported"
+msgstr ""
 
 msgid "DAC imagelabel couldn't be determined"
 msgstr "Не удалось определить метку образа (imagelabel) DAC"
@@ -5825,7 +5790,6 @@ msgstr ""
 "У домена есть несколько интерфейсов (%d). С помощью параметра «--mac» "
 "выберите интерфейс для отключения."
 
-#. this is the 2nd match, so it's ambiguous
 #, c-format
 msgid ""
 "Domain has multiple interfaces matching MAC address %s. You must use detach-"
@@ -6986,7 +6950,7 @@ msgid "Failed to create pool from %s"
 msgstr "Не удалось создать пул из %s"
 
 msgid "Failed to create reboot thread, killing domain"
-msgstr "Не удалось создать поток перезагрузки. Домен будет остановлен."
+msgstr "Не удалось создать поток перезагрузки, прекращение работы домена."
 
 #, c-format
 msgid "Failed to create save dir %s"
@@ -7025,25 +6989,18 @@ msgstr "Не удалось создать поток"
 msgid "Failed to create thread for receiving migration data"
 msgstr "Не удалось создать поток для получения данных миграции"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle daemon restart"
 msgstr "Не удалось создать поток для управления перезапуском фоновой службы"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain death"
-msgstr ""
+msgstr "Не удалось создать поток для управления прекращением работы домена"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain shutdown"
 msgstr "Не удалось создать поток для управления выключением домена"
 
-#. Not much else can be done
+msgid "Failed to create thread to handle firewall reload/restart"
+msgstr ""
+
 msgid "Failed to create thread to handle pool refresh"
 msgstr "Не удалось создать поток для управления обновлением пула"
 
@@ -7101,7 +7058,7 @@ msgstr "Не удалось создать определение интерфе
 
 #, c-format
 msgid "Failed to define node device from '%s'"
-msgstr ""
+msgstr "Не удалось определить узловое устройство из «%s»"
 
 #, c-format
 msgid "Failed to define pool %s"
@@ -7388,7 +7345,7 @@ msgstr "Не удалось получить статистику блочног
 
 #, c-format
 msgid "Failed to get block stats for domain '%s' device '%s'"
-msgstr "Не удалось получить статистику устройства «%2$s» в домене «%1$s»"
+msgstr "Не удалось получить статистику устройства «%s» в домене «%s»"
 
 msgid "Failed to get capabilities from libxenlight"
 msgstr "Не удалось получить возможности от libxenlight"
@@ -7583,10 +7540,6 @@ msgstr "Не удалось запросить блокировку: %s"
 msgid "Failed to kill process %lld"
 msgstr ""
 
-#, c-format
-msgid "Failed to kill process %lld: %s"
-msgstr "Не удалось остановить процесс %lld: %s"
-
 msgid "Failed to list active domains"
 msgstr "Не удалось получить список активных доменов"
 
@@ -7599,7 +7552,6 @@ msgstr "Не удалось получить список активных се�
 msgid "Failed to list active pools"
 msgstr "Не удалось получить список активных пулов"
 
-#. there was an error during the first or second call
 msgid "Failed to list domains"
 msgstr "Не удалось получить список доменов"
 
@@ -7615,27 +7567,21 @@ msgstr "Не удалось получить список неактивных �
 msgid "Failed to list inactive pools"
 msgstr "Не удалось получить список неактивных пулов"
 
-#. there was an error during the first or second call
 msgid "Failed to list interfaces"
 msgstr "Не удалось получить список интерфейсов"
 
-#. there was an error during the call
 msgid "Failed to list network filter bindings"
 msgstr "Не удалось получить список привязок сетевых фильтров"
 
-#. there was an error during the call
 msgid "Failed to list network filters"
 msgstr "Не удалось получить список сетевых фильтров"
 
-#. there was an error during the first or second call
 msgid "Failed to list networks"
 msgstr "Не удалось получить список сетей"
 
-#. there was an error during the call
 msgid "Failed to list node devices"
 msgstr "Не удалось получить список устройств узла"
 
-#. there was an error during the call
 msgid "Failed to list node secrets"
 msgstr "Не удалось получить список секретных ключей узла"
 
@@ -7643,7 +7589,6 @@ msgstr "Не удалось получить список секретных к�
 msgid "Failed to list persistent guests on $uri"
 msgstr "Не удалось получить список гостей с $uri"
 
-#. there was an error during the first or second call
 msgid "Failed to list pools"
 msgstr "Не удалось получить список пулов"
 
@@ -7665,7 +7610,6 @@ msgstr ""
 "Не удалось получить список виртуальных процессоров для домена «%d» при "
 "помощи libxenlight"
 
-#. there was an error during the call
 msgid "Failed to list volumes"
 msgstr "Не удалось получить список томов"
 
@@ -7877,6 +7821,10 @@ msgid "Failed to parse %s: only com1 and com2 supported."
 msgstr "Не удалось разобрать %s: поддерживается только com1 и com2."
 
 #, c-format
+msgid "Failed to parse CCW address '%s'"
+msgstr ""
+
+#, c-format
 msgid "Failed to parse MAC address from '%s'"
 msgstr "Не удалось извлечь MAC-адрес из «%s»"
 
@@ -7927,6 +7875,9 @@ msgstr "Не удалось извлечь индекс интерфейса и�
 
 msgid "Failed to parse memory"
 msgstr "Не удалось разобрать память"
+
+msgid "Failed to parse memory allocation threads"
+msgstr ""
 
 msgid "Failed to parse memory slot count"
 msgstr "Не удалось разобрать количество слотов памяти"
@@ -8154,10 +8105,6 @@ msgid "Failed to release lock: %s"
 msgstr "Не удалось снять блокировку: %s"
 
 #, c-format
-msgid "Failed to release port %d"
-msgstr "Не удалось освободить порт %d"
-
-#, c-format
 msgid "Failed to remove capability %s: %d"
 msgstr "Не удалось удалить возможность %s: %d"
 
@@ -8250,9 +8197,6 @@ msgstr "Не удалось возобновить работу домена «%
 msgid "Failed to resume domain '%s'"
 msgstr ""
 
-#. Hm, we already know we are in error here.  We don't want to
-#. * overwrite the previous error, though, so we just throw something
-#. * to the logs and hope for the best
 #, c-format
 msgid "Failed to resume guest %s after failure"
 msgstr "Не удалось возобновить работу гостя %s после сбоя"
@@ -8833,7 +8777,7 @@ msgstr ""
 
 #, c-format
 msgid "File name '%s' refers to non-existing datastore '%s'"
-msgstr " «%s» ссылается на несуществующее хранилище «%s» "
+msgstr "Имя файла «%s» ссылается на несуществующее хранилище данных «%s»"
 
 msgid "File processed:"
 msgstr "Обработано файлов:"
@@ -8888,6 +8832,13 @@ msgid "Firmware entry must have either value or 'file' attribute"
 msgstr ""
 "В записи микропрограммы должно иметься либо значение, либо атрибут «file»"
 
+#, c-format
+msgid "Firmware flash mode value '%s' unexpected"
+msgstr ""
+
+msgid "Firmware flash mode value was malformed"
+msgstr ""
+
 msgid ""
 "First file-based harddisk has no source, cannot deduce datastore and path "
 "for VMX file"
@@ -8895,63 +8846,10 @@ msgstr ""
 "Для первого диска нет источника. Не удалось получить сведения о хранилище и "
 "путь к файлу VMX."
 
-#. Macros to help dealing with flag requirements.
-#. *
-#. * VIR_REQUIRE_FLAG_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @RET: Return value.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_REQUIRE_FLAG_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if required flag is not set.
-#.
 #, c-format
 msgid "Flag '%s' is required by flag '%s'"
 msgstr "Флаг «%s» является обязательным, если используется флаг «%s»"
 
-#. Macros to help dealing with mutually exclusive flags.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @RET: Return value.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, c-format
 msgid "Flags '%s' and '%s' are mutually exclusive"
 msgstr "Флаги «%s» и «%s» являются взаимоисключающими"
@@ -9206,6 +9104,10 @@ msgstr "Показать или изменить системное время �
 msgid "Gets statistics about one or more (or all) domains"
 msgstr "Возвращает статистику по одному, нескольким или всем доменам."
 
+#, c-format
+msgid "Global feature %d should have already been handled"
+msgstr ""
+
 msgid "Got empty feature list from resctrl"
 msgstr "От resctrl получен пустой список возможностей"
 
@@ -9249,9 +9151,6 @@ msgstr "Этот QEMU не поддерживает HMAT"
 
 msgid "HTM configuration is not supported by this QEMU binary"
 msgstr "Этот исполняемый файл QEMU не поддерживает конфигурацию HTM"
-
-msgid "HTP resizing is not supported by this QEMU binary"
-msgstr "Этот исполняемый файл QEMU не поддерживает изменение размера HTP"
 
 #, c-format
 msgid "HTTP response code %d for call to '%s'"
@@ -9335,6 +9234,11 @@ msgstr "Процессор физической системы предоста�
 
 msgid "Host SMBIOS information is not available"
 msgstr "Информация о SMBIOS хоста недоступна"
+
+msgid ""
+"Host not compatible with KVM; HW virtualization CPU features not found. Only "
+"emulated CPUs are available; performance will be significantly limited"
+msgstr ""
 
 msgid "Host sysinfo extraction not supported on this platform"
 msgstr ""
@@ -9478,8 +9382,20 @@ msgid "IOMMU device: '%s' is only supported with ARM Virt machines"
 msgstr "Устройство IOMMU: «%s» поддерживается только для машин ARM Virt"
 
 #, c-format
+msgid "IOMMU device: '%s' is only supported with Q35 and ARM Virt machines"
+msgstr ""
+
+#, c-format
 msgid "IOMMU device: '%s' is only supported with Q35 machines"
 msgstr "Устройство IOMMU: «%s» поддерживается только для машин Q35"
+
+#, c-format
+msgid "IOMMU device: '%s' needs a PCI address"
+msgstr ""
+
+#, c-format
+msgid "IOMMU device: '%s' requires ACPI"
+msgstr ""
 
 msgid "IOMMU eim requires interrupt remapping to be enabled"
 msgstr "eim IOMMU требуется включение изменения привязки прерываний"
@@ -9548,7 +9464,7 @@ msgid "IPv6"
 msgstr "IPv6"
 
 msgid "ISession object is null"
-msgstr " Пустой объект "
+msgstr "Объект ISession имеет значение null"
 
 msgid "IVirtualBox object is null"
 msgstr "Пустой объект "
@@ -9766,10 +9682,6 @@ msgid "Invalid 'level' attribute in cache element for NUMA node %d"
 msgstr "Недопустимый атрибут «level» в элементе кэша для узла NUMA %d"
 
 #, c-format
-msgid "Invalid 'removed' attribute for feature %s in model %s"
-msgstr ""
-
-#, c-format
 msgid "Invalid --with-loader-nvram list: %s"
 msgstr "Недопустимый список --with-loader-nvram: %s"
 
@@ -9884,12 +9796,6 @@ msgid "Invalid STP state value %d received for '%s'. Must be -1, 0, or 1."
 msgstr ""
 "Недопустимое значение состояния STP %d для «%s» (ожидается -1, 0 или 1)."
 
-msgid "Invalid TSC frequency"
-msgstr "Недопустимая частота TSC"
-
-msgid "Invalid TSC scaling attribute"
-msgstr "Недопустимый атрибут масштабирования TSC"
-
 #, c-format
 msgid "Invalid ULong value specified for prefix in definition of network '%s'"
 msgstr "Недопустимое значение ULong в префиксе определения сети «%s»"
@@ -9930,17 +9836,11 @@ msgstr "Недопустимый тип адреса «%s» для диска «
 msgid "Invalid address."
 msgstr "Недопустимый адрес."
 
-#.
-#. * Don't check for *selectSet != NULL here because selectSet is a list
-#. * and might contain items already. This function appends to selectSet.
-#.
-#. optional
-#. optional
-#. nothing
-#. nothing
-#. nothing
 msgid "Invalid argument"
 msgstr "Недопустимый аргумент"
+
+msgid "Invalid async job start"
+msgstr ""
 
 #, c-format
 msgid ""
@@ -10052,7 +9952,7 @@ msgid ""
 "Invalid chain name '%s'. Please use a chain name called '%s' or any of the "
 "following prefixes: "
 msgstr ""
-"Недопустимое имя цепочки «%s». Используйте «%s» или имена с префиксами:"
+"Недопустимое имя цепочки «%s». Используйте «%s» или имена с префиксами: "
 
 #, c-format
 msgid "Invalid character '%c' in id '%s' of network '%s'"
@@ -10124,24 +10024,12 @@ msgstr ""
 msgid "Invalid disk read error policy: '%s'"
 msgstr ""
 
-#, c-format
-msgid "Invalid dns enable setting '%s' in network '%s'"
-msgstr "Недопустимый параметр «enable» DNS «%s» в сети «%s»"
-
-#, c-format
-msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
-msgstr "Недопустимый параметр forwardPlainNames DNS «%s» в сети «%s»"
-
 msgid "Invalid domain checkpoint"
 msgstr "Недопустимая контрольная точка домена"
 
 #, c-format
 msgid "Invalid domain checkpoint: %s"
 msgstr "Недопустимая контрольная точка домена: %s"
-
-#, c-format
-msgid "Invalid domain localOnly setting '%s' in network '%s'"
-msgstr "Недопустимый параметр localOnly домена «%s» в сети «%s»"
 
 msgid "Invalid domain snapshot"
 msgstr "Недопустимый снимок домена"
@@ -10255,10 +10143,6 @@ msgstr ""
 "домен"
 
 #, c-format
-msgid "Invalid guest rx filters trust setting '%s' "
-msgstr "Недопустимый параметр доверия для фильтров rx гостевой системы «%s»"
-
-#, c-format
 msgid "Invalid harddisk device name: %s"
 msgstr "Недопустимое имя жёсткого диска: %s"
 
@@ -10282,9 +10166,6 @@ msgstr "Недопустимый протокол устройства осно�
 msgid "Invalid integer value '%s' in file '%s'"
 msgstr "Недопустимое целое значение «%s» в файле «%s»"
 
-msgid "Invalid ip address prefix value"
-msgstr "Недопустимый префикс IP-адреса"
-
 #, c-format
 msgid "Invalid ipv6 setting '%s' in network '%s'"
 msgstr "Недопустимый параметр IPv6 «%s» в сети «%s»"
@@ -10307,10 +10188,6 @@ msgstr "Недопустимое действие жизненного цикл�
 #, c-format
 msgid "Invalid lifecycle type '%s'."
 msgstr "Недопустимый тип жизненного цикла «%s»."
-
-#, c-format
-msgid "Invalid localPtr value '%s' in network '%s'"
-msgstr "Недопустимое значение localPtr «%s» в сети «%s»"
 
 #, c-format
 msgid "Invalid log destination '%s' for log output '%s'"
@@ -10348,13 +10225,6 @@ msgid "Invalid macTableManager setting '%s' in network port"
 msgstr "Недопустимый параметр macTableManager «%s» в записи сетевого порта"
 
 #, c-format
-msgid "Invalid managed setting '%s' in network port"
-msgstr "Недопустимый управляемый параметр «%s» в записи сетевого порта"
-
-msgid "Invalid match attribute for CPU specification"
-msgstr "Недопустимый атрибут «match» для спецификации процессора"
-
-#, c-format
 msgid "Invalid match string '%s'"
 msgstr "Недопустимая строка соответствия «%s»"
 
@@ -10365,10 +10235,6 @@ msgstr ""
 #, c-format
 msgid "Invalid maxGrantFrames: %i"
 msgstr ""
-
-#, c-format
-msgid "Invalid memory core dump attribute value '%s'"
-msgstr "Недопустимое значение атрибута дампа памяти: «%s»"
 
 #, c-format
 msgid "Invalid message prog=%d type=%d serial=%u proc=%d"
@@ -10437,10 +10303,6 @@ msgid "Invalid network port pointer: %s"
 msgstr "Недопустимый указатель сетевого порта: %s"
 
 #, c-format
-msgid "Invalid network prt plug type '%s'"
-msgstr "Недопустимый тип соединения сетевого порта «%s»"
-
-#, c-format
 msgid "Invalid node id %u "
 msgstr "Недопустимый идентификатор узла %u"
 
@@ -10488,6 +10350,10 @@ msgstr "Недопустимый параметр virXPathULong()"
 
 msgid "Invalid parameter type passed to free"
 msgstr "Для освобождения передан недопустимый тип параметра"
+
+#, c-format
+msgid "Invalid parameters macaddr=%p allowRetry=%p"
+msgstr ""
 
 msgid "Invalid partial specification for virtio ccw address"
 msgstr "Неполная спецификация адреса ccw virtio"
@@ -10629,14 +10495,6 @@ msgstr ""
 "сети «%s» "
 
 #, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
-msgstr "Недопустимый параметр trustGuestRxFilters «%s» в сети «%s»"
-
-#, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in portgroup"
-msgstr "Недопустимый параметр trustGuestRxFilters «%s» в portgroup"
-
-#, c-format
 msgid "Invalid type '%s' requested for parameter '%s', actual type is '%s'"
 msgstr "Запрошен недопустимый тип («%s») параметра «%s». Ожидается «%s»."
 
@@ -10699,6 +10557,18 @@ msgid ""
 msgstr ""
 
 #, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative integer value"
+msgstr ""
+
+#, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative value"
+msgstr ""
+
+#, c-format
 msgid "Invalid value for attribute '%s' in element '%s': Zero is not permitted"
 msgstr ""
 
@@ -10735,10 +10605,6 @@ msgstr "Недопустимое значение параметра start"
 
 msgid "Invalid value for timeout"
 msgstr "Недопустимое значение времени ожидания"
-
-#, c-format
-msgid "Invalid value in migratable attribute: '%s'"
-msgstr "Недопустимое значение в атрибуте migratable: «%s»"
 
 #, c-format
 msgid "Invalid value of %d for I/O weight"
@@ -10827,10 +10693,6 @@ msgstr ""
 
 msgid "KVM device assignment is no longer supported on this system"
 msgstr "в этой системе больше не поддерживается сопоставление устройств KVM"
-
-#, c-format
-msgid "KVM is not supported by '%s' on this host"
-msgstr "KVM не поддерживается «%s» на этом хосте"
 
 msgid "KVM is not supported on this platform"
 msgstr "Эта платформа не поддерживает KVM"
@@ -10979,7 +10841,7 @@ msgid ""
 msgstr ""
 
 msgid "Logging filters: "
-msgstr "Фильтры журналирования:"
+msgstr "Фильтры журналирования: "
 
 msgid "Logging outputs: "
 msgstr "Выводы в журнал: "
@@ -11211,6 +11073,10 @@ msgstr ""
 "Максимальное количество процессоров превышает установленное ограничение для "
 "типа машины %u"
 
+#, c-format
+msgid "Maximum supported number of ISA serial ports is '%d'"
+msgstr ""
+
 msgid "Media Registry is null"
 msgstr "Реестр носителей не определен"
 
@@ -11233,7 +11099,7 @@ msgstr "Размер памяти «%llu» должен быть меньше %l
 msgid ""
 "Memory Bandwidth allocation of size %u is not divisible by granularity %u"
 msgstr ""
-"Размер выделяемой пропускной способности памяти, u%, не является кратным "
+"Размер выделяемой пропускной способности памяти %u, не является кратным "
 "уровню детализации %u"
 
 #, c-format
@@ -11454,10 +11320,6 @@ msgstr "Отсутствует атрибут «level» в элементе кэ
 msgid "Missing 'link' attribute for NIC"
 msgstr "Отсутствует атрибут «link» для NIC"
 
-msgid "Missing 'model' attribute in mediated device's <hostdev> element"
-msgstr ""
-"Элемент промежуточного устройства <hostdev> не содержит атрибут «model»"
-
 #, c-format
 msgid "Missing 'name' property in %s lookup"
 msgstr "Строка поиска %s не содержит «name»"
@@ -11536,6 +11398,9 @@ msgstr "Запись DNS HOST сети «%s» не содержит IP-адре�
 #, c-format
 msgid "Missing IP address in static host definition for network '%s'"
 msgstr "Статическое определение хоста для сети «%s» не содержит IP-адрес"
+
+msgid "Missing LISTEN_FDNAMES env from systemd socket activation"
+msgstr ""
 
 #, c-format
 msgid "Missing PVR information for CPU model %s"
@@ -11858,17 +11723,8 @@ msgstr ""
 "В ответе query-rx-filter пропущен элемент %zu массива «vlan-table» или "
 "указаны некорректные данные"
 
-msgid "Missing or invalid fd in add-fd response"
-msgstr ""
-
-msgid "Missing or invalid fdset-id in add-fd response"
-msgstr ""
-
 msgid "Missing or invalid name in query-rx-filter response"
 msgstr "В ответе query-rx-filter пропущено имя или указаны некорректные данные"
-
-msgid "Missing or invalid return data in add-fd response"
-msgstr ""
 
 msgid "Missing or invalid scsi adapter 'unique_id' value"
 msgstr "Значение «unique_id» для адаптера scsi пропущено или указано неверно"
@@ -12261,12 +12117,6 @@ msgstr "Этот исполняемый файл QEMU не поддержива�
 msgid "NVMe namespace can't be zero"
 msgstr "пространство имён NVMe не может быть равно нулю"
 
-#. Output old style header
-#. We only get here if the --details option was selected.
-#. Insert the header into table
-#. The old output format
-#. We only get here if the --details option was selected.
-#. Insert the header into table
 msgid "Name"
 msgstr "Имя"
 
@@ -12745,9 +12595,6 @@ msgstr "C клиентом не связан ни один сетевой сок
 msgid "No open log file %s"
 msgstr "Нет открытого файла журнала %s"
 
-msgid "No output from iptables --version"
-msgstr "Нет получено данных в ответ на команду iptables --version"
-
 msgid "No per-CPU stats available"
 msgstr "Статистика по индивидуальным процессорам недоступна"
 
@@ -12937,6 +12784,9 @@ msgstr "Не является потоком отправки"
 #, c-format
 msgid "Not detaching active device %s"
 msgstr "Активное устройство %s не будет отсоединено"
+
+msgid "Not enough arguments passed, nothing to set"
+msgstr ""
 
 #, c-format
 msgid "Not enough free space in pool for volume '%s'"
@@ -13209,6 +13059,9 @@ msgstr "Поддерживается только одно устройство 
 msgid "Only one primary video device is supported"
 msgstr "Поддерживается только одно основное видеоустройство"
 
+msgid "Only one vgpu device can have 'ramfb' enabled"
+msgstr ""
+
 msgid "Only ploop disk images are supported by vz driver."
 msgstr "Драйвер vz поддерживает только образы дисков ploop."
 
@@ -13294,20 +13147,6 @@ msgstr ""
 "Параметр «%s» недействителен для контролера PCI с индексом «%d», моделью "
 "«%s» и значением modelName «%s»"
 
-#. Macros to help dealing with required options.
-#. VSH_REQUIRE_OPTION_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable).
-#. * @NAME2: String containing the name of required option.
-#. * @EXPR2: Expression to validate the variable (boolean variable).
-#. *
-#. * Check if required command options in virsh was set.  Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Option --%s is required by option --%s"
 msgstr "Параметр --%s требуется для работы параметра --%s"
@@ -13327,20 +13166,6 @@ msgstr "Аргумент параметра пуст"
 msgid "Optional flags or --rawstats are not supported by the daemon"
 msgstr "Фоновая служба не поддерживает необязательные флаги или --rawstats"
 
-#. Macros to help dealing with mutually exclusive options.
-#. VSH_EXCLUSIVE_OPTIONS_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable)
-#. * @NAME2: String containing the name of the option.
-#. * @EXPR2: Expression to validate the variable (boolean variable)
-#. *
-#. * Reject mutually exclusive command options in virsh. Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Options --%s and --%s are mutually exclusive"
 msgstr "Параметры --%s и --%s являются взаимоисключающими"
@@ -13584,7 +13409,6 @@ msgstr "Ответ JSON «%s» не является объектом"
 msgid "Partition path '%s' must start with '/'"
 msgstr "Путь к разделу «%s» должен начинаться с «/»"
 
-#. warn users that the --base64 option passed from command line is wrong
 msgid "Passing secret value as command-line argument is insecure!"
 msgstr ""
 "Передача значения секрета как аргумента командной строки не является "
@@ -13819,12 +13643,13 @@ msgid ""
 "Prints global help, command specific help, or help for a\n"
 "    group of related commands"
 msgstr ""
-"Вывод общей справки, справки по отдельным командам или группам команд. "
+"Вывод общей справки, справки по отдельным командам\n"
+"    или группам команд"
 
 msgid ""
 "Prints global help, command specific help, or help for a group of related "
 "commands"
-msgstr "Вывод общей справки, справки по отдельной команде или группе команд. "
+msgstr "Вывод общей справки, справки по отдельной команде или группе команд"
 
 msgid "Prints memory stats of the node."
 msgstr "Возвращает статистику памяти узла."
@@ -13919,9 +13744,15 @@ msgstr ""
 msgid "QEMU does not support SEV guest"
 msgstr "QEMU не поддерживает гостевую систему SEV"
 
+msgid "QEMU does not support calculating dirty page rate"
+msgstr ""
+
 #, c-format
 msgid "QEMU does not support device assignment mode '%s'"
 msgstr "QEMU не поддерживает режим сопоставления устройств «%s»"
+
+msgid "QEMU does not support dirty page rate calculation mode."
+msgstr ""
 
 msgid "QEMU does not support multiple listens for one graphics device."
 msgstr ""
@@ -13952,6 +13783,9 @@ msgid ""
 msgstr ""
 "QEMU сообщает о недействительной модели процессора по умолчанию «host» для "
 "типа виртуализации домена, отличного от kvm"
+
+msgid "QEMU reports migration is still running"
+msgstr ""
 
 #, c-format
 msgid "QEMU version >= %d.%d.%d is required, but %d.%d.%d found"
@@ -14429,7 +14263,7 @@ msgstr "Запущено вместе с фоновой службой: %d.%d.%d
 
 #, sh-format
 msgid "Running guests on $uri URI: "
-msgstr "Активные гости на $uri:"
+msgstr "Активные гости на $uri: "
 
 #, c-format
 msgid "Running hypervisor: %s %d.%d.%d\n"
@@ -14444,7 +14278,6 @@ msgstr ""
 msgid "S4 state is disabled for this domain"
 msgstr "Состояние S4 для этого домена отключено."
 
-#. Denied
 #, c-format
 msgid "SASL client identity '%s' not allowed by ACL"
 msgstr "Профиль клиента SASL «%s» отсутствует среди разрешённых ACL"
@@ -14887,14 +14720,6 @@ msgstr ""
 msgid "Setting different SELinux label on %s which is already in use"
 msgstr "Установка другой метки SELinux для %s, который уже используется"
 
-#, c-format
-msgid "Setting disk %s is not allowed for disk of network type"
-msgstr "Установка %s диска запрещена для диска сетевого типа"
-
-msgid "Setting disk 'requisite' is allowed only for cdrom or floppy"
-msgstr ""
-"Установка «requisite» диска допустима только для CD-привода или дисковода"
-
 msgid "Setting disk block sizes is not supported by vz driver."
 msgstr "Драйвер vz не поддерживает указание размера блоков диска."
 
@@ -14991,9 +14816,6 @@ msgstr "Время подготовки:"
 msgid "Shared memory mapping is not supported with this QEMU"
 msgstr "Этот QEMU не поддерживает сопоставление совместно используемой памяти"
 
-#. XXX: Need to sort the returned params once new parameter
-#. * fields not of shared memory are added.
-#.
 msgid "Shared memory:\n"
 msgstr "Совместно используемая память:\n"
 
@@ -15071,7 +14893,6 @@ msgstr "Этот поток не поддерживает пропуски"
 msgid "Snapshot"
 msgstr "Снимок"
 
-#. Depending on flags, we re-edit even if XML is unchanged.
 #, c-format
 msgid "Snapshot %s XML configuration not changed.\n"
 msgstr "XML-конфигурация снимка %s не изменилась.\n"
@@ -15187,6 +15008,9 @@ msgstr "Разрешает объединение страниц с разных
 msgid "Specifying mount point is not supported for now"
 msgstr "Определение точки подключения ещё не поддерживается"
 
+msgid "Spice audio is not supported without spice graphics"
+msgstr ""
+
 msgid "Start"
 msgstr "Запустить"
 
@@ -15253,7 +15077,7 @@ msgid ""
 "State of HyperV stimer direct feature differs: source: '%s', destination: "
 "'%s'"
 msgstr ""
-"Состояние возможности direct stimer HyperV «%s» различается: источник: «%s», "
+"Состояние возможности direct stimer HyperV различается: источник: «%s», "
 "назначение: «%s»"
 
 #, c-format
@@ -15489,7 +15313,7 @@ msgstr "Приостановлен"
 
 #, sh-format
 msgid "Suspending $name: "
-msgstr "Приостановка $name:"
+msgstr "Приостановка $name: "
 
 #, sh-format
 msgid "Suspending guests on $uri URI..."
@@ -15554,10 +15378,6 @@ msgid "TPM 1.2 is not supported with the SPAPR device model"
 msgstr "TPM 1.2 нельзя использовать, если используется модель устройства SPAPR"
 
 #, c-format
-msgid "TPM Proxy model %s is only available for PPC64 guests"
-msgstr "Модель прокси TPM %s доступна только для гостевых систем PPC64"
-
-#, c-format
 msgid "TPM Proxy model %s requires 'Passthrough' backend"
 msgstr "Для работы модели прокси TPM %s требуется модуль «Passthrough»"
 
@@ -15565,14 +15385,9 @@ msgstr "Для работы модели прокси TPM %s требуется 
 msgid "TPM device path %s is invalid"
 msgstr "Недопустимый путь к устройству TPM: %s"
 
-#, c-format
-msgid "TPM model '%s' is only available for x86 and aarch64 guests"
-msgstr ""
-
 msgid "Table row cannot be empty"
 msgstr "Строка таблицы не может быть пустой"
 
-#. title
 msgid "Target"
 msgstr "Назначение"
 
@@ -16223,6 +16038,10 @@ msgstr ""
 "типуисточника устройства источника %s"
 
 #, c-format
+msgid "Target serial model %s does not match source %s"
+msgstr ""
+
+#, c-format
 msgid "Target serial port %d does not match source %d"
 msgstr "%d не соответствует исходному последовательному порту %d"
 
@@ -16281,8 +16100,8 @@ msgid "Target timer %s does not match source %s"
 msgstr "%s не соответствует исходному таймеру %s"
 
 #, c-format
-msgid "Target timer presence %d does not match source %d"
-msgstr "%d не соответствует исходному значению «present» (%d)"
+msgid "Target timer presence '%s' does not match source '%s'"
+msgstr ""
 
 #, c-format
 msgid "Target type '%s' cannot have an associated address"
@@ -16441,6 +16260,9 @@ msgstr "Исполняемый файл QEMU %s не поддерживает м
 msgid "The XML configuration was changed by another user."
 msgstr "XML-конфигурация была изменена другим пользователем."
 
+msgid "The associated audio is not of 'dbus' kind."
+msgstr ""
+
 #, c-format
 msgid "The certificate %s basic constraints do not show a CA"
 msgstr "В основных ограничениях сертификата %s не указана служба сертификации"
@@ -16504,6 +16326,10 @@ msgid ""
 "The device at PCI address %s has unrecognized connection type flags 0x%.2x"
 msgstr ""
 "Устройство по адресу PCI %s имеет неизвестные флаги типа соединения 0x%.2x"
+
+#, c-format
+msgid "The device at PCI address %s needs to be an integrated device (bus=0)"
+msgstr ""
 
 #, c-format
 msgid ""
@@ -16929,11 +16755,9 @@ msgstr "Попытка записи сокета в состоянии ошиб�
 msgid "Try again?"
 msgstr "Повторить попытку?"
 
-#. Better leak than crash
 msgid "Trying to free MultiCURL object that is still in use"
 msgstr "Попытка освобождения занятого объекта MultiCURL"
 
-#. Better leak than crash
 msgid "Trying to free SharedCURL object that is still in use"
 msgstr "Попытка освобождения занятого объекта SharedCURL"
 
@@ -17131,10 +16955,6 @@ msgstr "Не удалось получить доступ к файлу конф
 #, c-format
 msgid "Unable to access file descriptor %d"
 msgstr "Не удалось получить доступ к дескриптору файла %d"
-
-#, c-format
-msgid "Unable to access file descriptor %d path %s"
-msgstr ""
 
 msgid "Unable to access kernel32.dll"
 msgstr "Не удалось получить доступ к kernel32.dll"
@@ -17362,10 +17182,6 @@ msgstr "Не удалось закрыть HardDisk, rc=%08x"
 
 msgid "Unable to close disk children"
 msgstr "Не удалось закрыть подчиненные диски"
-
-#, c-format
-msgid "Unable to close file '%s'"
-msgstr "Не удалось закрыть файл «%s»"
 
 msgid "Unable to close recursively all disks"
 msgstr "Не удалось рекурсивно закрыть все диски"
@@ -17674,6 +17490,9 @@ msgstr "Точка монтирования контроллера cgroup «cpua
 msgid "Unable to find 'devices' cgroups controller mount"
 msgstr "Точка монтирования контроллера cgroup «devices» не найдена"
 
+msgid "Unable to find 'dnsmasq' binary in $PATH"
+msgstr ""
+
 msgid "Unable to find 'memory' cgroups controller mount"
 msgstr "Точка монтирования контроллера cgroup «memory» не найдена"
 
@@ -17776,10 +17595,6 @@ msgid "Unable to freeze filesystems"
 msgstr "Не удалось заморозить файловые системы"
 
 #, c-format
-msgid "Unable to generate diffie-hellman parameters: %s"
-msgstr "Не удалось сгенерировать параметры Диффи — Хелмана: %s"
-
-#, c-format
 msgid "Unable to get ACLs on %s"
 msgstr "Не удалось получить ACL на %s"
 
@@ -17856,7 +17671,7 @@ msgstr "Не удалось получить мост  %s %s"
 
 #, c-format
 msgid "Unable to get bridge %s port %s %s"
-msgstr "Не удалось получить значение параметра %3$s для моста %1$s (порт %2$s)"
+msgstr "Не удалось получить порт моста %s %s %s"
 
 msgid "Unable to get bridge port isolated on this platform"
 msgstr "Невозможно получить изолированный порт моста на этой платформе"
@@ -17896,10 +17711,6 @@ msgstr ""
 
 msgid "Unable to get daemon logging outputs information"
 msgstr "Не удалось получить информацию о выводах в журнал фоновой службы"
-
-#, c-format
-msgid "Unable to get device ID '%s'"
-msgstr "Не удалось получить идентификатор устройства: «%s»"
 
 msgid "Unable to get device master from netlink on this platform"
 msgstr ""
@@ -17978,9 +17789,6 @@ msgstr "Не удалось получить индекс интерфейса �
 msgid "Unable to get interface parameters"
 msgstr "Не удалось получить параметры интерфейса"
 
-msgid "Unable to get key length for diffie-hellman parameters"
-msgstr ""
-
 #, c-format
 msgid "Unable to get kvm descriptor: %s"
 msgstr "Не удалось получить дескриптор kvm: %s"
@@ -18007,10 +17815,6 @@ msgstr "Не удалось получить параметры памяти"
 
 msgid "Unable to get memory stats"
 msgstr "Не удалось получить статистику памяти"
-
-#, c-format
-msgid "Unable to get minor number of device '%s'"
-msgstr "Не удалось получить младший номер устройства «%s»"
 
 msgid "Unable to get node cpu stats"
 msgstr "Не удалось получить статистику процессоров узла"
@@ -18128,10 +17932,6 @@ msgstr ""
 
 msgid "Unable to initialize condition variable"
 msgstr "Не удалось инициализировать переменную условия"
-
-#, c-format
-msgid "Unable to initialize diffie-hellman parameters: %s"
-msgstr "Не удалось инициализировать параметры diffie-hellman: %s"
 
 #, c-format
 msgid "Unable to initialize lease %s"
@@ -18773,6 +18573,9 @@ msgstr "Не удалось отправить сигнал %d процессу 
 msgid "Unable to send SIGTERM to init pid %llu"
 msgstr "Не удалось отправить SIGTERM процессу init PID %llu"
 
+msgid "Unable to send a VF SETLINK request on this platform"
+msgstr ""
+
 msgid "Unable to send container continue message"
 msgstr "Не удалось отправить сообщение продолжения контейнера"
 
@@ -18829,6 +18632,15 @@ msgstr "Невозможно установить STP для %s на этой п
 #, c-format
 msgid "Unable to set XATTR %s on %s"
 msgstr "Не удалось указать XATTR %s на %s"
+
+msgid "Unable to set a VF MAC on this platform"
+msgstr ""
+
+msgid "Unable to set a VF VLAN on this platform"
+msgstr ""
+
+msgid "Unable to set a VF config on this platform"
+msgstr ""
 
 msgid "Unable to set agent close-on-exec flag"
 msgstr "Не удалось установить флаг close-on-exec для агента"
@@ -19337,10 +19149,6 @@ msgid "Unexpected signal received: %d"
 msgstr "Получен непредвиденный сигнал: %d"
 
 #, c-format
-msgid "Unexpected socket family %d"
-msgstr "Непредвиденное семейство сокетов %d"
-
-#, c-format
 msgid "Unexpected state of feature '%s'"
 msgstr "Непредвиденное состояние возможности «%s»"
 
@@ -19401,10 +19209,6 @@ msgstr "Неизвестный ответ JSON «%s»"
 #, c-format
 msgid "Unknown LXC namespace source '%s'"
 msgstr "Неизвестный источник пространства имён LXC «%s»"
-
-#, c-format
-msgid "Unknown PCI device <driver name='%s'/> has been specified"
-msgstr "Неизвестное устройство PCI: <driver name='%s'/>"
 
 #, c-format
 msgid "Unknown PCI header type '%d' for device '%s'"
@@ -19470,6 +19274,10 @@ msgid "Unknown cache type '%s'"
 msgstr "Неизвестный тип кэша «%s»"
 
 #, c-format
+msgid "Unknown calculation mode '%s'"
+msgstr ""
+
+#, c-format
 msgid "Unknown cgroup controller '%s'"
 msgstr "Неизвестный контроллер cgroup «%s»"
 
@@ -19496,6 +19304,10 @@ msgstr "Неизвестный хэш шифрования %d"
 #, c-format
 msgid "Unknown data source '%s'"
 msgstr "Неизвестный источник данных «%s»"
+
+#, c-format
+msgid "Unknown dirty page rate calculation mode: %s"
+msgstr ""
 
 #, c-format
 msgid "Unknown dirty rate status: %s"
@@ -19528,7 +19340,6 @@ msgstr "Неизвестный тип enable %d в сети"
 msgid "Unknown error"
 msgstr "Неизвестная ошибка"
 
-#. should never happen (tm)
 msgid "Unknown error value"
 msgstr "Неверное значение ошибки"
 
@@ -19542,7 +19353,7 @@ msgstr "Неизвестный слой межсетевого экрана %d"
 
 #, c-format
 msgid "Unknown forward <driver name='%s'/> in network %s"
-msgstr "Неизвестный драйвер <driver name='%s'/> в секции <forward> для сети %s"
+msgstr "Неизвестная переадресация <driver name='%s'/> в сети %s"
 
 #, c-format
 msgid "Unknown forward type %d in network '%s'"
@@ -19554,14 +19365,6 @@ msgstr "Неизвестный тип forwardPlainNames %d в сети"
 
 msgid "Unknown input device type"
 msgstr "Неизвестный тип устройства ввода"
-
-#, c-format
-msgid "Unknown interface <driver name='%s'> has been specified"
-msgstr "Неизвестный интерфейс: <driver name='%s'>"
-
-#, c-format
-msgid "Unknown interface <driver txmode='%s'> has been specified"
-msgstr "Неизвестный интерфейс <driver txmode='%s'>"
 
 msgid "Unknown invocation state"
 msgstr "Неизвестное состояние вызова"
@@ -20244,7 +20047,7 @@ msgstr ""
 "Контроллер V1 «%s» не является желательным, но вместе с ним монтируется «%s»"
 
 msgid "VCPU"
-msgstr "Виртуальный процессор:"
+msgstr "VCPU"
 
 msgid "VCPU:"
 msgstr "Виртуальный процессор::"
@@ -20358,12 +20161,10 @@ msgstr "Подробные сообщения"
 msgid "Video adapters are not supported int containers."
 msgstr "В контейнерах не поддерживаются видеоадаптеры."
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, c-format
 msgid "Virsh command line tool of libvirt %s\n"
 msgstr "Утилита командной строки virsh для libvirt %s\n"
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, c-format
 msgid "Virt-admin command line tool of libvirt %s\n"
 msgstr "Утилита командной строки virt-admin для libvirt %s\n"
@@ -20774,6 +20575,10 @@ msgstr ""
 msgid "address of disk device"
 msgstr "адрес дискового устройства"
 
+#, c-format
+msgid "address of type '%s' is supported only for hostdevs"
+msgstr ""
+
 msgid "address source: 'lease' or 'agent'"
 msgstr "источник адреса: «lease» или «agent»"
 
@@ -20841,11 +20646,6 @@ msgstr ""
 msgid "allocate the new capacity, rather than leaving it sparse"
 msgstr "выделить всю новую ёмкость, а не оставлять её разреженной"
 
-#.
-#. * we need to use an intermediary pointer to @data as compilers may sometimes
-#. * complain about @data not being a pointer type:
-#. * error: the address of 'foo' will always evaluate as 'true' [-Werror=address]
-#.
 msgid "allocated netlink buffer is too small"
 msgstr "недостаточный размер выделенного буфера netlink"
 
@@ -20903,6 +20703,10 @@ msgstr "необходимо указать <type> операционной си
 msgid "another backup job is already running"
 msgstr "уже выполняется другое задание по резервному копированию"
 
+#, c-format
+msgid "another migration job is already running for domain '%s'"
+msgstr ""
+
 msgid "any configuration"
 msgstr "любая конфигурация"
 
@@ -20917,7 +20721,7 @@ msgid "append not supported in this QEMU binary"
 msgstr "этот исполняемый файл QEMU не поддерживает добавление"
 
 msgid "applyDHCPOnlyRules failed - spoofing not protected!"
-msgstr "Ошибка applyDHCPOnlyRules: нет защиты от подмены адреса."
+msgstr "Ошибка applyDHCPOnlyRules: нет защиты от подмены адреса!"
 
 msgid "architecture"
 msgstr "архитектура"
@@ -20984,6 +20788,9 @@ msgid ""
 msgstr ""
 "в строке %d: %s%s\n"
 "%s"
+
+msgid "at most 1 fd can be passed to qemu along with a command"
+msgstr ""
 
 msgid "at most one CPU cache element may be specified"
 msgstr "можно указать не более одного элемента кэша процессора"
@@ -21101,6 +20908,13 @@ msgstr ""
 msgid "authentication failed: %s"
 msgstr "сбой аутентификации: %s"
 
+#, c-format
+msgid "authentication is not supported for protocol '%s'"
+msgstr ""
+
+msgid "authentication is supported only for network backed disks"
+msgstr ""
+
 msgid "authentication required"
 msgstr "требуется аутентификация"
 
@@ -21177,6 +20991,9 @@ msgstr "обработчик резервного хранилища не реа
 msgid "backing store protocol '%s' is not yet supported"
 msgstr "протокол резервного хранилища «%s» не поддерживается"
 
+msgid "backingStore is not supported with NVRAM"
+msgstr ""
+
 msgid "backingStore is not supported with vhostuser disk"
 msgstr ""
 
@@ -21188,14 +21005,14 @@ msgid ""
 "sense"
 msgstr "backingStore зеркала не имеет смысла без VIR_DOMAIN_BLOCK_COPY_SHALLOW"
 
+msgid "backup"
+msgstr ""
+
 msgid "backup TLS directory not configured"
 msgstr "не настроен каталог резервного копирования TLS"
 
 msgid "backup is not supported with this QEMU"
 msgstr ""
-
-msgid "backup job"
-msgstr "задание резервного копирования"
 
 msgid "backup job data missing"
 msgstr "отсутствуют данные задания резервного копирования"
@@ -22307,6 +22124,10 @@ msgstr "не удалось получить сопоставление проц
 msgid "cannot get RSS for domain"
 msgstr "не удалось получить RSS домена"
 
+#, c-format
+msgid "cannot get cert distinguished name: %s"
+msgstr ""
+
 msgid "cannot get children disk"
 msgstr "не удалось получить подчиненный диск"
 
@@ -22486,6 +22307,10 @@ msgstr "невозможно перенести домен со снимками
 msgid "cannot migrate domain with I/O error"
 msgstr "в случае ошибки ввода-вывода миграция домена не может быть выполнена"
 
+#, c-format
+msgid "cannot migrate domain: %s"
+msgstr ""
+
 msgid "cannot migrate this domain without dbus-vmstate support"
 msgstr "невозможно перенести этот домен без поддержки dbus-vmstate"
 
@@ -22637,7 +22462,6 @@ msgstr "не удалось открыть путь «%s»"
 msgid "cannot open path '%s' in '%s'"
 msgstr "не удалось открыть путь «%s» в «%s»"
 
-#. A dangling symlink now implies a TOCTTOU race; report it.
 #, c-format
 msgid "cannot open volume '%s'"
 msgstr "не удалось открыть том «%s»"
@@ -22660,10 +22484,6 @@ msgstr "не удалось разобрать данные процессора
 #, c-format
 msgid "cannot parse MAC address '%s' from file '%s'"
 msgstr "не удалось разобрать MAC-адрес «%s» из файла «%s»"
-
-#, c-format
-msgid "cannot parse cache mode '%s' for virtiofs"
-msgstr "не удалось разобрать режим кэширования «%s» для virtiofs"
 
 #, c-format
 msgid "cannot parse cpu sys stat '%s'"
@@ -22724,12 +22544,12 @@ msgid "cannot parse rdp port %s"
 msgstr "не удалось разобрать rdp-порт %s"
 
 #, c-format
-msgid "cannot parse sandbox mode '%s' for virtiofs"
-msgstr ""
-
-#, c-format
 msgid "cannot parse target for lunStr '%s'"
 msgstr "не удалось разобрать назначение для lunStr «%s»"
+
+#, c-format
+msgid "cannot parse thread pool size '%s' for virtiofs"
+msgstr ""
 
 #, c-format
 msgid "cannot parse usage '%s' for RAM filesystem"
@@ -23197,6 +23017,11 @@ msgstr ""
 msgid "cannot use custom tap device in session mode"
 msgstr "нельзя использовать пользовательское устройство tap в режиме сеанса"
 
+msgid ""
+"cannot use feature-based firmware autoselection when firmware autoselection "
+"is disabled"
+msgstr ""
+
 msgid "cannot use namespaces in session mode"
 msgstr "нельзя использовать пространства имён в режиме сеанса"
 
@@ -23260,11 +23085,11 @@ msgstr "cd: %s: %s"
 msgid "cd: command valid only in interactive mode"
 msgstr "команда cd доступна только в интерактивном режиме"
 
+msgid "cdrom device with virtio bus isn't supported"
+msgstr ""
+
 msgid "cdrom device without source path not supported"
 msgstr "устройство cdrom без пути к источнику не поддерживается"
-
-msgid "cdrom/floppy device hotplug isn't supported"
-msgstr "«горячее» подключение CD-привода или дисковода не поддерживается"
 
 msgid "cell number must be non-negative integer or -1"
 msgstr "номер ячейки не может быть меньше -1"
@@ -23320,6 +23145,11 @@ msgstr "изменить количество виртуальных проце�
 
 msgid "change of nodeset for running domain requires restrictive numa mode"
 msgstr ""
+
+msgid "change of nodeset for running domain requires strict numa mode"
+msgstr ""
+"для внесения изменений в набор узлов работающего домена необходимо перейти в "
+"строгий (strict) режим NUMA "
 
 msgid "change the current directory"
 msgstr "изменить текущий каталог"
@@ -23392,6 +23222,14 @@ msgstr "данные символьного устройства не содер
 msgid "character device name"
 msgstr "имя символьного устройства"
 
+#, c-format
+msgid "chardev '%s' not supported in this QEMU binary"
+msgstr ""
+
+#, c-format
+msgid "chardev '%s' not supported without spice graphics"
+msgstr ""
+
 msgid "chardev already exists"
 msgstr "символьное устройство уже существует"
 
@@ -23443,7 +23281,6 @@ msgstr "имя контрольной точки"
 msgid "child didn't write error (status=%d)"
 msgstr "дочерний процесс не записал ошибку (состояние=%d)"
 
-#. in case of EACCES, the parent will retry
 #, c-format
 msgid "child failed to create directory '%s'"
 msgstr "не удалось создать каталог «%s»"
@@ -24352,6 +24189,9 @@ msgstr "current"
 msgid "current bridge device name"
 msgstr "текущее имя моста"
 
+msgid "current job is not outgoing migration in post-copy mode"
+msgstr ""
+
 msgid "current vcpu count must equal maximum"
 msgstr "текущее число vcpu должно быть равно максимальному значению"
 
@@ -24365,6 +24205,9 @@ msgid "custom alias name of interface device"
 msgstr "пользовательское альтернативное название устройства интерфейса"
 
 msgid "custom configuration parameters specified"
+msgstr ""
+
+msgid "custom device configuration"
 msgstr ""
 
 msgid "custom device tree blob used"
@@ -24737,12 +24580,20 @@ msgstr ""
 msgid "directory to switch to (default: home or else root)"
 msgstr "каталог для перехода (по умолчанию домашний или корневой)"
 
+msgid ""
+"dirty page rate calculation mode, either of these 3 options 'page-sampling, "
+"dirty-bitmap, dirty-ring' can be specified."
+msgstr ""
+
 msgid "dirty ring must be power of 2 and ranges [1024, 65536]"
 msgstr ""
 
 #, c-format
 msgid ""
 "dirty ring size of KVM feature '%s' differs: source: '%d', destination: '%d'"
+msgstr ""
+
+msgid "dirty-ring calculation mode requires dirty-ring feature enabled."
 msgstr ""
 
 msgid "disable"
@@ -24972,6 +24823,13 @@ msgid "disk source path is missing"
 msgstr "отсутствует путь к источнику диска"
 
 #, c-format
+msgid "disk startupPolicy '%s' is not allowed for disk of '%s' type"
+msgstr ""
+
+msgid "disk startupPolicy 'requisite' is allowed only for cdrom or floppy"
+msgstr ""
+
+#, c-format
 msgid "disk target %s not found"
 msgstr "дисковое назначение %s не найдено"
 
@@ -25024,10 +24882,6 @@ msgstr "показать ход выполнения миграции"
 
 msgid "display the progress of save"
 msgstr "показать ход выполнения операции сохранения"
-
-#, c-format
-msgid "dnsmasq binary %s is not executable"
-msgstr "dnsmasq %s не является исполняемым компонентом"
 
 #, c-format
 msgid "dnsmasq version >= %u.%u required but %lu.%lu found"
@@ -25165,8 +25019,8 @@ msgstr ""
 msgid "domain control interface state"
 msgstr "состояние интерфейса управления доменом"
 
-msgid "domain core dump job"
-msgstr "задание создания дампа домена"
+msgid "domain core dump"
+msgstr ""
 
 msgid "domain display connection URI"
 msgstr "URI подключения к дисплею домена"
@@ -25275,8 +25129,8 @@ msgstr "имя или UUID домена"
 msgid "domain name, id or uuid"
 msgstr "имя, ID или UUID домена"
 
-msgid "domain save job"
-msgstr "задача сохранения домена"
+msgid "domain save"
+msgstr ""
 
 msgid "domain snapshot XML"
 msgstr "XML снимка домена"
@@ -25576,6 +25430,9 @@ msgid "encryption format of inputvol must be LUKS"
 msgstr "форматом шифрования inputvol должно быть LUKS"
 
 msgid "encryption is not supported with vhostuser disk"
+msgstr ""
+
+msgid "encryption is supported only with 'raw' and 'qcow2' image format"
 msgstr ""
 
 #, c-format
@@ -25979,6 +25836,10 @@ msgid "expecting a value"
 msgstr "ожидается значение"
 
 #, c-format
+msgid "expecting a value for value of type %s"
+msgstr ""
+
+#, c-format
 msgid "expecting absolute path: %s"
 msgstr "ожидается абсолютный путь: %s"
 
@@ -26072,9 +25933,6 @@ msgstr "сбой системного вызова Xen"
 #, c-format
 msgid "failed Xen syscall %s"
 msgstr "сбой системного вызова Xen %s"
-
-msgid "failed due to I/O error"
-msgstr "сбой вследствие ошибки ввода-вывода"
 
 msgid "failed probing capabilities"
 msgstr "не удалось выполнить проверку возможностей"
@@ -26238,8 +26096,8 @@ msgid "failed to create a new XML namespace"
 msgstr "не удалось создать новое пространство имен XML"
 
 #, c-format
-msgid "failed to create channel dir '%s': %s"
-msgstr "не удалось создать каталог канала «%s»: %s"
+msgid "failed to create channel dir '%s'"
+msgstr ""
 
 msgid "failed to create connection to CH socket"
 msgstr ""
@@ -26252,8 +26110,8 @@ msgid "failed to create directory '%s'"
 msgstr "не удалось создать каталог «%s»"
 
 #, c-format
-msgid "failed to create dump dir '%s': %s"
-msgstr "не удалось создать каталог дампа «%s»: %s"
+msgid "failed to create dump dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create glfs object for '%s'"
@@ -26273,16 +26131,16 @@ msgid "failed to create json"
 msgstr "не удалось создать JSON"
 
 #, c-format
-msgid "failed to create lib dir '%s': %s"
-msgstr "не удалось создать каталог библиотеки «%s»: %s"
+msgid "failed to create lib dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create libssh channel: %s"
 msgstr "не удалось создать канал libssh: %s"
 
 #, c-format
-msgid "failed to create log dir '%s': %s"
-msgstr "не удалось создать каталог журнала «%s»: %s"
+msgid "failed to create log dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create logfile %s"
@@ -26295,8 +26153,8 @@ msgid "failed to create profile"
 msgstr "не удалось создать профиль"
 
 #, c-format
-msgid "failed to create save dir '%s': %s"
-msgstr "не удалось создать каталог сохранения «%s»: %s"
+msgid "failed to create save dir '%s'"
+msgstr ""
 
 msgid "failed to create socket"
 msgstr "не удалось создать сокет"
@@ -26309,8 +26167,8 @@ msgid "failed to create socketpair"
 msgstr "не удалось создать пару сокетов"
 
 #, c-format
-msgid "failed to create state dir '%s': %s"
-msgstr "не удалось создать каталог состояния «%s»: %s"
+msgid "failed to create state dir '%s'"
+msgstr ""
 
 msgid "failed to create the RADOS cluster"
 msgstr "не удалось создать кластер RADOS"
@@ -26814,9 +26672,15 @@ msgstr "не удалось извлечь адрес многоадресной
 msgid "failed to parse node name index"
 msgstr "не удалось разобрать индекс имён узлов"
 
+msgid "failed to parse original memlock size"
+msgstr ""
+
 #, c-format
 msgid "failed to parse port number '%s'"
 msgstr "не удалось разобрать номер порта «%s»"
+
+msgid "failed to parse pre-migration memlock limit"
+msgstr ""
 
 msgid "failed to parse qemu capabilities cpus"
 msgstr "не удалось разобрать процессоры в данных о возможностях QEMU"
@@ -26870,10 +26734,6 @@ msgstr "не удалось извлечь адрес SCSI из имени фа�
 #, c-format
 msgid "failed to parse the index of the VMX key '%s'"
 msgstr "не удалось разобрать индекс ключа VMX «%s»"
-
-#, c-format
-msgid "failed to parse value of %s"
-msgstr "не удалось обработать значение %s"
 
 #, c-format
 msgid "failed to parse write_bps_device: '%s'"
@@ -27279,7 +27139,8 @@ msgid "fd passing is not supported by this connection"
 msgstr ""
 "это соединение не поддерживает возможность передачи файловых дескрипторов"
 
-msgid "fdset must be valid"
+#, c-format
+msgid "fdset '%u' is already in use by qemu"
 msgstr ""
 
 msgid "fetch or set the currently defined set of logging filters on daemon"
@@ -27291,9 +27152,6 @@ msgid "fetch or set the currently defined set of logging outputs on daemon"
 msgstr ""
 "получить или установить текущий заданный набор выводов в журнал фоновойслужбы"
 
-#. parse inbound and outbound which are in the format of
-#. * 'average,peak,burst,floor', in which peak and burst are optional,
-#. * thus 'average,,burst' and 'average,peak' are also legal.
 #, c-format
 msgid "field '%s' is malformed"
 msgstr "поле «%s» неверно сформировано"
@@ -27344,10 +27202,6 @@ msgstr "файл с XML-описанием тома"
 
 msgid "file containing secret attributes in XML"
 msgstr "файл с атрибутами секрета в формате XML"
-
-#, c-format
-msgid "file descriptor %d has not been transferred"
-msgstr "файловый дескриптор %d не был передан"
 
 msgid "file format type raw,bochs,qcow,qcow2,qed,vmdk"
 msgstr "формат: raw,bochs,qcow,qcow2,qed,vmdk"
@@ -27483,6 +27337,15 @@ msgstr ""
 msgid "firmware auto selection not implemented for this driver"
 msgstr "для этого драйвера не реализован автоматический выбор микропрограммы"
 
+msgid ""
+"firmware feature 'enrolled-keys' cannot be enabled when firmware feature "
+"'secure-boot' is disabled"
+msgstr ""
+
+#, c-format
+msgid "firmware type '%s' does not support nvram"
+msgstr ""
+
 msgid "fixed audio settings requires mixing engine"
 msgstr ""
 
@@ -27505,6 +27368,9 @@ msgstr ""
 
 msgid "floor attribute is not supported for this config"
 msgstr "атрибут floor не поддерживается для этой конфигурации"
+
+msgid "floppy device hotplug isn't supported"
+msgstr ""
 
 msgid "fmode and dmode must be used with accessmode=mapped"
 msgstr ""
@@ -27631,9 +27497,6 @@ msgstr "Драйвер %s не поддерживается"
 #, c-format
 msgid "fs format %s is not supported"
 msgstr "Формат файловых систем %s не поддерживается"
-
-msgid "fseek failed"
-msgstr "сбой fseek"
 
 msgid "fully-qualified path of disk"
 msgstr "полный путь к диску"
@@ -27904,6 +27767,9 @@ msgstr "Ответ guest-get-users не содержит данных."
 msgid "guest-get-vcpus reply was missing return data"
 msgstr "Ответ guest-get-vcpus не содержит данных."
 
+msgid "guestReset is not supported with this version of QEMU"
+msgstr ""
+
 msgid "guestfwd channel does not define a target address"
 msgstr "канал guestfwd не определяет целевой адрес"
 
@@ -27916,7 +27782,6 @@ msgstr "остановить домен после создания снимка
 msgid "handler failed to wait on condition"
 msgstr "обработчику не удалось дождаться выполнения условия"
 
-#. caller's error
 msgid "hash lookup resulted in NULL pointer"
 msgstr "поиск в хэше вернул нулевой указатель"
 
@@ -28493,9 +28358,6 @@ msgstr "интерфейс не работает"
 msgid "interface mac"
 msgstr "MAC-адрес интерфейса"
 
-msgid "interface misses the type attribute"
-msgstr "отсутствует атрибут типа интерфейса"
-
 msgid "interface mtu value is improper"
 msgstr "неверное значение mtu для интерфейса"
 
@@ -28503,28 +28365,9 @@ msgid "interface name"
 msgstr "имя интерфейса"
 
 #, c-format
-msgid "interface name %s does not fit into buffer "
-msgstr "имя интерфейса %s не помещается в буфер"
+msgid "interface name %s does not fit into buffer"
+msgstr ""
 
-#.
-#. * virsh-interface.c: Commands to manage host interface
-#. *
-#. * Copyright (C) 2005, 2007-2016 Red Hat, Inc.
-#. *
-#. * This library is free software; you can redistribute it and/or
-#. * modify it under the terms of the GNU Lesser General Public
-#. * License as published by the Free Software Foundation; either
-#. * version 2.1 of the License, or (at your option) any later version.
-#. *
-#. * This library is distributed in the hope that it will be useful,
-#. * but WITHOUT ANY WARRANTY; without even the implied warranty of
-#. * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#. * Lesser General Public License for more details.
-#. *
-#. * You should have received a copy of the GNU Lesser General Public
-#. * License along with this library.  If not, see
-#. * <http://www.gnu.org/licenses/>.
-#.
 msgid "interface name or MAC address"
 msgstr "имя интерфейса или MAC-адрес"
 
@@ -28594,6 +28437,9 @@ msgstr ""
 
 msgid "internal use only"
 msgstr "только внутреннее использование"
+
+msgid "interrupt post-copy migration"
+msgstr ""
 
 msgid "intr:"
 msgstr "прерывание:"
@@ -28806,10 +28652,6 @@ msgid "invalid XML length: %d"
 msgstr "недопустимая длина XML: %d"
 
 #, c-format
-msgid "invalid allowReboot value '%s'"
-msgstr "недопустимое значение allowReboot «%s»"
-
-#, c-format
 msgid "invalid ap-adapter value '%s' for '%s'"
 msgstr ""
 
@@ -28834,9 +28676,6 @@ msgstr "недопустимый протокол резервного копи�
 #, c-format
 msgid "invalid backing protocol string '%s'"
 msgstr "недопустимая строка протокола резервного копирования «%s»"
-
-msgid "invalid cache size in query-migrate-cache-size reply"
-msgstr "недопустимый размер кэша в ответе query-migrate-cache-size"
 
 #, c-format
 msgid "invalid capability_filters capability '%s'"
@@ -28912,7 +28751,7 @@ msgstr ""
 "разделов"
 
 #, c-format
-msgid "invalid dmode: '%s'"
+msgid "invalid dmode: '0%o'"
 msgstr ""
 
 msgid "invalid domain pointer in"
@@ -28945,14 +28784,6 @@ msgstr "недопустимая операция при сбое: «%s»\n"
 msgid "invalid fd %d for %s"
 msgstr "Недопустимый дескриптор файла %d для %s"
 
-#, c-format
-msgid "invalid firmware feature enabled value '%s'"
-msgstr ""
-
-#, c-format
-msgid "invalid firmware feature name '%s'"
-msgstr ""
-
 msgid "invalid flag"
 msgstr "недопустимый флаг"
 
@@ -28961,7 +28792,7 @@ msgid "invalid flag combination: (0x%x)"
 msgstr "недопустимая комбинация флагов: (0x%x)"
 
 #, c-format
-msgid "invalid fmode: '%s'"
+msgid "invalid fmode: '0%o'"
 msgstr ""
 
 msgid "invalid hasmanagedsave"
@@ -29068,26 +28899,11 @@ msgstr ""
 "недопустимый MAC-адрес «%s» в массиве «unicast-table» ответа query-rx-filter"
 
 #, c-format
-msgid "invalid mac address check value: '%s'"
-msgstr "недопустимое значение проверки MAC-адреса: «%s»"
-
-#, c-format
-msgid ""
-"invalid mac address type value: '%s'. Valid values are \"generated\" and "
-"\"static\"."
-msgstr ""
-
-#, c-format
 msgid "invalid master key read, size=%zd"
 msgstr "прочитан некорректный основной ключ, размер=%zd"
 
 msgid "invalid microcode version"
 msgstr "недопустимая версия микрокода"
-
-msgid "invalid migratability value for host CPU model"
-msgstr ""
-"недопустимое значение параметра переносимости для модели процессора основной "
-"системы"
 
 msgid "invalid mode"
 msgstr "Недопустимый режим"
@@ -29165,16 +28981,6 @@ msgid ""
 msgstr ""
 "недопустимое числовое значение для свойства модели процессора основной "
 "системы «%s» в кэше возможностей QEMU"
-
-#, c-format
-msgid "invalid or missing decode/guest attribute in CPU model %s"
-msgstr ""
-"недопустимый или отсутствующий атрибут decode/guest в модели процессора %s"
-
-#, c-format
-msgid "invalid or missing decode/host attribute in CPU model %s"
-msgstr ""
-"недопустимый или отсутствующий атрибут decode/host в модели процессора %s"
 
 #, c-format
 msgid "invalid parent device '%s'"
@@ -29266,10 +29072,6 @@ msgstr "Недопустимое имя снимка: «%s». Имя не мож
 msgid "invalid ssid value '%s' for '%s'"
 msgstr "недопустимое значение ssid «%s» для «%s»"
 
-#, c-format
-msgid "invalid storage pool cow feature state '%s'"
-msgstr "недопустимое состояние возможности cow пула носителей «%s»"
-
 msgid "invalid storage pool pointer in"
 msgstr "недопустимый указатель пула в"
 
@@ -29324,6 +29126,9 @@ msgstr "недопустимый unique_id для «%s»"
 msgid "invalid use of command API"
 msgstr "недопустимое использование API"
 
+msgid "invalid use of conf API"
+msgstr ""
+
 msgid "invalid use with no flags"
 msgstr "недопустимое использование без флагов"
 
@@ -29344,19 +29149,13 @@ msgid "invalid value '%s' for parameter '%s' of device '%s'"
 msgstr "недопустимое значение «%s» для параметра «%s» устройства «%s»"
 
 #, c-format
-msgid "invalid value for 'managed': %s"
-msgstr "недопустимое значение параметра «managed»: %s"
-
-msgid "invalid value for boot menu timeout"
+msgid "invalid value '%s' of 'value' attribute of 'qemu:property'"
 msgstr ""
 
 msgid "invalid value for boot menu timeout, must be in range [0,65535]"
 msgstr ""
 "недопустимое значение времени ожидания меню загрузки, значение должно "
 "находиться в диапазоне [0,65535]"
-
-msgid "invalid value for rebootTimeout"
-msgstr ""
 
 msgid "invalid value for rebootTimeout, must be in range [-1,65535]"
 msgstr ""
@@ -29403,6 +29202,10 @@ msgstr ""
 
 msgid "iommu driver option is only supported for virtio devices"
 msgstr "параметр драйвера iommu поддерживается только для устройств virtio"
+
+#, c-format
+msgid "iommu model '%s' can't have address"
+msgstr ""
 
 msgid "iommu: aw_bits is not supported with this QEMU binary"
 msgstr "iommu: этот исполняемый файл QEMU не поддерживает aw_bits"
@@ -29453,8 +29256,8 @@ msgstr "Имя ipset содержит недопустимые символы"
 msgid "ipset name is too long"
 msgstr "слишком длинное имя ipset"
 
-msgid "is not active"
-msgstr "не активно"
+msgid "isa-debug serial type only valid on x86 architecture"
+msgstr ""
 
 msgid "iscsi pool only supports 'chap' auth type"
 msgstr "для пулов iscsi поддерживается только тип аутентификации «chap»"
@@ -29468,8 +29271,29 @@ msgstr "найден элемент ivgen, но отсутствует запи�
 msgid "ivshmem device is not supported with this QEMU binary"
 msgstr "этот исполняемый файл QEMU не поддерживает устройство ivshmem"
 
-msgid "job"
-msgstr "задание"
+#, c-format
+msgid "job '%s' canceled by client"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed due to I/O error"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed in post-copy phase"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed: %s"
+msgstr ""
+
+#, c-format
+msgid "job '%s' is not active"
+msgstr ""
+
+#, c-format
+msgid "job '%s' unexpectedly failed"
+msgstr ""
 
 #, c-format
 msgid "job type '%s' does not support pivot"
@@ -29553,10 +29377,10 @@ msgstr "ошибка вызова библиотеки"
 msgid "library call failed: %s"
 msgstr "ошибка вызова библиотеки: %s"
 
-msgid "librbd encryption engine only supports luks/luks2 formats"
+msgid "librbd encryption is not supported by this QEMU binary"
 msgstr ""
 
-msgid "librbd encryption is not supported by this QEMU binary"
+msgid "librbd encryption is supported only with RBD backed disks"
 msgstr ""
 
 msgid "libssh transport error"
@@ -30008,6 +29832,24 @@ msgstr ""
 msgid "live update of device '%s' is not supported"
 msgstr "динамическое обновление устройства «%s» не поддерживается"
 
+msgid ""
+"loader attribute 'readonly' cannot be specified when firmware autoselection "
+"is enabled"
+msgstr ""
+
+msgid ""
+"loader attribute 'secure' cannot be specified when firmware autoselection is "
+"enabled"
+msgstr ""
+
+msgid ""
+"loader attribute 'type' cannot be specified when firmware autoselection is "
+"enabled"
+msgstr ""
+
+msgid "loader path cannot be specified when firmware autoselection is enabled"
+msgstr ""
+
 #, c-format
 msgid "loadparm value '%s' must be between 1 and 8 characters"
 msgstr ""
@@ -30030,6 +29872,9 @@ msgid "loop until timeout or interrupt, rather than one-shot"
 msgstr ""
 "повторять цикл, пока он не будет прерван или пока не истечет заданный период "
 "ожидания"
+
+msgid "lower boundary for worker thread pool"
+msgstr ""
 
 msgid "luks2 is currently not supported by the qemu encryption engine"
 msgstr ""
@@ -30167,8 +30012,7 @@ msgstr "данные миграции содержат неверно сформ
 
 #, c-format
 msgid "malformed http cookie '%s' in backing store definition '%s'"
-msgstr ""
-"неверно сформированное поле «timeout» в определении резервного хранилища «%s»"
+msgstr "неверный формат куки http «%s» в определении резервного хранилища «%s»"
 
 msgid "malformed hyperv panic data"
 msgstr "неверно сформированные данные паники гипервизора"
@@ -30622,8 +30466,8 @@ msgstr "ограничение пропускной способности в М
 msgid "migration canceled"
 msgstr "миграция отменена"
 
-msgid "migration in job"
-msgstr "задание входящей миграции"
+msgid "migration in"
+msgstr ""
 
 #, c-format
 msgid "migration of disk %s failed"
@@ -30633,13 +30477,21 @@ msgstr "сбой миграции диска %s"
 msgid "migration of disk %s failed: %s"
 msgstr "сбой миграции диска %s: %s"
 
+#, c-format
+msgid "migration of domain %s is being actively monitored by another thread"
+msgstr ""
+
+#, c-format
+msgid "migration of domain %s is not in post-copy phase"
+msgstr ""
+
 msgid ""
 "migration of non-shared storage is not supported with tunnelled migration "
 "and this QEMU"
 msgstr ""
 
-msgid "migration out job"
-msgstr "задание исходящей миграции"
+msgid "migration out"
+msgstr ""
 
 #, c-format
 msgid "migration parameter '%s' must be less than %llu"
@@ -30671,9 +30523,6 @@ msgstr "миграция активна, но отсутствует «общи�
 
 msgid "migration was active, but RAM 'transferred' data was missing"
 msgstr "миграция активна, но отсутствуют «передаваемые» данные ОЗУ"
-
-msgid "migration was active, but no RAM info was set"
-msgstr "миграция активна, но не задана информация ОЗУ"
 
 msgid "migration with legacy shmem device is not supported"
 msgstr "миграция с устаревшим устройством shmem не поддерживается"
@@ -30763,6 +30612,9 @@ msgstr ""
 msgid "missing 'DateTime' element"
 msgstr "отсутствует элемент «DateTime»"
 
+msgid "missing 'alias' attribute for qemu:device"
+msgstr ""
+
 #, c-format
 msgid "missing 'architecture' in '%s'"
 msgstr "отсутствует «architecture» в «%s»"
@@ -30822,6 +30674,9 @@ msgstr ""
 "отсутствует атрибут «name» свойства модели процессора основной системы в "
 "кэше возможностей QEMU"
 
+msgid "missing 'name' attribute for qemu:property"
+msgstr ""
+
 msgid "missing 'namespace' attribute to disk source"
 msgstr "отсутствует атрибут «namespace» источника диска"
 
@@ -30843,6 +30698,9 @@ msgid "missing 'process' value in selinux lxc contexts file '%s'"
 msgstr "отсутствует значение «process» в файле контекстов LXC SELinux «%s»"
 
 msgid "missing 'server' attribute in JSON backing definition for NFS volume"
+msgstr ""
+
+msgid "missing 'start' attribute for clock with offset='absolute'"
 msgstr ""
 
 #, c-format
@@ -30878,6 +30736,9 @@ msgid ""
 "missing 'user' or 'group' attribute in JSON backing definition for NFS volume"
 msgstr ""
 
+msgid "missing 'value' attribute for 'qemu:property'"
+msgstr ""
+
 msgid "missing 'value' attribute for HyperV feature 'vendor_id'"
 msgstr "отсутствует атрибут «value» возможности HyperV «vendor_id»"
 
@@ -30900,9 +30761,6 @@ msgstr "отсутствует элемент <target> для устройств
 
 msgid "missing <type> element in <capability> element"
 msgstr ""
-
-msgid "missing @managed attribute for <reservations/>"
-msgstr "отсутствует атрибут @managed для <reservations/>"
 
 msgid "missing CPU data architecture"
 msgstr "отсутствует архитектура данных процессора"
@@ -31004,9 +30862,6 @@ msgstr "отсутствуют данные блочного задания дл
 msgid "missing blocker name in QEMU capabilities cache"
 msgstr "в кэше возможностей QEMU отсутствует имя блокировщика"
 
-msgid "missing boot device"
-msgstr "отсутствует загрузочное устройство"
-
 msgid "missing capability name"
 msgstr "отсутствует имя возможности"
 
@@ -31050,6 +30905,10 @@ msgstr "отсутствует время создания (creationTime) сущ
 #, c-format
 msgid "missing cssid value for '%s'"
 msgstr "отсутствует значение cssid для «%s»"
+
+#, c-format
+msgid "missing decode element in CPU model %s"
+msgstr ""
 
 #, c-format
 msgid "missing destination file for disk %s: %s"
@@ -31357,6 +31216,9 @@ msgstr ""
 
 msgid "missing path for <reservations/>"
 msgstr "отсутствует путь для <reservations/>"
+
+msgid "missing path to restore from"
+msgstr ""
 
 msgid "missing per-device path"
 msgstr "отсутствует отдельный путь к устройству"
@@ -31677,6 +31539,9 @@ msgstr "разрешение модели не поддерживается"
 msgid "model type"
 msgstr "тип модели"
 
+msgid "modern nvram specification is not supported by this qemu"
+msgstr ""
+
 msgid "modifies an existing IOThread of the guest domain"
 msgstr "изменяет существующий поток ввода-вывода гостевого домена"
 
@@ -31698,15 +31563,6 @@ msgstr "получить или изменить заголовок"
 msgid "monitor failure"
 msgstr "ошибка монитора"
 
-#. *
-#. * QEMU_CHECK_MONITOR_FULL:
-#. * @mon: monitor pointer variable to check, evaluated multiple times, no parentheses
-#. * @exit: statement that is used to exit the function
-#. *
-#. * This macro checks that the monitor is valid for given operation and exits
-#. * the function if not. The macro also adds a debug statement regarding the
-#. * monitor.
-#.
 msgid "monitor must not be NULL"
 msgstr "монитор не может содержать NULL"
 
@@ -31902,7 +31758,6 @@ msgstr "требует поддержки rawio"
 msgid "negative size requires --shrink"
 msgstr "для указания отрицательного размера требуется параметр --shrink"
 
-#. 56 is good for Kerberos
 #, c-format
 msgid "negotiated SSF %d was not strong enough"
 msgstr "согласованный SSF %d был недостаточно устойчивым"
@@ -32899,6 +32754,9 @@ msgstr ""
 msgid "number of read operations:"
 msgstr "число операций чтения:"
 
+msgid "number of seconds the daemon will run without any active connection"
+msgstr ""
+
 msgid "number of seconds to squelch traffic on newly connected ports"
 msgstr "количество секунд на подавление трафика новых подключённых портов"
 
@@ -32938,6 +32796,11 @@ msgstr "для этого исполняемого файла QEMU недост�
 
 msgid "nvram address type must be spaprvio"
 msgstr "адрес nvram должен иметь тип spaprvio"
+
+msgid ""
+"nvram attribute 'template' cannot be specified when firmware autoselection "
+"is enabled"
+msgstr ""
 
 msgid "nvram device is not supported by this QEMU binary"
 msgstr "этот исполняемый файл QEMU не поддерживает устройство nvram"
@@ -33027,10 +32890,9 @@ msgid "only 'pci' addresses are supported for the virtio-pmem device"
 msgstr ""
 
 msgid ""
-"only 1 graphics device of each type (sdl, vnc, spice, headless) is supported"
+"only 1 graphics device of each type (sdl, vnc, spice, headless, dbus) is "
+"supported"
 msgstr ""
-"поддерживается только одно графическое устройство каждого типа (sdl, vnc, "
-"spice, headless)"
 
 msgid "only JSON objects can be top level"
 msgstr "на верхнем уровне могут быть только объекты JSON"
@@ -33074,6 +32936,10 @@ msgstr "поддерживается только одно устройство 
 
 msgid "only bus 'virtio' is supported for 'passthrough' input devices"
 msgstr "для устройств ввода «passthrough» поддерживается только шина «virtio»"
+
+#, c-format
+msgid "only bus 'virtio' is supported for input model '%s'"
+msgstr ""
 
 msgid "only can reboot running/paused domain"
 msgstr ""
@@ -33471,6 +33337,9 @@ msgstr "ошибка разбора"
 msgid "partial string to autocomplete"
 msgstr "неполная строка для автодополнения"
 
+msgid "pass file descriptors N,M,... along with the command"
+msgstr ""
+
 msgid "pass file descriptors N,M,... to the guest"
 msgstr ""
 "список разделенных запятыми файловых дескрипторов для передачи гостевой "
@@ -33562,8 +33431,8 @@ msgstr "модуль драйвера PCI «%s» не поддерживаетс
 msgid "pci device %s is not a PCI-Express device"
 msgstr "устройство PCI %s не является устройством PCI-Express"
 
-msgid "pci device assignment backend driver (e.g. 'vfio' or 'kvm')"
-msgstr "драйвер сопоставления устройств PCI (например, vfio или kvm)"
+msgid "pci device assignment backend driver (e.g. 'vfio' or 'xen')"
+msgstr ""
 
 msgid ""
 "pci-expander-bus controllers are only supported on 440fx-based machinetypes"
@@ -33662,6 +33531,9 @@ msgstr "постоянное отключение устройства «%s» н
 
 msgid "persistent detach of device is not supported"
 msgstr "постоянное отключение устройств не поддерживается"
+
+msgid "persistent reservations are not supported with NVRAM"
+msgstr ""
 
 #, c-format
 msgid "persistent update of device '%s' is not supported"
@@ -33811,6 +33683,10 @@ msgstr ""
 "пост-копирование не поддерживается для нединамической или приостановленной "
 "миграции"
 
+#, c-format
+msgid "post-copy migration of domain %s has not failed"
+msgstr ""
+
 msgid "potentially unsafe disk format probing"
 msgstr ""
 
@@ -33874,6 +33750,9 @@ msgstr ""
 "предварительно выделить место для метаданных (для qcow2 вместо полного "
 "распределения)"
 
+msgid "preallocation threads are unsupported with this QEMU"
+msgstr ""
+
 msgid "prefix too long"
 msgstr "слишком длинный префикс"
 
@@ -33930,6 +33809,9 @@ msgid "print statistics for any kind of job (even failed ones)"
 msgstr ""
 "выводить статистику для всех типов заданий (даже для заданий, завершившихся "
 "ошибкой)"
+
+msgid "print the XML used to start the copy job instead of starting the job"
+msgstr ""
 
 msgid "print the admin server URI"
 msgstr "вывести URI административного сервера"
@@ -33990,6 +33872,9 @@ msgstr "несоответствие программ в событии (фак�
 #, c-format
 msgid "prohibited character in DNS TXT record name '%s' of network %s"
 msgstr "недопустимый символ в имени записи TXT DNS «%s» сети %s"
+
+msgid "property with name 'id' can't be overridden"
+msgstr ""
 
 #, c-format
 msgid "protocol '%s' accepts only one host"
@@ -34144,10 +34029,16 @@ msgstr "в данных ответа query-cpu-definitions отсутствуе�
 msgid "query-cpu-model-comparison reply data was missing 'result'"
 msgstr "в данных ответа query-cpu-model-comparison отсутствует «result»"
 
+msgid "query-dirty-rate parsing 'vcpu-dirty-rate' in failure"
+msgstr ""
+
 msgid "query-dirty-rate reply was missing 'calc-time' data"
 msgstr ""
 
 msgid "query-dirty-rate reply was missing 'dirty-rate' data"
+msgstr ""
+
+msgid "query-dirty-rate reply was missing 'id' data"
 msgstr ""
 
 msgid "query-dirty-rate reply was missing 'return' data"
@@ -34160,9 +34051,6 @@ msgid "query-dirty-rate reply was missing 'status' data"
 msgstr ""
 
 msgid "query-fdsets reply was missing 'fdset-id'"
-msgstr ""
-
-msgid "query-fdsets return data missing 'fd'"
 msgstr ""
 
 msgid "query-fdsets return data missing fd array element"
@@ -34302,6 +34190,9 @@ msgstr "rawio можно использовать только с устройс
 
 msgid "rawio is only supported for scsi host device"
 msgstr "rawio поддерживается только для устройств SCSI основной системы"
+
+msgid "re-initialize NVRAM from its pristine template"
+msgstr ""
 
 msgid "read I/O operations limit per second"
 msgstr "максимальное число операций чтения в секунду"
@@ -34474,6 +34365,9 @@ msgstr ""
 "содержать как названия томов, так и пути к пространству данных. Подробную "
 "информацию можно найти в описании команды domblklist"
 
+msgid "remove domain logs"
+msgstr ""
+
 msgid "remove domain managed state file"
 msgstr "удалить файл сохранённого состояния домена"
 
@@ -34596,7 +34490,8 @@ msgstr ""
 msgid "requested size must be an integer multiple of block size"
 msgstr ""
 
-msgid "requested size must be smaller than or equal to @size"
+#, c-format
+msgid "requested size must be smaller than or equal to @size (%lluKiB)"
 msgstr ""
 
 msgid "requested size of the cache (in bytes) used for compression"
@@ -34664,6 +34559,9 @@ msgstr ""
 "сброс состояния домена после создания дампа (аналогично нажатию кнопки "
 "питания)"
 
+msgid "resetting of nvram is not supported with network backed nvram"
+msgstr ""
+
 msgid "resize a vol"
 msgstr "изменить размер тома"
 
@@ -34699,6 +34597,9 @@ msgstr "слишком большой результат: %llu"
 msgid "resume a domain"
 msgstr "возобновить работу домена"
 
+msgid "resume failed post-copy migration"
+msgstr ""
+
 msgid "resume operation failed"
 msgstr "сбой операции возобновления"
 
@@ -34707,6 +34608,16 @@ msgstr "ошибка возобновления после дампа"
 
 msgid "resuming after snapshot failed"
 msgstr "возобновление работы после сбоя снимка"
+
+#, c-format
+msgid "resuming failed post-copy migration of domain %s already in progress"
+msgstr ""
+
+msgid "resuming failed post-copy migration requires change protection"
+msgstr ""
+
+msgid "resuming failed post-copy migration requires post-copy to be enabled"
+msgstr ""
 
 msgid "retrieve client's identity info from server"
 msgstr "извлечь информацию профиля клиента с сервера"
@@ -34875,9 +34786,6 @@ msgstr "сохранение домена «%s» в «%s»: не удалось 
 msgid "sbbc configuration is not supported by this QEMU binary"
 msgstr "этот исполняемый файл QEMU не поддерживает конфигурацию sbbc"
 
-msgid "scheduler information is not supported on this platform"
-msgstr ""
-
 #, c-format
 msgid "scheme and host are mandatory vz migration URI: %s"
 msgstr "URI миграции vz должен содержать схему и узел: %s"
@@ -34992,9 +34900,10 @@ msgstr "модель безопасности превышает максима�
 msgid "security model string exceeds max %d bytes"
 msgstr "Длина строки модели безопасности превышает %d байт"
 
-msgid "select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\")"
+msgid ""
+"select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\", \"dbus"
+"\")"
 msgstr ""
-"выбрать определённый графический дисплей (например, «vnc», «spice», «rdp»)"
 
 msgid "send handler failed"
 msgstr "не удалось отправить обработчик"
@@ -35077,6 +34986,9 @@ msgstr "указать параметры workerpool сервера"
 msgid "set server's client-related configuration limits"
 msgstr "указать связанные с клиентом ограничения конфигурации сервера"
 
+msgid "set the auto shutdown timeout of the daemon"
+msgstr ""
+
 msgid "set the bandwidth limit in MiB/s"
 msgstr "ограничить пропускную способность (МиБ/с)"
 
@@ -35093,8 +35005,8 @@ msgstr ""
 msgid "set the user password inside the domain"
 msgstr "указать пароль пользователя в домене"
 
-msgid "set the value for reduction of the IOThread polling time "
-msgstr "указать значение для уменьшения времени опроса потока ввода-вывода "
+msgid "set the value for reduction of the IOThread polling time"
+msgstr ""
 
 msgid "set the value to increase the IOThread polling time"
 msgstr "указать значение для увеличения времени опроса потока ввода-вывода"
@@ -35106,6 +35018,11 @@ msgstr ""
 
 msgid "set to the time of the host running virsh"
 msgstr "выставить время по времени узла, на котором был запущен virsh"
+
+msgid ""
+"setting 'value' attribute of 'qemu:property' doesn't make sense with "
+"'remove' type"
+msgstr ""
 
 msgid "setting ACPI S3 not supported"
 msgstr "настройка ACPI S3 не поддерживается"
@@ -35186,16 +35103,6 @@ msgstr "sgio можно использовать только с устройс�
 
 msgid "sgio is only supported for scsi host device"
 msgstr "sgio поддерживается только для устройств SCSI основной системы"
-
-#, c-format
-msgid "sgio of shared disk '%s' conflicts with other active domains"
-msgstr "конфликт sgio общего диска «%s» с другими активными доменами"
-
-#, c-format
-msgid ""
-"sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active domains"
-msgstr ""
-"конфликт sgio общего диска «pool=%s» «volume=%s» с другими активными доменами"
 
 #, c-format
 msgid "shallow copy of disk '%s' into a raw file is not possible"
@@ -35353,6 +35260,12 @@ msgstr "пропущен неабсолютный путь"
 msgid "skipped restricted file"
 msgstr "пропущен файл с ограничением доступа"
 
+msgid "slices are not supported with NVRAM"
+msgstr ""
+
+msgid "snapshot"
+msgstr ""
+
 #, c-format
 msgid "snapshot %s disappeared from list"
 msgstr "снимок %s исчез из списка"
@@ -35371,9 +35284,6 @@ msgstr "в снимке «%s» отсутствует информация об 
 
 msgid "snapshot information"
 msgstr "данные снимка"
-
-msgid "snapshot job"
-msgstr "задание снимка"
 
 msgid "snapshot name"
 msgstr "имя снимка"
@@ -35531,6 +35441,9 @@ msgstr "проверка SSL поддерживается только для п
 msgid "ssl verification setting is not supported by this QEMU binary"
 msgstr "этот исполняемый файл QEMU не поддерживает указание проверки SSL"
 
+msgid "start"
+msgstr ""
+
 msgid "start a (previously defined) inactive domain"
 msgstr "запустить неактивный домен (определение должно быть создано заранее)"
 
@@ -35550,9 +35463,6 @@ msgstr "запустить интерфейс физической основн�
 #, c-format
 msgid "start cell %d out of range (0-%d)"
 msgstr "начальная ячейка %d за пределами диапазона (0-%d)"
-
-msgid "start job"
-msgstr "задание запуска"
 
 #, c-format
 msgid "start of range %s - %s in network %s/%d is the network address"
@@ -35678,8 +35588,8 @@ msgid "storage pool only supports LUKS encrypted volumes"
 msgstr "пул носителей поддерживает только тома, зашифрованные с помощью LUKS"
 
 #, c-format
-msgid "storage pool protocol ver '%s' is malformed"
-msgstr "версия протокола пула хранилища «%s» неверно сформирована"
+msgid "storage pool protocol ver '%s' must not contain ','"
+msgstr ""
 
 #, c-format
 msgid "storage pool protocol ver unsupported for pool type '%s'"
@@ -35795,8 +35705,18 @@ msgstr ""
 "переключение на пост-копирование требует запуска миграции с флагом "
 "VIR_MIGRATE_POSTCOPY"
 
-msgid "swtpm failed to start"
-msgstr "не удалось запустить swtpm"
+msgid "swtpm didn't show up"
+msgstr ""
+
+#, c-format
+msgid "swtpm died and reported: %s"
+msgstr ""
+
+msgid "swtpm died unexpectedly"
+msgstr ""
+
+msgid "swtpm socket did not show up"
+msgstr ""
 
 #, c-format
 msgid "syntax: %s DEVICE [-g]|[-p]\n"
@@ -35902,6 +35822,10 @@ msgid "target pci device "
 msgstr "устройство PCI системы назначения"
 
 #, c-format
+msgid "target port '%d' already allocated"
+msgstr ""
+
+#, c-format
 msgid "target type must be specified for %s device"
 msgstr "необходимо указать тип назначения для устройства %s"
 
@@ -35974,6 +35898,10 @@ msgstr "«%s»  соответствует нескольким интерфей
 
 msgid "the QEMU binary does not support the ISA panic device"
 msgstr "исполняемый файл QEMU не поддерживает устройство паники ISA"
+
+#, c-format
+msgid "the accel '%s' is not supported by '%s' on this host"
+msgstr ""
 
 msgid ""
 "the address family of a dhcp range must match the address family of the dhcp "
@@ -36218,8 +36146,35 @@ msgstr ""
 msgid "this storage volume exists already"
 msgstr "этот том хранилища уже существует"
 
-msgid "this version of libxenlight does not support backend domain name"
-msgstr "эта версия libxenlight не поддерживает имя домена модуля"
+#, c-format
+msgid "thread_pool_max (%d) must be a positive number or -1"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_max (%d) must be equal to or greater than 0 for live change"
+msgstr ""
+
+msgid "thread_pool_max must be a positive integer"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) can't be greater than thread_pool_max (%d)"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) must be equal to or greater than -1"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) must be equal to or greater than 0 for live change"
+msgstr ""
+
+msgid ""
+"thread_pool_min and thread_pool_max is not supported by this QEMU binary"
+msgstr ""
+
+msgid "thread_pool_min must be smaller or equal to thread_pool_max"
+msgstr ""
 
 msgid "threshold as a scaled number (by default bytes)"
 msgstr "пороговое значение, кратное числу (по умолчанию в байтах)"
@@ -36718,6 +36673,9 @@ msgstr "усиленный режим при рискованном восста
 msgid "tty console"
 msgstr "консоль TTY"
 
+msgid "tunnelFD argument is required for tunnelled migration"
+msgstr ""
+
 msgid "tunnelled migration"
 msgstr "туннельная миграция"
 
@@ -36870,6 +36828,10 @@ msgstr ""
 "интерфейс  «%s» не может быть удалён из сети «%s», так как он используется "
 "%d доменами."
 
+#, c-format
+msgid "unable to determine access mode of %s"
+msgstr ""
+
 msgid "unable to determine if checkpoint has parent"
 msgstr "не удалось определить, имеет ли контрольная точка родительскую запись"
 
@@ -36941,7 +36903,6 @@ msgstr "не удалось найти qemu-img"
 msgid "unable to find valid requested VMware backend '%s'"
 msgstr "не удалось найти необходимый движок VMware «%s»"
 
-#. fdatasync() may fail on some special FDs, e.g. pipes
 #, c-format
 msgid "unable to fsync %s"
 msgstr "не удалось выполнить fsync %s"
@@ -37005,9 +36966,6 @@ msgstr "не удалось получить UID и GID для PID %d с пом�
 #, c-format
 msgid "unable to handle agent type: %s"
 msgstr "не удалось обработать тип агента: %s"
-
-msgid "unable to handle disk requests in snapshot"
-msgstr "в пределах снимка запросы к диску не обрабатываются"
 
 #, c-format
 msgid "unable to handle monitor type: %s"
@@ -37194,6 +37152,9 @@ msgstr "не удалось изменить владельца «%s» на %d:%
 msgid "unable to set ownership of '%s' to user %d:%d"
 msgstr "не удалось изменить владельца «%s» на %d:%d"
 
+msgid "unable to set pipe size"
+msgstr ""
+
 #, c-format
 msgid "unable to set security context '%s'"
 msgstr "не удалось установить контекст безопасности «%s»"
@@ -37233,6 +37194,10 @@ msgstr "не удалось выполнить stat %s"
 #, c-format
 msgid "unable to stat block copy target '%s'"
 msgstr "не удалось собрать статистику для назначения копии блока «%s»"
+
+#, c-format
+msgid "unable to stat file descriptor %d path %s"
+msgstr ""
 
 #, c-format
 msgid "unable to stat for disk %s: %s"
@@ -37538,6 +37503,10 @@ msgid "unexpected message type"
 msgstr "непредвиденный тип сообщения"
 
 #, c-format
+msgid "unexpected migration schema: %d"
+msgstr ""
+
+#, c-format
 msgid "unexpected migration status in %s"
 msgstr "непредвиденное состояние миграции в %s"
 
@@ -37683,22 +37652,6 @@ msgstr "непредвиденный пропуск в потоке"
 msgid "unexpected sysinfo type model %d"
 msgstr "непредвиденная модель типа системной информации %d"
 
-#, c-format
-msgid "unexpected timer mode %d"
-msgstr "недопустимый режим таймера %d"
-
-#, c-format
-msgid "unexpected timer name %d"
-msgstr "непредвиденное имя таймера: %d"
-
-#, c-format
-msgid "unexpected timer tickpolicy %d"
-msgstr "непредвиденное значение  «tickpolicy»: %d"
-
-#, c-format
-msgid "unexpected timer track %d"
-msgstr "непредвиденное значение атрибута «track»: %d"
-
 msgid "unexpected transport in <domainbackup>"
 msgstr "непредвиденный способ передачи в <domainbackup>"
 
@@ -37745,8 +37698,8 @@ msgstr "непредвиденная модель watchdog %d"
 msgid "unexpected zero/negative length request %lld"
 msgstr "непредвиденный запрос нулевой или отрицательной длины %lld"
 
-msgid "unexpectedly failed"
-msgstr "неожиданно завершилось"
+msgid "unfiltered sgio is no longer supported"
+msgstr ""
 
 #, c-format
 msgid "unimplemented parameter type %d"
@@ -37755,8 +37708,6 @@ msgstr "тип параметра %d не поддерживается"
 msgid "unix"
 msgstr "unix"
 
-#. Something went wrong retrieving a volume path, cope with it
-#. Something went wrong retrieving volume info, cope with it
 msgid "unknown"
 msgstr "неизвестно"
 
@@ -37792,10 +37743,6 @@ msgid "unknown OS type '%s'"
 msgstr "неизвестный тип ОС «%s»"
 
 #, c-format
-msgid "unknown PM state value %s"
-msgstr "неизвестное состояние управления питанием: «%s»"
-
-#, c-format
 msgid "unknown QEMU_AUDIO_DRV setting %s"
 msgstr ""
 
@@ -37818,18 +37765,6 @@ msgstr "неизвестный тип возможности SCSI «%s» для 
 #, c-format
 msgid "unknown SDL_AUDIODRIVER setting %s"
 msgstr ""
-
-#, c-format
-msgid "unknown accel2d value '%s'"
-msgstr "неизвестное значение accel2d «%s»"
-
-#, c-format
-msgid "unknown accel3d value '%s'"
-msgstr "неизвестное значение accel3d «%s»"
-
-#, c-format
-msgid "unknown accessmode '%s'"
-msgstr "неизвестный режим доступа: «%s»"
 
 #, c-format
 msgid "unknown address type '%s'"
@@ -37883,10 +37818,6 @@ msgid "unknown bonding mode %s"
 msgstr "неизвестный режим связи %s"
 
 #, c-format
-msgid "unknown boot device '%s'"
-msgstr "неизвестное загрузочное устройство «%s»"
-
-#, c-format
 msgid "unknown capability type '%d' for '%s'"
 msgstr "неизвестный тип возможности «%d» для «%s»"
 
@@ -37938,24 +37869,8 @@ msgid "unknown device type in '%s'"
 msgstr "неизвестный тип устройства в «%s»"
 
 #, c-format
-msgid "unknown dhcp peerdns value %s"
-msgstr "неизвестное значение peerdns DHCP %s"
-
-#, c-format
 msgid "unknown disk snapshot driver '%s'"
 msgstr "неизвестный драйвер снимка диска: «%s»"
-
-#, c-format
-msgid "unknown disk snapshot setting '%s'"
-msgstr "неизвестный параметр снимка диска  «%s»"
-
-#, c-format
-msgid "unknown disk snapshot type '%s'"
-msgstr "неизвестный тип снимка диска «%s»"
-
-#, c-format
-msgid "unknown disk type '%s'"
-msgstr "неизвестный тип диска «%s»"
 
 #, c-format
 msgid "unknown driver format value '%s'"
@@ -37981,16 +37896,8 @@ msgid "unknown event type %s"
 msgstr "неизвестный тип события: %s"
 
 #, c-format
-msgid "unknown filesystem type '%s'"
-msgstr "неизвестный тип файловой системы «%s»"
-
-#, c-format
 msgid "unknown firmware value %s"
 msgstr "неизвестное значение микропрограммы %s"
-
-#, c-format
-msgid "unknown flock value '%s'"
-msgstr "неизвестное значение flock «%s»"
 
 #, c-format
 msgid "unknown forwarding type '%s'"
@@ -38022,14 +37929,6 @@ msgid "unknown hostdev mode '%s'"
 msgstr "неизвестный режим hostdev «%s»"
 
 #, c-format
-msgid "unknown hostdev model '%s'"
-msgstr "неизвестная модель устройства основной системы (hostdev) «%s»"
-
-#, c-format
-msgid "unknown hostdev rawio setting '%s'"
-msgstr "неизвестный параметр rawio устройства основной системы «%s»"
-
-#, c-format
 msgid "unknown hub device type '%s'"
 msgstr "неизвестный тип концентратора: «%s»"
 
@@ -38054,14 +37953,6 @@ msgid "unknown inputvol storage vol type %d"
 msgstr "неизвестный тип тома хранилища inputvol %d"
 
 #, c-format
-msgid "unknown interface event_idx mode '%s'"
-msgstr "неизвестный режим event_idx интерфейса: «%s»"
-
-#, c-format
-msgid "unknown interface ioeventfd mode '%s'"
-msgstr "неизвестный режим ioeventfd для интерфейса: «%s»"
-
-#, c-format
 msgid "unknown interface link state '%s'"
 msgstr "неизвестное состояние связи интерфейса «%s»"
 
@@ -38070,20 +37961,12 @@ msgid "unknown interface startmode %s"
 msgstr "неизвестное значение режима запуска интерфейса %s"
 
 #, c-format
-msgid "unknown interface type %s"
-msgstr "неизвестный тип интерфейса %s"
-
-#, c-format
 msgid "unknown interface type: '%s'"
 msgstr "неизвестный тип интерфейса: «%s»"
 
 #, c-format
 msgid "unknown ip address type '%s'"
 msgstr "неизвестный тип IP-адреса «%s»"
-
-#, c-format
-msgid "unknown memory snapshot setting '%s'"
-msgstr "неизвестный параметр снимка памяти: «%s»"
 
 #, c-format
 msgid "unknown memoryBacking/access/mode '%s'"
@@ -38100,12 +37983,6 @@ msgstr "неизвестное значение memoryBacking/source/type «%s»
 #, c-format
 msgid "unknown metadata type '%d'"
 msgstr "неизвестный тип метаданных «%d»"
-
-#, c-format
-msgid "unknown migratable value for '%s' host CPU model property"
-msgstr ""
-"неизвестное значение migratable для свойства модели процессораосновной "
-"системы «%s»"
 
 #, c-format
 msgid "unknown migration parameter '%s'"
@@ -38125,14 +38002,6 @@ msgstr "неизвестный тип задания создания зерка
 #, c-format
 msgid "unknown mirror ready state %s"
 msgstr "неизвестное состояние готовности зеркала %s"
-
-#, c-format
-msgid "unknown model '%s'"
-msgstr "неизвестная модель «%s»"
-
-#, c-format
-msgid "unknown multidevs '%s'"
-msgstr "неизвестное значение multidevs «%s»"
 
 #, c-format
 msgid "unknown network device feature '%s'"
@@ -38161,24 +38030,12 @@ msgid "unknown partition type"
 msgstr "неизвестный тип разбиения"
 
 #, c-format
-msgid "unknown pci writeFiltering setting '%s'"
-msgstr "неизвестный параметр writeFiltering pci «%s»"
-
-#, c-format
 msgid "unknown pool format number %d"
 msgstr "неизвестный формат пула: %d"
 
 #, c-format
 msgid "unknown pool format type %s"
 msgstr "неизвестный тип формата пула «%s»"
-
-#, c-format
-msgid "unknown port isolated value '%s'"
-msgstr "неизвестное значение isolated порта «%s»"
-
-#, c-format
-msgid "unknown posix lock value '%s'"
-msgstr "неизвестное значение блокировки POSIX «%s»"
 
 #, c-format
 msgid "unknown procedure: %d"
@@ -38228,10 +38085,6 @@ msgstr "неизвестный тип использования секрета"
 #, c-format
 msgid "unknown secret usage type %s"
 msgstr "неизвестный тип использования секрета %s"
-
-#, c-format
-msgid "unknown sgio mode '%s'"
-msgstr "неизвестный режим sgio: «%s»"
 
 #, c-format
 msgid "unknown smbios mode '%s'"
@@ -38302,10 +38155,6 @@ msgid "unknown timer name '%s'"
 msgstr "неизвестное имя таймера «%s»"
 
 #, c-format
-msgid "unknown timer present value '%s'"
-msgstr "неизвестное значение таймера «%s»"
-
-#, c-format
 msgid "unknown timer tickpolicy '%s'"
 msgstr "неизвестное значение «tickpolicy»: «%s»"
 
@@ -38320,14 +38169,6 @@ msgstr "неизвестный тип «%s»"
 #, c-format
 msgid "unknown type presented to host for character device: %s"
 msgstr "неизвестный тип хоста для символьного устройства: %s"
-
-#, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'display'"
-msgstr "неизвестное значение «%s» для атрибута «display» <hostdev>"
-
-#, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
-msgstr "неизвестное значение «%s» для атрибута «ramfb» <hostdev>"
 
 #, c-format
 msgid "unknown value '%s' in attribute 'usable'"
@@ -38390,10 +38231,6 @@ msgstr "неизвестная модель watchdog «%s»"
 msgid "unknown write_policy value '%u'"
 msgstr ""
 
-#, c-format
-msgid "unknown xattr value '%s'"
-msgstr "неизвестное значение xattr «%s»"
-
 msgid "unlimited"
 msgstr "не ограничено"
 
@@ -38412,9 +38249,6 @@ msgstr "возобновлено"
 
 msgid "unplug of device was rejected by the guest"
 msgstr "отключение устройства было отклонено гостевой системой"
-
-msgid "unpriv_sgio is not supported by this kernel"
-msgstr "Ядро не поддерживает unpriv_sgio"
 
 #, c-format
 msgid "unprocessed hole of size %lld already in the queue"
@@ -38589,6 +38423,10 @@ msgstr "неподдерживаемое дисковое устройство"
 msgid "unsupported disk driver %s"
 msgstr "неподдерживаемый драйвер диска %s"
 
+#, c-format
+msgid "unsupported disk snapshot type '%s'"
+msgstr ""
+
 msgid "unsupported disk type"
 msgstr "неподдерживаемый тип диска"
 
@@ -38638,28 +38476,6 @@ msgstr ""
 msgid "unsupported filesystem type '%s'"
 msgstr ""
 
-#. *
-#. * virCheckFlags:
-#. * @supported: an OR'ed set of supported flags
-#. * @retval: return value in case unsupported flags were passed
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Exits the caller function if unsupported flags were
-#. * passed to it.
-#.
-#. *
-#. * virCheckFlagsGoto:
-#. * @supported: an OR'ed set of supported flags
-#. * @label: label to jump to on error
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, c-format
 msgid "unsupported flags (0x%lx) in function %s"
 msgstr "неподдерживаемые флаги (0x%lx) в функции %s"
@@ -38726,6 +38542,10 @@ msgstr "неподдерживаемый идентификатор событи
 #, c-format
 msgid "unsupported numatune mode: '%d'"
 msgstr "неподдерживаемый режим numatune: «%d»"
+
+#, c-format
+msgid "unsupported nvram disk type '%s'"
+msgstr ""
 
 #, c-format
 msgid "unsupported nvram template format '%s'"
@@ -38832,6 +38652,9 @@ msgstr "обновление устройства типа «%s» не подд�
 msgid "upload file contents to a volume"
 msgstr "отправить содержимое файла в том"
 
+msgid "upper boundary for worker thread pool"
+msgstr ""
+
 #, c-format
 msgid "uptime file has unexpected format '%s'"
 msgstr "файл времени работы имеет непредвиденный формат «%s»"
@@ -38894,6 +38717,9 @@ msgstr ""
 msgid "use virDomainMigrateToURI3 for peer-to-peer migration"
 msgstr ""
 "используйте virDomainMigrateToURI3 для миграции с одного узла на другой"
+
+msgid "use zero-copy mechanism for migrating memory pages"
+msgstr ""
 
 msgid "user"
 msgstr "пользователь"
@@ -39252,6 +39078,10 @@ msgid "video type %s is not supported by libxl"
 msgstr "libxl не поддерживает тип видео %s"
 
 #, c-format
+msgid "video type '%s' doesn't support multiple 'heads'"
+msgstr ""
+
+#, c-format
 msgid "video type '%s' is only valid as primary video device"
 msgstr ""
 "тип видео «%s» является корректным только в качестве основного "
@@ -39289,6 +39119,9 @@ msgstr "virDomainManagedSaveGetXMLDesc с флагом безопасности"
 
 msgid "virDomainSnapshotGetXMLDesc with secure flag"
 msgstr "virDomainSnapshotGetXMLDesc с флагом безопасности"
+
+msgid "virFileDiskCopy unsupported on this platform"
+msgstr ""
 
 msgid "virFileOpenAs is not implemented for WIN32"
 msgstr "Функции virFileOpenAs не реализованы в WIN32"
@@ -39380,6 +39213,12 @@ msgstr "диск virtio не может иметь адрес типа «%s»"
 
 msgid "virtio non-transitional model not supported for this qemu"
 msgstr "Для этого QEMU не предусмотрена поддержка непереходных моделей virtio"
+
+msgid "virtio rss hash report is not supported with this QEMU binary"
+msgstr ""
+
+msgid "virtio rss is not supported with this QEMU binary"
+msgstr ""
 
 #, c-format
 msgid "virtio rx_queue_size option %d is not same with tx_queue_size %d"
@@ -39491,6 +39330,10 @@ msgstr "virtiofs ещё не поддерживается в режиме сеа
 msgid "virtiofs only supports passthrough accessmode"
 msgstr "virtiofs поддерживает только accessmode='passthrough'"
 
+#, c-format
+msgid "virtiofsd binary '%s' is not executable"
+msgstr ""
+
 msgid "virtiofsd died unexpectedly"
 msgstr "virtiofsd неожиданно завершил работу"
 
@@ -39535,6 +39378,10 @@ msgstr ""
 
 msgid "vlan trunking is not supported by SR-IOV network devices"
 msgstr "агрегирование vlan для сетевых устройств SR-IOV не поддерживается"
+
+#, c-format
+msgid "vlanid out of range: %d"
+msgstr ""
 
 msgid "vmcoreinfo is not available with this QEMU binary"
 msgstr "для этого исполняемого файла QEMU недоступно vmcoreinfo"
@@ -39584,30 +39431,6 @@ msgstr "в записи родства vnuma %zu нет установленны
 #, c-format
 msgid "vnuma vnode %zu contains invalid pnode value '%s'"
 msgstr "виртуальный узел vnuma %zu содержит недопустимое значение pnode «%s»"
-
-#, c-format
-msgid "vnuma vnode %zu pnode '%s' too long for destination"
-msgstr ""
-"виртуальный узел vnuma %zu, pnode «%s», выходит за пределы допустимой длины "
-"для назначения"
-
-#, c-format
-msgid "vnuma vnode %zu size '%s' too long for destination"
-msgstr ""
-"виртуальный узел vnuma %zu, размер «%s», выходит за пределы допустимой длины "
-"для назначения"
-
-#, c-format
-msgid "vnuma vnode %zu vcpus '%s' too long for destination"
-msgstr ""
-"виртуальный узел vnuma %zu, виртуальный процессор «%s», выходит за пределы "
-"допустимой длины для назначения"
-
-#, c-format
-msgid "vnuma vnode %zu vdistances '%s' too long for destination"
-msgstr ""
-"виртуальный узел vnuma %zu, vdistances «%s», выходит за пределы допустимой "
-"длины для назначения"
 
 #, c-format
 msgid "vnuma vnode invalid format '%s'"
@@ -39833,6 +39656,9 @@ msgstr ""
 msgid "with redefine, set current snapshot"
 msgstr "установить текущий снимок вместе с переопределением"
 
+msgid "wrap xpath results in an common root element"
+msgstr ""
+
 msgid "write I/O operations limit per second"
 msgstr "максимальное число операций записи в секунду"
 
@@ -39883,6 +39709,9 @@ msgstr "XML-файл для экспорта"
 msgid "xml modification unsupported"
 msgstr "изменение XML не поддерживается"
 
+msgid "xpath expression to filter the XML document"
+msgstr ""
+
 #, c-format
 msgid "xsd:dateTime value '%s' has unexpected format"
 msgstr "Недопустимый формат xsd:dateTime: «%s»"
@@ -39897,6 +39726,9 @@ msgstr "yes"
 msgid "zPCI %s %o is already reserved"
 msgstr "zPCI %s %o уже зарезервировано"
 
+msgid "zero-copy is only available for parallel migration"
+msgstr ""
+
 #, c-format
 msgid "zone %s requested for network %s but firewalld is not active"
 msgstr "поступил запрос о зоне %s для сети %s, но firewalld не задействовано"
@@ -39904,6 +39736,435 @@ msgstr "поступил запрос о зоне %s для сети %s, но fi
 #, c-format
 msgid "{[--%s] <string>}..."
 msgstr "{[--%s] <строка>}..."
+
+#~ msgid "Unable to generate diffie-hellman parameters: %s"
+#~ msgstr "Не удалось сгенерировать параметры Диффи — Хелмана: %s"
+
+#~ msgid "Unable to initialize diffie-hellman parameters: %s"
+#~ msgstr "Не удалось инициализировать параметры diffie-hellman: %s"
+
+#~ msgid "cdrom/floppy device hotplug isn't supported"
+#~ msgstr "«горячее» подключение CD-привода или дисковода не поддерживается"
+
+#~ msgid "invalid cache size in query-migrate-cache-size reply"
+#~ msgstr "недопустимый размер кэша в ответе query-migrate-cache-size"
+
+#~ msgid "storage pool protocol ver '%s' is malformed"
+#~ msgstr "версия протокола пула хранилища «%s» неверно сформирована"
+
+#~ msgid "unknown disk type '%s'"
+#~ msgstr "неизвестный тип диска «%s»"
+
+#~ msgid "'startupPolicy' is only valid for 'file' type volume"
+#~ msgstr "«startupPolicy» используется только для томов типа «file»"
+
+#~ msgid "Could not find placement for v1 controller %s at %s"
+#~ msgstr "Не удалось найти размещение для контроллера v1 %s в %s"
+
+#~ msgid "Setting disk %s is not allowed for disk of network type"
+#~ msgstr "Установка %s диска запрещена для диска сетевого типа"
+
+#~ msgid "Setting disk 'requisite' is allowed only for cdrom or floppy"
+#~ msgstr ""
+#~ "Установка «requisite» диска допустима только для CD-привода или дисковода"
+
+#~ msgid "TPM Proxy model %s is only available for PPC64 guests"
+#~ msgstr "Модель прокси TPM %s доступна только для гостевых систем PPC64"
+
+#~ msgid "backup job"
+#~ msgstr "задание резервного копирования"
+
+#~ msgid "domain core dump job"
+#~ msgstr "задание создания дампа домена"
+
+#~ msgid "domain save job"
+#~ msgstr "задача сохранения домена"
+
+#~ msgid "failed due to I/O error"
+#~ msgstr "сбой вследствие ошибки ввода-вывода"
+
+#~ msgid "is not active"
+#~ msgstr "не активно"
+
+#~ msgid "job"
+#~ msgstr "задание"
+
+#~ msgid "migration in job"
+#~ msgstr "задание входящей миграции"
+
+#~ msgid "migration out job"
+#~ msgstr "задание исходящей миграции"
+
+#~ msgid "migration was active, but no RAM info was set"
+#~ msgstr "миграция активна, но не задана информация ОЗУ"
+
+#~ msgid "set the value for reduction of the IOThread polling time "
+#~ msgstr "указать значение для уменьшения времени опроса потока ввода-вывода "
+
+#~ msgid "snapshot job"
+#~ msgstr "задание снимка"
+
+#~ msgid "start job"
+#~ msgstr "задание запуска"
+
+#~ msgid "unexpectedly failed"
+#~ msgstr "неожиданно завершилось"
+
+#~ msgid "%s: unable to determine access mode of fd %d"
+#~ msgstr "%s: не удалось определить режим доступа дескриптора файла %d"
+
+#~ msgid "Can only open VNC or SPICE graphics backends, not %s"
+#~ msgstr "Возможно открыть только графические модули VNC или SPICE, но не %s"
+
+#~ msgid "Failed to release port %d"
+#~ msgstr "Не удалось освободить порт %d"
+
+#~ msgid ""
+#~ "only 1 graphics device of each type (sdl, vnc, spice, headless) is "
+#~ "supported"
+#~ msgstr ""
+#~ "поддерживается только одно графическое устройство каждого типа (sdl, vnc, "
+#~ "spice, headless)"
+
+#~ msgid ""
+#~ "select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\")"
+#~ msgstr ""
+#~ "выбрать определённый графический дисплей (например, «vnc», «spice», «rdp»)"
+
+#~ msgid "%s: failed to communicate with bridge helper: %s%s"
+#~ msgstr ""
+#~ "%s: не удалось обменяться данными со вспомогательным средством моста: %s%s"
+
+#~ msgid "HTP resizing is not supported by this QEMU binary"
+#~ msgstr "Этот исполняемый файл QEMU не поддерживает изменение размера HTP"
+
+#~ msgid "failed to create channel dir '%s': %s"
+#~ msgstr "не удалось создать каталог канала «%s»: %s"
+
+#~ msgid "failed to create dump dir '%s': %s"
+#~ msgstr "не удалось создать каталог дампа «%s»: %s"
+
+#~ msgid "failed to create lib dir '%s': %s"
+#~ msgstr "не удалось создать каталог библиотеки «%s»: %s"
+
+#~ msgid "failed to create log dir '%s': %s"
+#~ msgstr "не удалось создать каталог журнала «%s»: %s"
+
+#~ msgid "failed to create save dir '%s': %s"
+#~ msgstr "не удалось создать каталог сохранения «%s»: %s"
+
+#~ msgid "failed to create state dir '%s': %s"
+#~ msgstr "не удалось создать каталог состояния «%s»: %s"
+
+#~ msgid "pci device assignment backend driver (e.g. 'vfio' or 'kvm')"
+#~ msgstr "драйвер сопоставления устройств PCI (например, vfio или kvm)"
+
+#~ msgid "Call to utsname failed: %d"
+#~ msgstr "Ошибка вызова utsname: %d"
+
+#~ msgid "Cannot parse version string '%s'"
+#~ msgstr "Не удалось обработать строку версии «%s»"
+
+#~ msgid "Could not determine kernel version from string %s"
+#~ msgstr "Не удалось получить версию ядра из строки %s"
+
+#~ msgid "Failed to kill process %lld: %s"
+#~ msgstr "Не удалось остановить процесс %lld: %s"
+
+#~ msgid "No output from iptables --version"
+#~ msgstr "Нет получено данных в ответ на команду iptables --version"
+
+#~ msgid "fseek failed"
+#~ msgstr "сбой fseek"
+
+#~ msgid "interface name %s does not fit into buffer "
+#~ msgstr "имя интерфейса %s не помещается в буфер"
+
+#~ msgid "unable to handle disk requests in snapshot"
+#~ msgstr "в пределах снимка запросы к диску не обрабатываются"
+
+#~ msgid "unknown disk snapshot setting '%s'"
+#~ msgstr "неизвестный параметр снимка диска  «%s»"
+
+#~ msgid "unknown disk snapshot type '%s'"
+#~ msgstr "неизвестный тип снимка диска «%s»"
+
+#~ msgid "unknown memory snapshot setting '%s'"
+#~ msgstr "неизвестный параметр снимка памяти: «%s»"
+
+#~ msgid "'queues' attribute must be positive number: %s"
+#~ msgstr "Атрибут «queues» должен быть положительным целым числом: %s"
+
+#~ msgid "'rx_queue_size' attribute must be positive number: %s"
+#~ msgstr "Атрибут «rx_queue_size» должен быть положительным целым числом: %s"
+
+#~ msgid "'sgio' is not supported for SCSI generic device yet "
+#~ msgstr "«sgio» не поддерживается для устройств семейства SCSI"
+
+#~ msgid "'tx_queue_size' attribute must be positive number: %s"
+#~ msgstr "Атрибут «tx_queue_size» должен быть положительным целым числом: %s"
+
+#~ msgid "Cannot check dnsmasq binary %s"
+#~ msgstr "Не удалось проверить двоичный файл dnsmasq: %s"
+
+#~ msgid "Cannot find name for FD %d socket family %d"
+#~ msgstr ""
+#~ "Не удалось найти имя для файлового дескриптора %d семейства сокетов %d"
+
+#~ msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
+#~ msgstr ""
+#~ "Не удалось установить МАС-адрес/vlanid интерфейса в %s/%d для ifname %s "
+#~ "vf %d"
+
+#~ msgid "Could not start 'swtpm'. exitstatus: %d, error: %s"
+#~ msgstr "Не удалось запустить «swtpm». Состояние выхода: %d, ошибка: %s"
+
+#~ msgid "Invalid TSC frequency"
+#~ msgstr "Недопустимая частота TSC"
+
+#~ msgid "Invalid TSC scaling attribute"
+#~ msgstr "Недопустимый атрибут масштабирования TSC"
+
+#~ msgid "Invalid dns enable setting '%s' in network '%s'"
+#~ msgstr "Недопустимый параметр «enable» DNS «%s» в сети «%s»"
+
+#~ msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
+#~ msgstr "Недопустимый параметр forwardPlainNames DNS «%s» в сети «%s»"
+
+#~ msgid "Invalid domain localOnly setting '%s' in network '%s'"
+#~ msgstr "Недопустимый параметр localOnly домена «%s» в сети «%s»"
+
+#~ msgid "Invalid guest rx filters trust setting '%s' "
+#~ msgstr "Недопустимый параметр доверия для фильтров rx гостевой системы «%s»"
+
+#~ msgid "Invalid ip address prefix value"
+#~ msgstr "Недопустимый префикс IP-адреса"
+
+#~ msgid "Invalid localPtr value '%s' in network '%s'"
+#~ msgstr "Недопустимое значение localPtr «%s» в сети «%s»"
+
+#~ msgid "Invalid managed setting '%s' in network port"
+#~ msgstr "Недопустимый управляемый параметр «%s» в записи сетевого порта"
+
+#~ msgid "Invalid match attribute for CPU specification"
+#~ msgstr "Недопустимый атрибут «match» для спецификации процессора"
+
+#~ msgid "Invalid memory core dump attribute value '%s'"
+#~ msgstr "Недопустимое значение атрибута дампа памяти: «%s»"
+
+#~ msgid "Invalid network prt plug type '%s'"
+#~ msgstr "Недопустимый тип соединения сетевого порта «%s»"
+
+#~ msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
+#~ msgstr "Недопустимый параметр trustGuestRxFilters «%s» в сети «%s»"
+
+#~ msgid "Invalid trustGuestRxFilters setting '%s' in portgroup"
+#~ msgstr "Недопустимый параметр trustGuestRxFilters «%s» в portgroup"
+
+#~ msgid "Invalid value in migratable attribute: '%s'"
+#~ msgstr "Недопустимое значение в атрибуте migratable: «%s»"
+
+#~ msgid "KVM is not supported by '%s' on this host"
+#~ msgstr "KVM не поддерживается «%s» на этом хосте"
+
+#~ msgid "Missing 'model' attribute in mediated device's <hostdev> element"
+#~ msgstr ""
+#~ "Элемент промежуточного устройства <hostdev> не содержит атрибут «model»"
+
+#~ msgid "Target timer presence %d does not match source %d"
+#~ msgstr "%d не соответствует исходному значению «present» (%d)"
+
+#~ msgid "Unable to close file '%s'"
+#~ msgstr "Не удалось закрыть файл «%s»"
+
+#~ msgid "Unable to get device ID '%s'"
+#~ msgstr "Не удалось получить идентификатор устройства: «%s»"
+
+#~ msgid "Unable to get minor number of device '%s'"
+#~ msgstr "Не удалось получить младший номер устройства «%s»"
+
+#~ msgid "Unexpected socket family %d"
+#~ msgstr "Непредвиденное семейство сокетов %d"
+
+#~ msgid "Unknown PCI device <driver name='%s'/> has been specified"
+#~ msgstr "Неизвестное устройство PCI: <driver name='%s'/>"
+
+#~ msgid "Unknown interface <driver name='%s'> has been specified"
+#~ msgstr "Неизвестный интерфейс: <driver name='%s'>"
+
+#~ msgid "Unknown interface <driver txmode='%s'> has been specified"
+#~ msgstr "Неизвестный интерфейс <driver txmode='%s'>"
+
+#~ msgid "cannot parse cache mode '%s' for virtiofs"
+#~ msgstr "не удалось разобрать режим кэширования «%s» для virtiofs"
+
+#~ msgid "dnsmasq binary %s is not executable"
+#~ msgstr "dnsmasq %s не является исполняемым компонентом"
+
+#~ msgid "failed to parse value of %s"
+#~ msgstr "не удалось обработать значение %s"
+
+#~ msgid "file descriptor %d has not been transferred"
+#~ msgstr "файловый дескриптор %d не был передан"
+
+#~ msgid "interface misses the type attribute"
+#~ msgstr "отсутствует атрибут типа интерфейса"
+
+#~ msgid "invalid allowReboot value '%s'"
+#~ msgstr "недопустимое значение allowReboot «%s»"
+
+#~ msgid "invalid mac address check value: '%s'"
+#~ msgstr "недопустимое значение проверки MAC-адреса: «%s»"
+
+#~ msgid "invalid migratability value for host CPU model"
+#~ msgstr ""
+#~ "недопустимое значение параметра переносимости для модели процессора "
+#~ "основной системы"
+
+#~ msgid "invalid or missing decode/guest attribute in CPU model %s"
+#~ msgstr ""
+#~ "недопустимый или отсутствующий атрибут decode/guest в модели процессора %s"
+
+#~ msgid "invalid or missing decode/host attribute in CPU model %s"
+#~ msgstr ""
+#~ "недопустимый или отсутствующий атрибут decode/host в модели процессора %s"
+
+#~ msgid "invalid storage pool cow feature state '%s'"
+#~ msgstr "недопустимое состояние возможности cow пула носителей «%s»"
+
+#~ msgid "invalid value for 'managed': %s"
+#~ msgstr "недопустимое значение параметра «managed»: %s"
+
+#~ msgid "missing @managed attribute for <reservations/>"
+#~ msgstr "отсутствует атрибут @managed для <reservations/>"
+
+#~ msgid "missing boot device"
+#~ msgstr "отсутствует загрузочное устройство"
+
+#~ msgid "sgio of shared disk '%s' conflicts with other active domains"
+#~ msgstr "конфликт sgio общего диска «%s» с другими активными доменами"
+
+#~ msgid ""
+#~ "sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active "
+#~ "domains"
+#~ msgstr ""
+#~ "конфликт sgio общего диска «pool=%s» «volume=%s» с другими активными "
+#~ "доменами"
+
+#~ msgid "swtpm failed to start"
+#~ msgstr "не удалось запустить swtpm"
+
+#~ msgid "this version of libxenlight does not support backend domain name"
+#~ msgstr "эта версия libxenlight не поддерживает имя домена модуля"
+
+#~ msgid "unexpected timer mode %d"
+#~ msgstr "недопустимый режим таймера %d"
+
+#~ msgid "unexpected timer name %d"
+#~ msgstr "непредвиденное имя таймера: %d"
+
+#~ msgid "unexpected timer tickpolicy %d"
+#~ msgstr "непредвиденное значение  «tickpolicy»: %d"
+
+#~ msgid "unexpected timer track %d"
+#~ msgstr "непредвиденное значение атрибута «track»: %d"
+
+#~ msgid "unknown PM state value %s"
+#~ msgstr "неизвестное состояние управления питанием: «%s»"
+
+#~ msgid "unknown accel2d value '%s'"
+#~ msgstr "неизвестное значение accel2d «%s»"
+
+#~ msgid "unknown accel3d value '%s'"
+#~ msgstr "неизвестное значение accel3d «%s»"
+
+#~ msgid "unknown accessmode '%s'"
+#~ msgstr "неизвестный режим доступа: «%s»"
+
+#~ msgid "unknown boot device '%s'"
+#~ msgstr "неизвестное загрузочное устройство «%s»"
+
+#~ msgid "unknown dhcp peerdns value %s"
+#~ msgstr "неизвестное значение peerdns DHCP %s"
+
+#~ msgid "unknown filesystem type '%s'"
+#~ msgstr "неизвестный тип файловой системы «%s»"
+
+#~ msgid "unknown flock value '%s'"
+#~ msgstr "неизвестное значение flock «%s»"
+
+#~ msgid "unknown hostdev model '%s'"
+#~ msgstr "неизвестная модель устройства основной системы (hostdev) «%s»"
+
+#~ msgid "unknown hostdev rawio setting '%s'"
+#~ msgstr "неизвестный параметр rawio устройства основной системы «%s»"
+
+#~ msgid "unknown interface event_idx mode '%s'"
+#~ msgstr "неизвестный режим event_idx интерфейса: «%s»"
+
+#~ msgid "unknown interface ioeventfd mode '%s'"
+#~ msgstr "неизвестный режим ioeventfd для интерфейса: «%s»"
+
+#~ msgid "unknown interface type %s"
+#~ msgstr "неизвестный тип интерфейса %s"
+
+#~ msgid "unknown migratable value for '%s' host CPU model property"
+#~ msgstr ""
+#~ "неизвестное значение migratable для свойства модели процессораосновной "
+#~ "системы «%s»"
+
+#~ msgid "unknown model '%s'"
+#~ msgstr "неизвестная модель «%s»"
+
+#~ msgid "unknown multidevs '%s'"
+#~ msgstr "неизвестное значение multidevs «%s»"
+
+#~ msgid "unknown pci writeFiltering setting '%s'"
+#~ msgstr "неизвестный параметр writeFiltering pci «%s»"
+
+#~ msgid "unknown port isolated value '%s'"
+#~ msgstr "неизвестное значение isolated порта «%s»"
+
+#~ msgid "unknown posix lock value '%s'"
+#~ msgstr "неизвестное значение блокировки POSIX «%s»"
+
+#~ msgid "unknown sgio mode '%s'"
+#~ msgstr "неизвестный режим sgio: «%s»"
+
+#~ msgid "unknown timer present value '%s'"
+#~ msgstr "неизвестное значение таймера «%s»"
+
+#~ msgid "unknown value '%s' for <hostdev> attribute 'display'"
+#~ msgstr "неизвестное значение «%s» для атрибута «display» <hostdev>"
+
+#~ msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
+#~ msgstr "неизвестное значение «%s» для атрибута «ramfb» <hostdev>"
+
+#~ msgid "unknown xattr value '%s'"
+#~ msgstr "неизвестное значение xattr «%s»"
+
+#~ msgid "unpriv_sgio is not supported by this kernel"
+#~ msgstr "Ядро не поддерживает unpriv_sgio"
+
+#~ msgid "vnuma vnode %zu pnode '%s' too long for destination"
+#~ msgstr ""
+#~ "виртуальный узел vnuma %zu, pnode «%s», выходит за пределы допустимой "
+#~ "длины для назначения"
+
+#~ msgid "vnuma vnode %zu size '%s' too long for destination"
+#~ msgstr ""
+#~ "виртуальный узел vnuma %zu, размер «%s», выходит за пределы допустимой "
+#~ "длины для назначения"
+
+#~ msgid "vnuma vnode %zu vcpus '%s' too long for destination"
+#~ msgstr ""
+#~ "виртуальный узел vnuma %zu, виртуальный процессор «%s», выходит за "
+#~ "пределы допустимой длины для назначения"
+
+#~ msgid "vnuma vnode %zu vdistances '%s' too long for destination"
+#~ msgstr ""
+#~ "виртуальный узел vnuma %zu, vdistances «%s», выходит за пределы "
+#~ "допустимой длины для назначения"
 
 #~ msgid "Attempt to pass closed vhostuser FD"
 #~ msgstr "Попытка передачи закрытого файлового дескриптора vhostuser"
@@ -39997,11 +40258,6 @@ msgstr "{[--%s] <строка>}..."
 
 #~ msgid "[%s]"
 #~ msgstr "[%s]"
-
-#~ msgid "change of nodeset for running domain requires strict numa mode"
-#~ msgstr ""
-#~ "для внесения изменений в набор узлов работающего домена необходимо "
-#~ "перейти в строгий (strict) режим NUMA "
 
 #~ msgid "couldn't write radvd config file '%s'"
 #~ msgstr "ошибка записи в файл конфигурации radvd: «%s»"

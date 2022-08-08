@@ -25,6 +25,9 @@
 # include "qemu/qemu_conf.h"
 
 # define TEST_QEMU_CAPS_PATH abs_srcdir "/qemucapabilitiesdata"
+# define TEST_TPM_ENV_VAR "VIR_TEST_MOCK_FAKE_TPM_VERSION"
+# define TPM_VER_1_2 "1.2"
+# define TPM_VER_2_0 "2.0"
 
 enum {
     GIC_NONE = 0,
@@ -47,6 +50,7 @@ typedef enum {
     ARG_PARSEFLAGS,
     ARG_CAPS_ARCH,
     ARG_CAPS_VER,
+    ARG_CAPS_HOST_CPU_MODEL,
     ARG_HOST_OS,
     ARG_END,
 } testQemuInfoArgName;
@@ -66,12 +70,21 @@ struct testQemuConf {
     GHashTable *qapiSchemaCache;
 };
 
+typedef enum {
+    QEMU_CPU_DEF_DEFAULT,
+    QEMU_CPU_DEF_HASWELL,
+    QEMU_CPU_DEF_POWER8,
+    QEMU_CPU_DEF_POWER9,
+    QEMU_CPU_DEF_POWER10,
+} qemuTestCPUDef;
+
 struct testQemuArgs {
     bool newargs;
     virQEMUCaps *fakeCaps;
     bool fakeCapsUsed;
     char *capsver;
     char *capsarch;
+    qemuTestCPUDef capsHostCPUModel;
     int gic;
     testQemuHostOS hostOS;
     bool invalidarg;
@@ -101,11 +114,7 @@ virDomainXMLOption *testQemuXMLConfInit(void);
 
 virQEMUCaps *qemuTestParseCapabilitiesArch(virArch arch,
                                              const char *capsFile);
-
-extern virCPUDef *cpuDefault;
-extern virCPUDef *cpuHaswell;
-extern virCPUDef *cpuPower8;
-extern virCPUDef *cpuPower9;
+virCPUDef *qemuTestGetCPUDef(qemuTestCPUDef d);
 
 void qemuTestSetHostArch(virQEMUDriver *driver,
                          virArch arch);
@@ -143,4 +152,7 @@ void testQemuInfoSetArgs(struct testQemuInfo *info,
 int testQemuInfoInitArgs(struct testQemuInfo *info);
 void testQemuInfoClear(struct testQemuInfo *info);
 
+int testQemuPrepareHostBackendChardevOne(virDomainDeviceDef *dev,
+                                         virDomainChrSourceDef *chardev,
+                                         void *opaque);
 #endif

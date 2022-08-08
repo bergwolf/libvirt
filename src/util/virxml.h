@@ -38,6 +38,9 @@ typedef enum {
     VIR_XML_PROP_NONE = 0,
     VIR_XML_PROP_REQUIRED = 1 << 0, /* Attribute may not be absent */
     VIR_XML_PROP_NONZERO = 1 << 1, /* Attribute may not be zero */
+    VIR_XML_PROP_NONNEGATIVE = 1 << 2, /* Attribute may not be negative, makes
+                                          sense only for some virXMLProp*()
+                                          functions. */
 } virXMLPropFlags;
 
 
@@ -101,6 +104,13 @@ virXMLPropTristateBool(xmlNodePtr node,
                        const char *name,
                        virXMLPropFlags flags,
                        virTristateBool *result)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(4);
+
+int
+virXMLPropTristateBoolAllowDefault(xmlNodePtr node,
+                                   const char *name,
+                                   virXMLPropFlags flags,
+                                   virTristateBool *result)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(4);
 
 int
@@ -315,6 +325,13 @@ void
 virXMLValidatorFree(virXMLValidator *validator);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virXMLValidator, virXMLValidatorFree);
 
+void
+virXMLFormatElementInternal(virBuffer *buf,
+                            const char *name,
+                            virBuffer *attrBuf,
+                            virBuffer *childBuf,
+                            bool allowEmpty,
+                            bool childNewline);
 void
 virXMLFormatElement(virBuffer *buf,
                     const char *name,

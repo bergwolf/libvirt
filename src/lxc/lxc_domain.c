@@ -25,44 +25,15 @@
 
 #include "virlog.h"
 #include "virerror.h"
-#include "virstring.h"
-#include "virfile.h"
 #include "virtime.h"
 #include "virsystemd.h"
 #include "virinitctl.h"
 #include "domain_driver.h"
+#include "domain_job.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXC
 
-VIR_ENUM_IMPL(virLXCDomainJob,
-              LXC_JOB_LAST,
-              "none",
-              "query",
-              "destroy",
-              "modify",
-);
-
 VIR_LOG_INIT("lxc.lxc_domain");
-
-static int
-virLXCDomainObjInitJob(virLXCDomainObjPrivate *priv)
-{
-    memset(&priv->job, 0, sizeof(priv->job));
-
-    if (virCondInit(&priv->job.cond) < 0)
-        return -1;
-
-    return 0;
-}
-
-static void
-virLXCDomainObjResetJob(virLXCDomainObjPrivate *priv)
-{
-    struct virLXCDomainJobObj *job = &priv->job;
-
-    job->active = LXC_JOB_NONE;
-    job->owner = 0;
-}
 
 static void
 virLXCDomainObjFreeJob(virLXCDomainObjPrivate *priv)
@@ -85,7 +56,7 @@ virLXCDomainObjFreeJob(virLXCDomainObjPrivate *priv)
 int
 virLXCDomainObjBeginJob(virLXCDriver *driver G_GNUC_UNUSED,
                        virDomainObj *obj,
-                       enum virLXCDomainJob job)
+                       virDomainJob job)
 {
     virLXCDomainObjPrivate *priv = obj->privateData;
     unsigned long long now;
@@ -97,14 +68,14 @@ virLXCDomainObjBeginJob(virLXCDriver *driver G_GNUC_UNUSED,
 
     while (priv->job.active) {
         VIR_DEBUG("Wait normal job condition for starting job: %s",
-                  virLXCDomainJobTypeToString(job));
+                  virDomainJobTypeToString(job));
         if (virCondWaitUntil(&priv->job.cond, &obj->parent.lock, then) < 0)
             goto error;
     }
 
-    virLXCDomainObjResetJob(priv);
+    virDomainObjResetJob(&priv->job);
 
-    VIR_DEBUG("Starting job: %s", virLXCDomainJobTypeToString(job));
+    VIR_DEBUG("Starting job: %s", virDomainJobTypeToString(job));
     priv->job.active = job;
     priv->job.owner = virThreadSelfID();
 
@@ -112,10 +83,10 @@ virLXCDomainObjBeginJob(virLXCDriver *driver G_GNUC_UNUSED,
 
  error:
     VIR_WARN("Cannot start job (%s) for domain %s;"
-             " current job is (%s) owned by (%d)",
-             virLXCDomainJobTypeToString(job),
+             " current job is (%s) owned by (%llu)",
+             virDomainJobTypeToString(job),
              obj->def->name,
-             virLXCDomainJobTypeToString(priv->job.active),
+             virDomainJobTypeToString(priv->job.active),
              priv->job.owner);
 
     if (errno == ETIMEDOUT)
@@ -139,25 +110,27 @@ virLXCDomainObjEndJob(virLXCDriver *driver G_GNUC_UNUSED,
                      virDomainObj *obj)
 {
     virLXCDomainObjPrivate *priv = obj->privateData;
-    enum virLXCDomainJob job = priv->job.active;
+    virDomainJob job = priv->job.active;
 
     VIR_DEBUG("Stopping job: %s",
-              virLXCDomainJobTypeToString(job));
+              virDomainJobTypeToString(job));
 
-    virLXCDomainObjResetJob(priv);
+    virDomainObjResetJob(&priv->job);
     virCondSignal(&priv->job.cond);
 }
 
 
 static void *
-virLXCDomainObjPrivateAlloc(void *opaque G_GNUC_UNUSED)
+virLXCDomainObjPrivateAlloc(void *opaque)
 {
     virLXCDomainObjPrivate *priv = g_new0(virLXCDomainObjPrivate, 1);
 
-    if (virLXCDomainObjInitJob(priv) < 0) {
+    if (virDomainObjInitJob(&priv->job, NULL) < 0) {
         g_free(priv);
         return NULL;
     }
+
+    priv->driver = opaque;
 
     return priv;
 }
@@ -490,9 +463,7 @@ virLXCDomainSetRunlevel(virDomainObj *vm,
                                         lxcDomainInitctlCallback,
                                         &data);
  cleanup:
-    g_free(data.st);
-    data.st = NULL;
-    g_free(data.st_valid);
-    data.st_valid = NULL;
+    g_clear_pointer(&data.st, g_free);
+    g_clear_pointer(&data.st_valid, g_free);
     return ret;
 }

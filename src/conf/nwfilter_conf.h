@@ -26,7 +26,6 @@
 
 #include "internal.h"
 
-#include "virhash.h"
 #include "virxml.h"
 #include "virbuffer.h"
 #include "virsocketaddr.h"
@@ -551,15 +550,6 @@ virNWFilterDefParseString(const char *xml,
 
 virNWFilterDef *
 virNWFilterDefParseFile(const char *filename);
-
-void
-virNWFilterWriteLockFilterUpdates(void);
-
-void
-virNWFilterReadLockFilterUpdates(void);
-
-void
-virNWFilterUnlockFilterUpdates(void);
 
 typedef int (*virNWFilterTriggerRebuildCallback)(void *opaque);
 

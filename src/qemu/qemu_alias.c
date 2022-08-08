@@ -22,7 +22,6 @@
 #include <config.h>
 
 #include "qemu_alias.h"
-#include "viralloc.h"
 #include "virlog.h"
 #include "virstring.h"
 #include "virutil.h"
@@ -598,6 +597,14 @@ qemuAssignDeviceVsockAlias(virDomainVsockDef *vsock)
 }
 
 
+static void
+qemuAssignDeviceIOMMUAlias(virDomainIOMMUDef *iommu)
+{
+    if (!iommu->info.alias)
+        iommu->info.alias = g_strdup("iommu0");
+}
+
+
 int
 qemuAssignDeviceAliases(virDomainDef *def, virQEMUCaps *qemuCaps)
 {
@@ -682,6 +689,8 @@ qemuAssignDeviceAliases(virDomainDef *def, virQEMUCaps *qemuCaps)
     if (def->vsock) {
         qemuAssignDeviceVsockAlias(def->vsock);
     }
+    if (def->iommu)
+        qemuAssignDeviceIOMMUAlias(def->iommu);
 
     return 0;
 }

@@ -23,11 +23,7 @@
 
 #include "viralloc.h"
 #include "virerror.h"
-#include "virstring.h"
-#include "nwfilter_params.h"
 #include "virnwfilterbindingobj.h"
-#include "viruuid.h"
-#include "virfile.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_NWFILTER
@@ -134,8 +130,7 @@ virNWFilterBindingObjEndAPI(virNWFilterBindingObj **obj)
         return;
 
     virObjectUnlock(*obj);
-    virObjectUnref(*obj);
-    *obj = NULL;
+    g_clear_pointer(obj, virObjectUnref);
 }
 
 

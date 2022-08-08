@@ -35,7 +35,6 @@
 #include "node_device_event.h"
 #include "secret_event.h"
 #include "driver.h"
-#include "virbuffer.h"
 #include "remote_driver.h"
 #include "remote_protocol.h"
 #include "remote_sockets.h"
@@ -43,7 +42,6 @@
 #include "qemu_protocol.h"
 #include "viralloc.h"
 #include "virfile.h"
-#include "vircommand.h"
 #include "virtypedparam.h"
 #include "viruri.h"
 #include "virauth.h"
@@ -1098,7 +1096,7 @@ doRemoteOpen(virConnectPtr conn,
     virObjectRef(priv->closeCallback);
     virNetClientSetCloseCallback(priv->client,
                                  remoteClientCloseFunc,
-                                 priv->closeCallback, virObjectFreeCallback);
+                                 priv->closeCallback, virObjectUnref);
 
     if (!(priv->remoteProgram = virNetClientProgramNew(REMOTE_PROGRAM,
                                                        REMOTE_PROTOCOL_VERSION,
@@ -1193,12 +1191,9 @@ doRemoteOpen(virConnectPtr conn,
     virObjectUnref(priv->lxcProgram);
     virObjectUnref(priv->qemuProgram);
     virNetClientClose(priv->client);
-    virObjectUnref(priv->client);
-    priv->client = NULL;
-    virObjectUnref(priv->closeCallback);
-    priv->closeCallback = NULL;
-    virObjectUnref(priv->tls);
-    priv->tls = NULL;
+    g_clear_pointer(&priv->client, virObjectUnref);
+    g_clear_pointer(&priv->closeCallback, virObjectUnref);
+    g_clear_pointer(&priv->tls, virObjectUnref);
 
     VIR_FREE(priv->hostname);
     return VIR_DRV_OPEN_ERROR;
@@ -1302,18 +1297,15 @@ doRemoteClose(virConnectPtr conn, struct private_data *priv)
              (xdrproc_t) xdr_void, (char *) NULL) == -1)
         ret = -1;
 
-    virObjectUnref(priv->tls);
-    priv->tls = NULL;
+    g_clear_pointer(&priv->tls, virObjectUnref);
 
     virNetClientSetCloseCallback(priv->client,
                                  NULL,
-                                 priv->closeCallback, virObjectFreeCallback);
+                                 priv->closeCallback, virObjectUnref);
 
     virNetClientClose(priv->client);
-    virObjectUnref(priv->client);
-    priv->client = NULL;
-    virObjectUnref(priv->closeCallback);
-    priv->closeCallback = NULL;
+    g_clear_pointer(&priv->client, virObjectUnref);
+    g_clear_pointer(&priv->closeCallback, virObjectUnref);
     virObjectUnref(priv->remoteProgram);
     virObjectUnref(priv->lxcProgram);
     virObjectUnref(priv->qemuProgram);
@@ -1325,8 +1317,7 @@ doRemoteClose(virConnectPtr conn, struct private_data *priv)
     /* See comment for remoteType. */
     VIR_FREE(priv->type);
 
-    virObjectUnref(priv->eventState);
-    priv->eventState = NULL;
+    g_clear_pointer(&priv->eventState, virObjectUnref);
 
     return ret;
 }
@@ -5938,6 +5929,62 @@ remoteDomainQemuMonitorCommand(virDomainPtr domain, const char *cmd,
 }
 
 
+static int
+remoteDomainQemuMonitorCommandWithFiles(virDomainPtr domain,
+                                        const char *cmd,
+                                        unsigned int ninfiles,
+                                        int *infiles,
+                                        unsigned int *noutfiles,
+                                        int **outfiles,
+                                        char **result,
+                                        unsigned int flags)
+{
+    int rv = -1;
+    qemu_domain_monitor_command_with_files_args args;
+    qemu_domain_monitor_command_with_files_ret ret;
+    struct private_data *priv = domain->conn->privateData;
+    size_t rpc_noutfiles = 0;
+    g_autofree int *rpc_outfiles = NULL;
+    size_t i;
+
+    remoteDriverLock(priv);
+
+    make_nonnull_domain(&args.dom, domain);
+    args.cmd = (char *)cmd;
+    args.flags = flags;
+
+    memset(&ret, 0, sizeof(ret));
+    if (callFull(domain->conn, priv, REMOTE_CALL_QEMU,
+                 infiles, ninfiles, &rpc_outfiles, &rpc_noutfiles,
+                 QEMU_PROC_DOMAIN_MONITOR_COMMAND_WITH_FILES,
+                 (xdrproc_t) xdr_qemu_domain_monitor_command_with_files_args, (char *) &args,
+                 (xdrproc_t) xdr_qemu_domain_monitor_command_with_files_ret, (char *) &ret) == -1)
+        goto done;
+
+    if (outfiles)
+        *outfiles = g_steal_pointer(&rpc_outfiles);
+
+    if (noutfiles)
+        *noutfiles = rpc_noutfiles;
+
+    *result = g_strdup(ret.result);
+
+    rv = 0;
+
+    xdr_free((xdrproc_t) xdr_qemu_domain_monitor_command_with_files_ret, (char *) &ret);
+
+ done:
+    if (rpc_outfiles) {
+        for (i = 0; i < rpc_noutfiles; i++) {
+            VIR_FORCE_CLOSE(rpc_outfiles[i]);
+        }
+    }
+
+    remoteDriverUnlock(priv);
+    return rv;
+}
+
+
 static char *
 remoteDomainMigrateBegin3(virDomainPtr domain,
                           const char *xmlin,
@@ -6095,7 +6142,7 @@ remoteDomainMigratePrepareTunnel3(virConnectPtr dconn,
 
     st->driver = &remoteStreamDrv;
     st->privateData = netst;
-    st->ff = virObjectFreeCallback;
+    st->ff = virObjectUnref;
 
     args.cookie_in.cookie_in_val = (char *)cookiein;
     args.cookie_in.cookie_in_len = cookieinlen;
@@ -7035,7 +7082,7 @@ remoteDomainMigratePrepareTunnel3Params(virConnectPtr dconn,
 
     st->driver = &remoteStreamDrv;
     st->privateData = netst;
-    st->ff = virObjectFreeCallback;
+    st->ff = virObjectUnref;
 
     if (call(dconn, priv, 0, REMOTE_PROC_DOMAIN_MIGRATE_PREPARE_TUNNEL3_PARAMS,
              (xdrproc_t) xdr_remote_domain_migrate_prepare_tunnel3_params_args,
@@ -8397,8 +8444,10 @@ static virHypervisorDriver hypervisor_driver = {
     .domainGetControlInfo = remoteDomainGetControlInfo, /* 0.9.3 */
     .domainSave = remoteDomainSave, /* 0.3.0 */
     .domainSaveFlags = remoteDomainSaveFlags, /* 0.9.4 */
+    .domainSaveParams = remoteDomainSaveParams, /* 8.4.0 */
     .domainRestore = remoteDomainRestore, /* 0.3.0 */
     .domainRestoreFlags = remoteDomainRestoreFlags, /* 0.9.4 */
+    .domainRestoreParams = remoteDomainRestoreParams, /* 8.4.0 */
     .domainSaveImageGetXMLDesc = remoteDomainSaveImageGetXMLDesc, /* 0.9.4 */
     .domainSaveImageDefineXML = remoteDomainSaveImageDefineXML, /* 0.9.4 */
     .domainCoreDump = remoteDomainCoreDump, /* 0.3.0 */
@@ -8483,6 +8532,7 @@ static virHypervisorDriver hypervisor_driver = {
     .domainGetJobInfo = remoteDomainGetJobInfo, /* 0.7.7 */
     .domainGetJobStats = remoteDomainGetJobStats, /* 1.0.3 */
     .domainAbortJob = remoteDomainAbortJob, /* 0.7.7 */
+    .domainAbortJobFlags = remoteDomainAbortJobFlags, /* 8.5.0 */
     .domainMigrateGetMaxDowntime = remoteDomainMigrateGetMaxDowntime, /* 3.7.0 */
     .domainMigrateSetMaxDowntime = remoteDomainMigrateSetMaxDowntime, /* 0.8.0 */
     .domainMigrateGetCompressionCache = remoteDomainMigrateGetCompressionCache, /* 1.0.3 */
@@ -8513,6 +8563,7 @@ static virHypervisorDriver hypervisor_driver = {
     .domainSnapshotHasMetadata = remoteDomainSnapshotHasMetadata, /* 0.9.13 */
     .domainSnapshotDelete = remoteDomainSnapshotDelete, /* 0.8.0 */
     .domainQemuMonitorCommand = remoteDomainQemuMonitorCommand, /* 0.8.3 */
+    .domainQemuMonitorCommandWithFiles = remoteDomainQemuMonitorCommandWithFiles, /* 8.2.0 */
     .domainQemuAttach = remoteDomainQemuAttach, /* 0.9.4 */
     .domainQemuAgentCommand = remoteDomainQemuAgentCommand, /* 0.10.0 */
     .connectDomainQemuMonitorEventRegister = remoteConnectDomainQemuMonitorEventRegister, /* 1.2.3 */

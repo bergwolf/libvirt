@@ -54,15 +54,7 @@ typedef enum {
 
 void virCommandPassFD(virCommand *cmd,
                       int fd,
-                      unsigned int flags) G_GNUC_NO_INLINE;
-
-void virCommandPassFDIndex(virCommand *cmd,
-                           int fd,
-                           unsigned int flags,
-                           size_t *idx) G_GNUC_NO_INLINE;
-
-int virCommandPassFDGetFDIndex(virCommand *cmd,
-                               int fd);
+                      unsigned int flags) G_NO_INLINE;
 
 void virCommandSetPidFile(virCommand *cmd,
                           const char *pidfile) ATTRIBUTE_NONNULL(2);

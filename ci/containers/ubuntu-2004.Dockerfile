@@ -20,7 +20,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             codespell \
             cpp \
             diffutils \
-            dnsmasq-base \
             dwarves \
             ebtables \
             flake8 \
@@ -98,8 +97,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/clang && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/gcc
 
-RUN pip3 install \
-         meson==0.56.0
+RUN pip3 install meson==0.56.0
 
 ENV LANG "en_US.UTF-8"
 ENV MAKE "/usr/bin/make"

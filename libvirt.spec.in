@@ -21,6 +21,9 @@
 %define arches_systemtap_64bit  %{arches_64bit}
 %define arches_dmidecode        %{arches_x86}
 %define arches_xen              %{arches_x86} aarch64
+%if 0%{?fedora} >= 36
+    %define arches_xen              x86_64 aarch64
+%endif
 %define arches_vbox             %{arches_x86}
 %define arches_ceph             %{arches_64bit}
 %define arches_zfs              %{arches_x86} %{power64} %{arm}
@@ -1362,18 +1365,12 @@ then
         # own the sockets again when it comes back up. Thus we must
         # do this particular ordering, so that we get libvirtd
         # running with socket activation in use
-        /bin/systemctl is-active libvirtd.service 1>/dev/null 2>&1
-        if test $? = 0
-        then
-            /bin/systemctl stop libvirtd.service >/dev/null 2>&1 || :
-
-            /bin/systemctl try-restart \
-                    libvirtd.socket \
-                    libvirtd-ro.socket \
-                    libvirtd-admin.socket >/dev/null 2>&1 || :
-
-            /bin/systemctl start libvirtd.service >/dev/null 2>&1 || :
-        fi
+        /bin/systemctl stop libvirtd.service >/dev/null 2>&1 || :
+        /bin/systemctl try-restart \
+                libvirtd.socket \
+                libvirtd-ro.socket \
+                libvirtd-admin.socket >/dev/null 2>&1 || :
+        /bin/systemctl start libvirtd.service >/dev/null 2>&1 || :
     fi
 fi
 
@@ -1733,7 +1730,6 @@ exit 0
 %{_mandir}/man8/virtlogd.8*
 %{_mandir}/man8/virtlockd.8*
 %{_mandir}/man8/virtproxyd.8*
-%{_mandir}/man7/virkey*.7*
 
 %{_bindir}/virt-host-validate
 %{_bindir}/virt-admin
@@ -2039,6 +2035,7 @@ exit 0
 %{_mandir}/man1/virt-xml-validate.1*
 %{_mandir}/man1/virt-pki-query-dn.1*
 %{_mandir}/man1/virt-pki-validate.1*
+%{_mandir}/man7/virkey*.7*
 %{_bindir}/virsh
 %{_bindir}/virt-xml-validate
 %{_bindir}/virt-pki-query-dn

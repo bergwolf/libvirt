@@ -21,12 +21,13 @@
 #include <config.h>
 
 #include "virsh-completer-host.h"
-#include "viralloc.h"
 #include "virsh.h"
 #include "virstring.h"
 #include "virxml.h"
 #include "virutil.h"
 #include "virsh-host.h"
+#include "conf/domain_conf.h"
+#include "virarch.h"
 
 static char *
 virshPagesizeNodeToString(xmlNodePtr node)
@@ -42,7 +43,7 @@ virshPagesizeNodeToString(xmlNodePtr node)
     unit = virXMLPropString(node, "unit");
     if (virStrToLong_ull(pagesize, NULL, 10, &byteval) < 0)
         return NULL;
-    if (virScaleInteger(&byteval, unit, 1024, UINT_MAX) < 0)
+    if (virScaleInteger(&byteval, unit, 1024, ULLONG_MAX) < 0)
         return NULL;
     size = vshPrettyCapacity(byteval, &suffix);
     ret = g_strdup_printf("%.0f%s", size, suffix);
@@ -175,15 +176,32 @@ virshNodeSuspendTargetCompleter(vshControl *ctl G_GNUC_UNUSED,
                                 const vshCmd *cmd G_GNUC_UNUSED,
                                 unsigned int flags)
 {
-    char **ret = NULL;
-    size_t i;
-
     virCheckFlags(0, NULL);
 
-    ret = g_new0(char *, VIR_NODE_SUSPEND_TARGET_LAST + 1);
+    return virshEnumComplete(VIR_NODE_SUSPEND_TARGET_LAST,
+                             virshNodeSuspendTargetTypeToString);
+}
 
-    for (i = 0; i < VIR_NODE_SUSPEND_TARGET_LAST; i++)
-        ret[i] = g_strdup(virshNodeSuspendTargetTypeToString(i));
 
-    return ret;
+char **
+virshDomainVirtTypeCompleter(vshControl *ctl G_GNUC_UNUSED,
+                             const vshCmd *cmd G_GNUC_UNUSED,
+                             unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return virshEnumComplete(VIR_DOMAIN_VIRT_LAST,
+                             virDomainVirtTypeToString);
+}
+
+
+char **
+virshArchCompleter(vshControl *ctl G_GNUC_UNUSED,
+                   const vshCmd *cmd G_GNUC_UNUSED,
+                   unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return virshEnumComplete(VIR_ARCH_LAST,
+                             (const char *(*)(int))virArchToString);
 }

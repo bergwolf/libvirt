@@ -23,7 +23,6 @@
 
 #include "qemu_conf.h"
 #include "qemu_domain.h"
-#include "domain_conf.h"
 
 int qemuDomainChangeEjectableMedia(virQEMUDriver *driver,
                                    virDomainObj *vm,
@@ -33,13 +32,13 @@ int qemuDomainChangeEjectableMedia(virQEMUDriver *driver,
 
 void qemuDomainDelTLSObjects(virQEMUDriver *driver,
                              virDomainObj *vm,
-                             qemuDomainAsyncJob asyncJob,
+                             virDomainAsyncJob asyncJob,
                              const char *secAlias,
                              const char *tlsAlias);
 
 int qemuDomainAddTLSObjects(virQEMUDriver *driver,
                             virDomainObj *vm,
-                            qemuDomainAsyncJob asyncJob,
+                            virDomainAsyncJob asyncJob,
                             virJSONValue **secProps,
                             virJSONValue **tlsProps);
 
@@ -61,7 +60,7 @@ int qemuDomainAttachDeviceDiskLive(virQEMUDriver *driver,
 int qemuDomainAttachDiskGeneric(virQEMUDriver *driver,
                                 virDomainObj *vm,
                                 virDomainDiskDef *disk,
-                                qemuDomainAsyncJob asyncJob);
+                                virDomainAsyncJob asyncJob);
 
 int qemuDomainAttachNetDevice(virQEMUDriver *driver,
                               virDomainObj *vm,
@@ -117,7 +116,7 @@ int qemuDomainAttachLease(virQEMUDriver *driver,
                           virDomainLeaseDef *lease);
 int qemuDomainAttachChrDevice(virQEMUDriver *driver,
                               virDomainObj *vm,
-                              virDomainChrDef *chr);
+                              virDomainDeviceDef *dev);
 int qemuDomainAttachRNGDevice(virQEMUDriver *driver,
                               virDomainObj *vm,
                               virDomainRNGDef *rng);
@@ -160,15 +159,15 @@ int qemuDomainSetVcpuInternal(virQEMUDriver *driver,
                               virBitmap *vcpus,
                               bool state);
 
-unsigned long long qemuDomainGetUnplugTimeout(virDomainObj *vm) G_GNUC_NO_INLINE;
+unsigned long long qemuDomainGetUnplugTimeout(virDomainObj *vm) G_NO_INLINE;
 
 int qemuHotplugAttachDBusVMState(virQEMUDriver *driver,
                                  virDomainObj *vm,
-                                 qemuDomainAsyncJob asyncJob);
+                                 virDomainAsyncJob asyncJob);
 
 int qemuHotplugRemoveDBusVMState(virQEMUDriver *driver,
                                  virDomainObj *vm,
-                                 qemuDomainAsyncJob asyncJob);
+                                 virDomainAsyncJob asyncJob);
 
 int qemuDomainChangeMemoryRequestedSize(virQEMUDriver *driver,
                                         virDomainObj *vm,

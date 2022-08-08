@@ -4,8 +4,6 @@
 #include "internal.h"
 #include "testutils.h"
 #include "virbuffer.h"
-#include "viralloc.h"
-#include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
@@ -20,7 +18,8 @@ static int testBufAutoIndent(const void *data G_GNUC_UNUSED)
     g_auto(virBuffer) bufinit = VIR_BUFFER_INITIALIZER;
     virBuffer *buf = &bufinit;
     const char expected[] =
-        "  1\n  2\n  3\n  4\n  5\n  6\n  7\n  &amp;\n  8\n  9\n  10\n  ' 11'\n";
+        "  1\n  2\n  3\n  4\n  5\n  6\n  7\n  &amp;\n  8\n  9\n  10\n"
+        "  ' 11'\n  ''\\''12'\n  '\"13'\n  ''\n";
     g_autofree char *result = NULL;
     int ret = 0;
 
@@ -84,6 +83,12 @@ static int testBufAutoIndent(const void *data G_GNUC_UNUSED)
     virBufferEscapeShell(buf, "10");
     virBufferAddChar(buf, '\n');
     virBufferEscapeShell(buf, " 11");
+    virBufferAddChar(buf, '\n');
+    virBufferEscapeShell(buf, "'12");
+    virBufferAddChar(buf, '\n');
+    virBufferEscapeShell(buf, "\"13");
+    virBufferAddChar(buf, '\n');
+    virBufferEscapeShell(buf, "");
     virBufferAddChar(buf, '\n');
 
     result = virBufferContentAndReset(buf);

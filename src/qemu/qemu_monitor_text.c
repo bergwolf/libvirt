@@ -24,10 +24,8 @@
 
 #include "qemu_monitor_text.h"
 #include "qemu_monitor_json.h"
-#include "viralloc.h"
 #include "virlog.h"
 #include "virerror.h"
-#include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
@@ -43,7 +41,7 @@ int qemuMonitorTextAddDrive(qemuMonitor *mon,
      * address required when attaching drives to a controller */
     cmd = g_strdup_printf("drive_add dummy %s", drivestr);
 
-    if (qemuMonitorJSONHumanCommand(mon, cmd, &reply) < 0)
+    if (qemuMonitorJSONHumanCommand(mon, cmd, -1, &reply) < 0)
         return -1;
 
     if (strstr(reply, "unknown command:")) {
@@ -93,7 +91,7 @@ int qemuMonitorTextDriveDel(qemuMonitor *mon,
 
     cmd = g_strdup_printf("drive_del %s", drivestr);
 
-    if (qemuMonitorJSONHumanCommand(mon, cmd, &reply) < 0)
+    if (qemuMonitorJSONHumanCommand(mon, cmd, -1, &reply) < 0)
         return -1;
 
     if (strstr(reply, "unknown command:")) {
@@ -124,7 +122,7 @@ qemuMonitorTextCreateSnapshot(qemuMonitor *mon,
 
     cmd = g_strdup_printf("savevm \"%s\"", name);
 
-    if (qemuMonitorJSONHumanCommand(mon, cmd, &reply))
+    if (qemuMonitorJSONHumanCommand(mon, cmd, -1, &reply))
         return -1;
 
     if (strstr(reply, "Error while creating snapshot") ||
@@ -150,7 +148,7 @@ int qemuMonitorTextDeleteSnapshot(qemuMonitor *mon, const char *name)
     g_autofree char *reply = NULL;
 
     cmd = g_strdup_printf("delvm \"%s\"", name);
-    if (qemuMonitorJSONHumanCommand(mon, cmd, &reply))
+    if (qemuMonitorJSONHumanCommand(mon, cmd, -1, &reply))
         return -1;
 
     if (strstr(reply, "No block device supports snapshots")) {

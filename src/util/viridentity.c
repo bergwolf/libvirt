@@ -30,15 +30,12 @@
 #define LIBVIRT_VIRIDENTITYPRIV_H_ALLOW
 
 #include "internal.h"
-#include "viralloc.h"
 #include "virerror.h"
 #include "viridentitypriv.h"
 #include "virlog.h"
-#include "virobject.h"
 #include "virrandom.h"
 #include "virthread.h"
 #include "virutil.h"
-#include "virstring.h"
 #include "virprocess.h"
 #include "virtypedparam.h"
 #include "virfile.h"
@@ -838,17 +835,12 @@ int virIdentitySetParameters(virIdentity *ident,
 }
 
 
-int virIdentityGetParameters(virIdentity *ident,
-                             virTypedParameterPtr *params,
-                             int *nparams)
+virTypedParamList *virIdentityGetParameters(virIdentity *ident)
 {
-    *params = NULL;
-    *nparams = 0;
+    virTypedParameter *tmp = NULL;
 
-    if (virTypedParamsCopy(params, ident->params, ident->nparams) < 0)
-        return -1;
+    if (virTypedParamsCopy(&tmp, ident->params, ident->nparams) < 0)
+        return NULL;
 
-    *nparams = ident->nparams;
-
-    return 0;
+    return virTypedParamListFromParams(&tmp, ident->nparams);
 }

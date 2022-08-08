@@ -17,8 +17,8 @@
 {
   "return": {
     "qemu": {
-      "micro": 92,
-      "minor": 0,
+      "micro": 0,
+      "minor": 1,
       "major": 3
     },
     "package": "v3.1.0-rc2-48-g039d4e3df0"
@@ -17168,11 +17168,6 @@
       "type": "uint32"
     },
     {
-      "default-value": true,
-      "name": "suppress-remote-wake",
-      "type": "bool"
-    },
-    {
       "default-value": 2,
       "name": "loglevel",
       "type": "uint32"
@@ -17181,16 +17176,6 @@
       "default-value": 32,
       "name": "isobsize",
       "type": "uint32"
-    },
-    {
-      "default-value": false,
-      "name": "guest-resets-all",
-      "type": "bool"
-    },
-    {
-      "default-value": true,
-      "name": "guest-reset",
-      "type": "bool"
     },
     {
       "name": "bootindex",

@@ -32,14 +32,11 @@
 #include "viralloc.h"
 #include "virfile.h"
 #include "virjson.h"
-#include "virstring.h"
 #include "node_device_conf.h"
 #include "node_device_event.h"
 #include "node_device_driver.h"
-#include "node_device_util.h"
 #include "virvhba.h"
 #include "viraccessapicheck.h"
-#include "virnetdev.h"
 #include "virutil.h"
 #include "vircommand.h"
 #include "virlog.h"
@@ -156,33 +153,18 @@ nodeDeviceUpdateDriverName(virNodeDeviceDef *def G_GNUC_UNUSED)
 #endif
 
 
-void
-nodeDeviceLock(void)
-{
-    virMutexLock(&driver->lock);
-}
-
-
-void
-nodeDeviceUnlock(void)
-{
-    virMutexUnlock(&driver->lock);
-}
-
-
 static int
 nodeDeviceInitWait(void)
 {
-    nodeDeviceLock();
+    VIR_LOCK_GUARD lock = virLockGuardLock(&driver->lock);
+
     while (!driver->initialized) {
         if (virCondWait(&driver->initCond, &driver->lock) < 0) {
-            virReportSystemError(errno, "%s",
-                                 _("failed to wait on condition"));
-            nodeDeviceUnlock();
+            virReportSystemError(errno, "%s", _("failed to wait on condition"));
             return -1;
         }
     }
-    nodeDeviceUnlock();
+
     return 0;
 }
 
@@ -676,13 +658,13 @@ nodeDeviceObjFormatAddress(virNodeDeviceObj *obj)
             }
 
         case VIR_NODE_DEV_CAP_CSS_DEV: {
-            virDomainDeviceCCWAddress ccw_addr = {
+            virCCWDeviceAddress ccw_addr = {
                 .cssid = caps->data.ccw_dev.cssid,
                 .ssid = caps->data.ccw_dev.ssid,
                 .devno = caps->data.ccw_dev.devno
             };
 
-            addr = virDomainCCWAddressAsString(&ccw_addr);
+            addr = virCCWDeviceAddressAsString(&ccw_addr);
             break;
             }
 
@@ -1087,14 +1069,10 @@ static bool
 matchDeviceAddress(virNodeDeviceObj *obj,
                    const void *opaque)
 {
-    g_autofree char *addr = NULL;
-    bool want = false;
+    VIR_LOCK_GUARD lock = virObjectLockGuard(obj);
+    g_autofree char *addr = nodeDeviceObjFormatAddress(obj);
 
-    virObjectLock(obj);
-    addr = nodeDeviceObjFormatAddress(obj);
-    want = STREQ_NULLABLE(addr, opaque);
-    virObjectUnlock(obj);
-    return want;
+    return STREQ_NULLABLE(addr, opaque);
 }
 
 
@@ -1684,8 +1662,10 @@ removeMissingPersistentMdev(virNodeDeviceObj *obj,
         return false;
 
     for (i = 0; i < data->ndefs; i++) {
-        /* OK, this mdev is still defined by mdevctl */
-        if (STREQ(data->defs[i]->name, def->name))
+        /* OK, this mdev is still defined by mdevctl
+         * AND the parent object has not changed. */
+        if (STREQ(data->defs[i]->name, def->name) &&
+            STREQ(data->defs[i]->parent, def->parent))
             return false;
     }
 

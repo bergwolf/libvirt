@@ -60,7 +60,6 @@
   <flag name='vmware-svga.vgamem_mb'/>
   <flag name='pci-serial'/>
   <flag name='aarch64-off'/>
-  <flag name='migration-event'/>
   <flag name='gpex-pcihost'/>
   <flag name='ioh3420'/>
   <flag name='x3130-upstream'/>
@@ -69,7 +68,6 @@
   <flag name='e1000'/>
   <flag name='virtio-net'/>
   <flag name='gic-version'/>
-  <flag name='incoming-defer'/>
   <flag name='virtio-gpu'/>
   <flag name='virtio-keyboard'/>
   <flag name='virtio-mouse'/>
@@ -116,8 +114,6 @@
   <flag name='hda-output'/>
   <flag name='blockdev-del'/>
   <flag name='vhost-vsock'/>
-  <flag name='chardev-fd-pass'/>
-  <flag name='usb-storage.werror'/>
   <flag name='egl-headless'/>
   <flag name='vfio-pci.display'/>
   <flag name='memory-backend-memfd'/>
@@ -128,7 +124,6 @@
   <flag name='memory-backend-file.pmem'/>
   <flag name='scsi-disk.device_id'/>
   <flag name='virtio-pci-non-transitional'/>
-  <flag name='overcommit'/>
   <flag name='query-current-machine'/>
   <flag name='machine.virt.iommu'/>
   <flag name='bitmap-merge'/>
@@ -138,12 +133,8 @@
   <flag name='ramfb'/>
   <flag name='arm-max-cpu'/>
   <flag name='drive-nvme'/>
-  <flag name='storage.werror'/>
   <flag name='tcg'/>
   <flag name='pvscsi'/>
-  <flag name='migration-param.bandwidth'/>
-  <flag name='migration-param.downtime'/>
-  <flag name='migration-param.xbzrle-cache-size'/>
   <flag name='dc390'/>
   <flag name='am53c974'/>
   <flag name='vhost-user-blk'/>

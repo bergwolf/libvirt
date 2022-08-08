@@ -26,8 +26,6 @@
 # include <sys/sysmacros.h>
 # include <stdarg.h>
 # include "testutilslxc.h"
-# include "virstring.h"
-# include "virfile.h"
 # include "viralloc.h"
 # include "vircgroupv2devices.h"
 
@@ -36,14 +34,10 @@ static FILE *(*real_fopen)(const char *path, const char *mode);
 static int (*real_access)(const char *path, int mode);
 static int (*real_mkdir)(const char *path, mode_t mode);
 
-/* Don't make static, since it causes problems with clang
- * when passed as an arg to asprintf()
- * vircgroupmock.c:462:22: error: static variable 'fakesysfsdir' is used in an inline function with external linkage [-Werror,-Wstatic-in-inline]
- */
-char *fakerootdir;
-char *fakesysfscgroupdir;
-const char *fakedevicedir0 = FAKEDEVDIR0;
-const char *fakedevicedir1 = FAKEDEVDIR1;
+static char *fakerootdir;
+static char *fakesysfscgroupdir;
+static const char *fakedevicedir0 = FAKEDEVDIR0;
+static const char *fakedevicedir1 = FAKEDEVDIR1;
 
 
 # define SYSFS_CGROUP_PREFIX "/not/really/sys/fs/cgroup"
@@ -83,7 +77,7 @@ static int make_file(const char *path,
     if ((fd = real_open(filepath, O_CREAT|O_WRONLY, 0600)) < 0)
         goto cleanup;
 
-    if (write(fd, value, strlen(value)) != strlen(value))
+    if (write(fd, value, strlen(value)) != strlen(value)) /* sc_avoid_write */
         goto cleanup;
 
     ret = 0;
@@ -352,7 +346,8 @@ static void init_sysfs(void)
     if (fakerootdir && STREQ(fakerootdir, newfakerootdir))
         return;
 
-    fakerootdir = newfakerootdir;
+    VIR_FREE(fakerootdir);
+    fakerootdir = g_strdup(newfakerootdir);
 
     mock = getenv("VIR_CGROUP_MOCK_MODE");
     if (mock) {

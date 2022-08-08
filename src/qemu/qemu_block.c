@@ -26,7 +26,6 @@
 
 #include "storage_source.h"
 #include "viralloc.h"
-#include "virstoragefile.h"
 #include "virstring.h"
 #include "virlog.h"
 
@@ -308,7 +307,7 @@ qemuBlockDiskDetectNodes(virDomainDiskDef *disk,
 int
 qemuBlockNodeNamesDetect(virQEMUDriver *driver,
                          virDomainObj *vm,
-                         qemuDomainAsyncJob asyncJob)
+                         virDomainAsyncJob asyncJob)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     g_autoptr(GHashTable) disktable = NULL;
@@ -326,7 +325,7 @@ qemuBlockNodeNamesDetect(virQEMUDriver *driver,
     data = qemuMonitorQueryNamedBlockNodes(qemuDomainGetMonitor(vm));
     blockstats = qemuMonitorQueryBlockstats(qemuDomainGetMonitor(vm));
 
-    qemuDomainObjExitMonitor(driver, vm);
+    qemuDomainObjExitMonitor(vm);
 
     if (!data || !blockstats)
         return -1;
@@ -843,6 +842,7 @@ qemuBlockStorageSourceGetNBDProps(virStorageSource *src,
 {
     g_autoptr(virJSONValue) serverprops = NULL;
     const char *tlsAlias = src->tlsAlias;
+    const char *tlsHostname = src->tlsHostname;
     virJSONValue *ret = NULL;
 
     if (src->nhosts != 1) {
@@ -856,13 +856,16 @@ qemuBlockStorageSourceGetNBDProps(virStorageSource *src,
     if (!serverprops)
         return NULL;
 
-    if (onlytarget)
+    if (onlytarget) {
         tlsAlias = NULL;
+        tlsHostname = NULL;
+    }
 
     if (virJSONValueObjectAdd(&ret,
                               "a:server", &serverprops,
                               "S:export", src->path,
                               "S:tls-creds", tlsAlias,
+                              "S:tls-hostname", tlsHostname,
                               NULL) < 0)
         return NULL;
 
@@ -878,7 +881,7 @@ qemuBlockStorageSourceGetRBDProps(virStorageSource *src,
     g_autoptr(virJSONValue) servers = NULL;
     virJSONValue *ret = NULL;
     g_autoptr(virJSONValue) encrypt = NULL;
-    const char *encformat;
+    const char *encformat = NULL;
     const char *username = NULL;
     g_autoptr(virJSONValue) authmodes = NULL;
     const char *keysecret = NULL;
@@ -907,16 +910,10 @@ qemuBlockStorageSourceGetRBDProps(virStorageSource *src,
                 break;
 
             case VIR_STORAGE_ENCRYPTION_FORMAT_QCOW:
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("librbd encryption engine only supports luks/luks2 formats"));
-                return NULL;
-
             case VIR_STORAGE_ENCRYPTION_FORMAT_DEFAULT:
             case VIR_STORAGE_ENCRYPTION_FORMAT_LAST:
             default:
-                virReportEnumRangeError(virStorageEncryptionFormatType,
-                                        src->encryption->format);
-                return NULL;
+                break;
         }
 
         if (virJSONValueObjectAdd(&encrypt,
@@ -1130,7 +1127,7 @@ virJSONValue *
 qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
                                       unsigned int flags)
 {
-    int actualType = virStorageSourceGetActualType(src);
+    virStorageType actualType = virStorageSourceGetActualType(src);
     g_autoptr(virJSONValue) fileprops = NULL;
     const char *driver = NULL;
     virTristateBool aro = VIR_TRISTATE_BOOL_ABSENT;
@@ -1147,7 +1144,7 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
             ro = VIR_TRISTATE_BOOL_NO;
     }
 
-    switch ((virStorageType)actualType) {
+    switch (actualType) {
     case VIR_STORAGE_TYPE_BLOCK:
     case VIR_STORAGE_TYPE_FILE:
         if (virStorageSourceIsBlockLocal(src)) {
@@ -2116,7 +2113,7 @@ qemuBlockStorageSourceChainDetach(qemuMonitor *mon,
 int
 qemuBlockStorageSourceDetachOneBlockdev(virQEMUDriver *driver,
                                         virDomainObj *vm,
-                                        qemuDomainAsyncJob asyncJob,
+                                        virDomainAsyncJob asyncJob,
                                         virStorageSource *src)
 {
     int ret;
@@ -2129,7 +2126,7 @@ qemuBlockStorageSourceDetachOneBlockdev(virQEMUDriver *driver,
     if (ret == 0)
         ret = qemuMonitorBlockdevDel(qemuDomainGetMonitor(vm), src->nodestorage);
 
-    qemuDomainObjExitMonitor(driver, vm);
+    qemuDomainObjExitMonitor(vm);
 
     return ret;
 }
@@ -2202,7 +2199,7 @@ char *
 qemuBlockGetBackingStoreString(virStorageSource *src,
                                bool pretty)
 {
-    int actualType = virStorageSourceGetActualType(src);
+    virStorageType actualType = virStorageSourceGetActualType(src);
     g_autoptr(virJSONValue) backingProps = NULL;
     g_autoptr(virJSONValue) sliceProps = NULL;
     virJSONValue *props = NULL;
@@ -2601,12 +2598,12 @@ int
 qemuBlockStorageSourceCreateGetStorageProps(virStorageSource *src,
                                             virJSONValue **props)
 {
-    int actualType = virStorageSourceGetActualType(src);
+    virStorageType actualType = virStorageSourceGetActualType(src);
     g_autoptr(virJSONValue) location = NULL;
     const char *driver = NULL;
     const char *filename = NULL;
 
-    switch ((virStorageType) actualType) {
+    switch (actualType) {
     case VIR_STORAGE_TYPE_FILE:
         driver = "file";
         filename = src->path;
@@ -2690,7 +2687,7 @@ qemuBlockStorageSourceCreateGeneric(virDomainObj *vm,
                                     virStorageSource *src,
                                     virStorageSource *chain,
                                     bool storageCreate,
-                                    qemuDomainAsyncJob asyncJob)
+                                    virDomainAsyncJob asyncJob)
 {
     g_autoptr(virJSONValue) props = createProps;
     qemuDomainObjPrivate *priv = vm->privateData;
@@ -2708,7 +2705,7 @@ qemuBlockStorageSourceCreateGeneric(virDomainObj *vm,
 
     rc = qemuMonitorBlockdevCreate(priv->mon, job->name, &props);
 
-    qemuDomainObjExitMonitor(priv->driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         goto cleanup;
 
@@ -2745,9 +2742,9 @@ static int
 qemuBlockStorageSourceCreateStorage(virDomainObj *vm,
                                     virStorageSource *src,
                                     virStorageSource *chain,
-                                    qemuDomainAsyncJob asyncJob)
+                                    virDomainAsyncJob asyncJob)
 {
-    int actualType = virStorageSourceGetActualType(src);
+    virStorageType actualType = virStorageSourceGetActualType(src);
     g_autoptr(virJSONValue) createstorageprops = NULL;
     int ret;
 
@@ -2782,7 +2779,7 @@ qemuBlockStorageSourceCreateFormat(virDomainObj *vm,
                                    virStorageSource *src,
                                    virStorageSource *backingStore,
                                    virStorageSource *chain,
-                                   qemuDomainAsyncJob asyncJob)
+                                   virDomainAsyncJob asyncJob)
 {
     g_autoptr(virJSONValue) createformatprops = NULL;
     int ret;
@@ -2832,7 +2829,7 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
                              virStorageSource *backingStore,
                              virStorageSource *chain,
                              qemuBlockStorageSourceAttachData *data,
-                             qemuDomainAsyncJob asyncJob)
+                             virDomainAsyncJob asyncJob)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     int ret = -1;
@@ -2855,7 +2852,7 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
 
     rc = qemuBlockStorageSourceAttachApplyStorageDeps(priv->mon, data);
 
-    qemuDomainObjExitMonitor(priv->driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         goto cleanup;
 
@@ -2870,7 +2867,7 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
     if (rc == 0)
         rc = qemuBlockStorageSourceAttachApplyFormatDeps(priv->mon, data);
 
-    qemuDomainObjExitMonitor(priv->driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         goto cleanup;
 
@@ -2889,7 +2886,7 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
 
     rc = qemuBlockStorageSourceAttachApplyFormat(priv->mon, data);
 
-    qemuDomainObjExitMonitor(priv->driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         goto cleanup;
 
@@ -2901,7 +2898,7 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
         qemuDomainObjEnterMonitorAsync(priv->driver, vm, asyncJob) == 0) {
 
         qemuBlockStorageSourceAttachRollback(priv->mon, data);
-        qemuDomainObjExitMonitor(priv->driver, vm);
+        qemuDomainObjExitMonitor(vm);
     }
 
     return ret;
@@ -3016,7 +3013,7 @@ qemuBlockNamedNodeDataGetBitmapByName(GHashTable *blockNamedNodeData,
 
 GHashTable *
 qemuBlockGetNamedNodeData(virDomainObj *vm,
-                          qemuDomainAsyncJob asyncJob)
+                          virDomainAsyncJob asyncJob)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     virQEMUDriver *driver = priv->driver;
@@ -3029,7 +3026,7 @@ qemuBlockGetNamedNodeData(virDomainObj *vm,
 
     blockNamedNodeData = qemuMonitorBlockGetNamedNodeData(priv->mon, supports_flat);
 
-    qemuDomainObjExitMonitor(driver, vm);
+    qemuDomainObjExitMonitor(vm);
 
     if (!blockNamedNodeData)
         return NULL;
@@ -3368,7 +3365,7 @@ qemuBlockReopenFormatMon(qemuMonitor *mon,
 static int
 qemuBlockReopenFormat(virDomainObj *vm,
                       virStorageSource *src,
-                      qemuDomainAsyncJob asyncJob)
+                      virDomainAsyncJob asyncJob)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     virQEMUDriver *driver = priv->driver;
@@ -3387,7 +3384,7 @@ qemuBlockReopenFormat(virDomainObj *vm,
 
     rc = qemuBlockReopenFormatMon(priv->mon, src);
 
-    qemuDomainObjExitMonitor(driver, vm);
+    qemuDomainObjExitMonitor(vm);
     if (rc < 0)
         return -1;
 
@@ -3409,7 +3406,7 @@ qemuBlockReopenFormat(virDomainObj *vm,
 int
 qemuBlockReopenReadWrite(virDomainObj *vm,
                          virStorageSource *src,
-                         qemuDomainAsyncJob asyncJob)
+                         virDomainAsyncJob asyncJob)
 {
     if (!src->readonly)
         return 0;
@@ -3438,7 +3435,7 @@ qemuBlockReopenReadWrite(virDomainObj *vm,
 int
 qemuBlockReopenReadOnly(virDomainObj *vm,
                          virStorageSource *src,
-                         qemuDomainAsyncJob asyncJob)
+                         virDomainAsyncJob asyncJob)
 {
     if (src->readonly)
         return 0;

@@ -131,8 +131,7 @@ virNetworkObjEndAPI(virNetworkObj **obj)
         return;
 
     virObjectUnlock(*obj);
-    virObjectUnref(*obj);
-    *obj = NULL;
+    g_clear_pointer(obj, virObjectUnref);
 }
 
 
@@ -250,8 +249,7 @@ virNetworkObjSetMacMap(virNetworkObj *obj,
 void
 virNetworkObjUnrefMacMap(virNetworkObj *obj)
 {
-    virObjectUnref(obj->macmap);
-    obj->macmap = NULL;
+    g_clear_pointer(&obj->macmap, virObjectUnref);
 }
 
 
@@ -328,7 +326,7 @@ virNetworkObjListNew(void)
     if (!(nets = virObjectRWLockableNew(virNetworkObjListClass)))
         return NULL;
 
-    nets->objs = virHashNew(virObjectFreeHashData);
+    nets->objs = virHashNew(virObjectUnref);
 
     return nets;
 }

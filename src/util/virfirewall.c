@@ -26,7 +26,6 @@
 #include "virfirewalld.h"
 #include "viralloc.h"
 #include "virerror.h"
-#include "virstring.h"
 #include "vircommand.h"
 #include "virlog.h"
 #include "virfile.h"
@@ -613,9 +612,7 @@ int
 virFirewallApply(virFirewall *firewall)
 {
     size_t i, j;
-    int ret = -1;
-
-    virMutexLock(&ruleLock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&ruleLock);
 
     if (!firewall || firewall->err) {
         int err = EINVAL;
@@ -624,7 +621,7 @@ virFirewallApply(virFirewall *firewall)
             err = firewall->err;
 
         virReportSystemError(err, "%s", _("Unable to create rule"));
-        goto cleanup;
+        return -1;
     }
 
     VIR_DEBUG("Applying groups for %p", firewall);
@@ -657,13 +654,10 @@ virFirewallApply(virFirewall *firewall)
 
             virErrorRestore(&saved_error);
             VIR_DEBUG("Done rolling back groups for %p", firewall);
-            goto cleanup;
+            return -1;
         }
     }
     VIR_DEBUG("Done applying groups for %p", firewall);
 
-    ret = 0;
- cleanup:
-    virMutexUnlock(&ruleLock);
-    return ret;
+    return 0;
 }

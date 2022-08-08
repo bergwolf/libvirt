@@ -60,14 +60,12 @@
   <flag name='vmware-svga.vgamem_mb'/>
   <flag name='pc-dimm'/>
   <flag name='pci-serial'/>
-  <flag name='migration-event'/>
   <flag name='ioh3420'/>
   <flag name='x3130-upstream'/>
   <flag name='xio3130-downstream'/>
   <flag name='rtl8139'/>
   <flag name='e1000'/>
   <flag name='virtio-net'/>
-  <flag name='incoming-defer'/>
   <flag name='virtio-gpu'/>
   <flag name='virtio-keyboard'/>
   <flag name='virtio-mouse'/>
@@ -102,11 +100,9 @@
   <flag name='chardev-reconnect'/>
   <flag name='vxhs'/>
   <flag name='virtio-blk.num-queues'/>
-  <flag name='machine.pseries.resize-hpt'/>
   <flag name='spapr-vty'/>
   <flag name='disk-share-rw'/>
   <flag name='isa-serial'/>
-  <flag name='machine.pseries.max-cpu-compat'/>
   <flag name='dump-completed'/>
   <flag name='qcow2-luks'/>
   <flag name='pcie-pci-bridge'/>
@@ -120,11 +116,9 @@
   <flag name='hda-output'/>
   <flag name='blockdev-del'/>
   <flag name='vhost-vsock'/>
-  <flag name='chardev-fd-pass'/>
   <flag name='tpm-emulator'/>
   <flag name='machine.pseries.cap-hpt-max-page-size'/>
   <flag name='machine.pseries.cap-htm'/>
-  <flag name='usb-storage.werror'/>
   <flag name='egl-headless'/>
   <flag name='vfio-pci.display'/>
   <flag name='blockdev'/>
@@ -138,7 +132,6 @@
   <flag name='nvdimm.unarmed'/>
   <flag name='scsi-disk.device_id'/>
   <flag name='virtio-pci-non-transitional'/>
-  <flag name='overcommit'/>
   <flag name='query-current-machine'/>
   <flag name='bitmap-merge'/>
   <flag name='nbd-bitmap'/>
@@ -159,7 +152,6 @@
   <flag name='vhost-user-fs'/>
   <flag name='query-named-block-nodes.flat'/>
   <flag name='blockdev-snapshot.allow-write-only-overlay'/>
-  <flag name='storage.werror'/>
   <flag name='fsdev.multidevs'/>
   <flag name='virtio.packed'/>
   <flag name='pcie-root-port.hotplug'/>
@@ -169,9 +161,6 @@
   <flag name='tcg'/>
   <flag name='virtio-blk-pci.scsi.default.disabled'/>
   <flag name='pvscsi'/>
-  <flag name='migration-param.bandwidth'/>
-  <flag name='migration-param.downtime'/>
-  <flag name='migration-param.xbzrle-cache-size'/>
   <flag name='spapr-tpm-proxy'/>
   <flag name='numa.hmat'/>
   <flag name='blockdev-hostdev-scsi'/>
@@ -186,6 +175,9 @@
   <flag name='input-linux'/>
   <flag name='query-display-options'/>
   <flag name='virtio-blk.queue-size'/>
+  <flag name='memory-backend-file.prealloc-threads'/>
+  <flag name='virtio-iommu-pci'/>
+  <flag name='usb-host.guest-resets-all'/>
   <version>5000000</version>
   <kvmVersion>0</kvmVersion>
   <microcodeVersion>42900241</microcodeVersion>
@@ -195,7 +187,7 @@
   <cpu type='kvm' name='ppc' typename='604-powerpc64-cpu'/>
   <cpu type='kvm' name='ppc32' typename='604-powerpc64-cpu'/>
   <cpu type='kvm' name='ppc64' typename='970fx_v3.1-powerpc64-cpu'/>
-  <cpu type='kvm' name='power10' typename='power10_v1.0-powerpc64-cpu'/>
+  <cpu type='kvm' name='POWER10' typename='power10_v1.0-powerpc64-cpu'/>
   <cpu type='kvm' name='POWER9' typename='host-powerpc64-cpu'/>
   <cpu type='kvm' name='power8nvl' typename='power8nvl_v1.0-powerpc64-cpu'/>
   <cpu type='kvm' name='POWER8' typename='power8_v2.0-powerpc64-cpu'/>
@@ -667,7 +659,7 @@
   <cpu type='tcg' name='ppc' typename='604-powerpc64-cpu'/>
   <cpu type='tcg' name='ppc32' typename='604-powerpc64-cpu'/>
   <cpu type='tcg' name='ppc64' typename='970fx_v3.1-powerpc64-cpu'/>
-  <cpu type='tcg' name='power10' typename='power10_v1.0-powerpc64-cpu'/>
+  <cpu type='tcg' name='POWER10' typename='power10_v1.0-powerpc64-cpu'/>
   <cpu type='tcg' name='POWER9' typename='power9_v2.0-powerpc64-cpu'/>
   <cpu type='tcg' name='power8nvl' typename='power8nvl_v1.0-powerpc64-cpu'/>
   <cpu type='tcg' name='POWER8' typename='power8_v2.0-powerpc64-cpu'/>

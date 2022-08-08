@@ -30,18 +30,13 @@
 #include "viralloc.h"
 #include "virlog.h"
 #include "remote_daemon_stream.h"
-#include "viruuid.h"
-#include "vircommand.h"
 #include "virnetserverservice.h"
 #include "virnetserver.h"
 #include "virfile.h"
 #include "virtypedparam.h"
-#include "virprocess.h"
 #include "remote_protocol.h"
 #include "qemu_protocol.h"
 #include "lxc_protocol.h"
-#include "virstring.h"
-#include "object_event.h"
 #include "domain_conf.h"
 #include "network_conf.h"
 #include "virprobe.h"
@@ -1793,9 +1788,8 @@ remoteOpenConn(const char *uri,
                bool preserveIdentity,
                virConnectPtr *conn)
 {
-    virTypedParameterPtr params = NULL;
-    int nparams = 0;
-    int ret = -1;
+    g_autoptr(virTypedParamList) identparams = NULL;
+    g_autoptr(virConnect) newconn = NULL;
 
     VIR_DEBUG("Getting secondary uri=%s readonly=%d preserveIdent=%d conn=%p",
               NULLSTR(uri), readonly, preserveIdentity, conn);
@@ -1814,37 +1808,31 @@ remoteOpenConn(const char *uri,
         if (!(ident = virIdentityGetCurrent()))
             return -1;
 
-        if (virIdentityGetParameters(ident, &params, &nparams) < 0)
-            goto error;
+        if (!(identparams = virIdentityGetParameters(ident)))
+            return -1;
     }
 
     VIR_DEBUG("Opening driver %s", uri);
     if (readonly)
-        *conn = virConnectOpenReadOnly(uri);
+        newconn = virConnectOpenReadOnly(uri);
     else
-        *conn = virConnectOpen(uri);
-    if (!*conn)
-        goto error;
-    VIR_DEBUG("Opened driver %p", *conn);
+        newconn = virConnectOpen(uri);
+
+    if (!newconn)
+        return -1;
+
+    VIR_DEBUG("Opened driver %p", newconn);
 
     if (preserveIdentity) {
-        if (virConnectSetIdentity(*conn, params, nparams, 0) < 0)
-            goto error;
+        if (virConnectSetIdentity(newconn, identparams->par, identparams->npar, 0) < 0)
+            return -1;
 
         VIR_DEBUG("Forwarded current identity to secondary driver");
     }
 
-    ret = 0;
- cleanup:
-    virTypedParamsFree(params, nparams);
-    return ret;
+    *conn = g_steal_pointer(&newconn);
 
- error:
-    if (*conn) {
-        virConnectClose(*conn);
-        *conn = NULL;
-    }
-    goto cleanup;
+    return 0;
 }
 
 
@@ -2058,14 +2046,13 @@ remoteDispatchConnectOpen(virNetServer *server G_GNUC_UNUSED,
 #endif
     unsigned int flags;
     struct daemonClientPrivate *priv = virNetServerClientGetPrivateData(client);
-    int rv = -1;
 #ifdef MODULE_NAME
     const char *type = NULL;
 #endif /* !MODULE_NAME */
     bool preserveIdentity = false;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     VIR_DEBUG("priv=%p conn=%p", priv, priv->conn);
-    virMutexLock(&priv->lock);
     /* Already opened? */
     if (priv->conn) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("connection already open"));
@@ -2185,18 +2172,14 @@ remoteDispatchConnectOpen(virNetServer *server G_GNUC_UNUSED,
      * by default, but do accept RO flags, e.g. TCP
      */
     virNetServerClientSetReadonly(client, (flags & VIR_CONNECT_RO));
-    rv = 0;
+    return 0;
 
  cleanup:
-    if (rv < 0) {
-        virNetMessageSaveError(rerr);
-        if (priv->conn) {
-            virObjectUnref(priv->conn);
-            priv->conn = NULL;
-        }
+    virNetMessageSaveError(rerr);
+    if (priv->conn) {
+        g_clear_pointer(&priv->conn, virObjectUnref);
     }
-    virMutexUnlock(&priv->lock);
-    return rv;
+    return -1;
 }
 
 
@@ -3658,8 +3641,7 @@ remoteDispatchAuthSaslInit(virNetServer *server G_GNUC_UNUSED,
     virNetSASLSession *sasl = NULL;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     VIR_DEBUG("Initialize SASL auth %d", virNetServerClientGetFD(client));
     if (virNetServerClientGetAuth(client) != VIR_NET_SERVER_SERVICE_AUTH_SASL ||
@@ -3704,7 +3686,6 @@ remoteDispatchAuthSaslInit(virNetServer *server G_GNUC_UNUSED,
     VIR_DEBUG("Available mechanisms for client: '%s'", ret->mechlist);
 
     priv->sasl = sasl;
-    virMutexUnlock(&priv->lock);
     return 0;
 
  authfail:
@@ -3716,7 +3697,6 @@ remoteDispatchAuthSaslInit(virNetServer *server G_GNUC_UNUSED,
           "client=%p auth=%d",
           client, REMOTE_AUTH_SASL);
     virObjectUnref(sasl);
-    virMutexUnlock(&priv->lock);
     return -1;
 }
 
@@ -3763,8 +3743,7 @@ remoteSASLFinish(virNetServer *server,
           "client=%p auth=%d identity=%s",
           client, REMOTE_AUTH_SASL, identity);
 
-    virObjectUnref(priv->sasl);
-    priv->sasl = NULL;
+    g_clear_pointer(&priv->sasl, virObjectUnref);
 
     return 0;
 }
@@ -3786,8 +3765,7 @@ remoteDispatchAuthSaslStart(virNetServer *server,
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     const char *identity;
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     VIR_DEBUG("Start SASL auth %d", virNetServerClientGetFD(client));
     if (virNetServerClientGetAuth(client) != VIR_NET_SERVER_SERVICE_AUTH_SASL ||
@@ -3839,7 +3817,6 @@ remoteDispatchAuthSaslStart(virNetServer *server,
         ret->complete = 1;
     }
 
-    virMutexUnlock(&priv->lock);
     return 0;
 
  authfail:
@@ -3856,13 +3833,11 @@ remoteDispatchAuthSaslStart(virNetServer *server,
     goto error;
 
  error:
-    virObjectUnref(priv->sasl);
-    priv->sasl = NULL;
+    g_clear_pointer(&priv->sasl, virObjectUnref);
     virResetLastError();
     virReportError(VIR_ERR_AUTH_FAILED, "%s",
                    _("authentication failed"));
     virNetMessageSaveError(rerr);
-    virMutexUnlock(&priv->lock);
     return -1;
 }
 
@@ -3881,8 +3856,7 @@ remoteDispatchAuthSaslStep(virNetServer *server,
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     const char *identity;
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     VIR_DEBUG("Step SASL auth %d", virNetServerClientGetFD(client));
     if (virNetServerClientGetAuth(client) != VIR_NET_SERVER_SERVICE_AUTH_SASL ||
@@ -3934,7 +3908,6 @@ remoteDispatchAuthSaslStep(virNetServer *server,
         ret->complete = 1;
     }
 
-    virMutexUnlock(&priv->lock);
     return 0;
 
  authfail:
@@ -3951,13 +3924,11 @@ remoteDispatchAuthSaslStep(virNetServer *server,
     goto error;
 
  error:
-    virObjectUnref(priv->sasl);
-    priv->sasl = NULL;
+    g_clear_pointer(&priv->sasl, virObjectUnref);
     virResetLastError();
     virReportError(VIR_ERR_AUTH_FAILED, "%s",
                    _("authentication failed"));
     virNetMessageSaveError(rerr);
-    virMutexUnlock(&priv->lock);
     return -1;
 }
 #else
@@ -4022,8 +3993,8 @@ remoteDispatchAuthPolkit(virNetServer *server,
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     int rv;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
-    virMutexLock(&priv->lock);
     action = virNetServerClientGetReadonly(client) ?
         "org.libvirt.unix.monitor" :
         "org.libvirt.unix.manage";
@@ -4067,13 +4038,10 @@ remoteDispatchAuthPolkit(virNetServer *server,
     ret->complete = 1;
 
     virNetServerSetClientAuthenticated(server, client);
-    virMutexUnlock(&priv->lock);
-
     return 0;
 
  error:
     virNetMessageSaveError(rerr);
-    virMutexUnlock(&priv->lock);
     return -1;
 
  authfail:
@@ -4134,12 +4102,10 @@ remoteDispatchConnectRegisterCloseCallback(virNetServer *server G_GNUC_UNUSED,
                                            virNetMessage *msg G_GNUC_UNUSED,
                                            struct virNetMessageError *rerr)
 {
-    int rv = -1;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4150,13 +4116,11 @@ remoteDispatchConnectRegisterCloseCallback(virNetServer *server G_GNUC_UNUSED,
         goto cleanup;
 
     priv->closeRegistered = true;
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int
@@ -4165,12 +4129,10 @@ remoteDispatchConnectUnregisterCloseCallback(virNetServer *server G_GNUC_UNUSED,
                                              virNetMessage *msg G_GNUC_UNUSED,
                                              struct virNetMessageError *rerr)
 {
-    int rv = -1;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4180,13 +4142,11 @@ remoteDispatchConnectUnregisterCloseCallback(virNetServer *server G_GNUC_UNUSED,
         goto cleanup;
 
     priv->closeRegistered = false;
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int
@@ -4203,8 +4163,7 @@ remoteDispatchConnectDomainEventRegister(virNetServer *server G_GNUC_UNUSED,
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4245,7 +4204,6 @@ remoteDispatchConnectDomainEventRegister(virNetServer *server G_GNUC_UNUSED,
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -4260,13 +4218,11 @@ remoteDispatchConnectDomainEventDeregister(virNetServer *server G_GNUC_UNUSED,
                                            remote_connect_domain_event_deregister_ret *ret G_GNUC_UNUSED)
 {
     int callbackID = -1;
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4291,13 +4247,11 @@ remoteDispatchConnectDomainEventDeregister(virNetServer *server G_GNUC_UNUSED,
     VIR_DELETE_ELEMENT(priv->domainEventCallbacks, i,
                        priv->ndomainEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static void
@@ -4422,8 +4376,7 @@ remoteDispatchConnectDomainEventRegisterAny(virNetServer *server G_GNUC_UNUSED,
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4472,7 +4425,6 @@ remoteDispatchConnectDomainEventRegisterAny(virNetServer *server G_GNUC_UNUSED,
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -4496,8 +4448,7 @@ remoteDispatchConnectDomainEventCallbackRegisterAny(virNetServer *server G_GNUC_
         virNetServerClientGetPrivateData(client);
     virDomainPtr dom = NULL;
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4546,7 +4497,6 @@ remoteDispatchConnectDomainEventCallbackRegisterAny(virNetServer *server G_GNUC_
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -4563,13 +4513,11 @@ remoteDispatchConnectDomainEventDeregisterAny(virNetServer *server G_GNUC_UNUSED
                                               remote_connect_domain_event_deregister_any_args *args)
 {
     int callbackID = -1;
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4602,13 +4550,11 @@ remoteDispatchConnectDomainEventDeregisterAny(virNetServer *server G_GNUC_UNUSED
     VIR_DELETE_ELEMENT(priv->domainEventCallbacks, i,
                        priv->ndomainEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 
@@ -4619,13 +4565,11 @@ remoteDispatchConnectDomainEventCallbackDeregisterAny(virNetServer *server G_GNU
                                                       struct virNetMessageError *rerr G_GNUC_UNUSED,
                                                       remote_connect_domain_event_callback_deregister_any_args *args)
 {
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -4647,13 +4591,11 @@ remoteDispatchConnectDomainEventCallbackDeregisterAny(virNetServer *server G_GNU
     VIR_DELETE_ELEMENT(priv->domainEventCallbacks, i,
                        priv->ndomainEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 
@@ -4682,6 +4624,71 @@ qemuDispatchDomainMonitorCommand(virNetServer *server G_GNUC_UNUSED,
     rv = 0;
 
  cleanup:
+    if (rv < 0)
+        virNetMessageSaveError(rerr);
+    virObjectUnref(dom);
+    return rv;
+}
+
+
+static int
+qemuDispatchDomainMonitorCommandWithFiles(virNetServer *server G_GNUC_UNUSED,
+                                          virNetServerClient *client,
+                                          virNetMessage *msg,
+                                          struct virNetMessageError *rerr,
+                                          qemu_domain_monitor_command_with_files_args *args,
+                                          qemu_domain_monitor_command_with_files_ret *ret)
+{
+    virDomainPtr dom = NULL;
+    g_autofree int *infiles = NULL;
+    unsigned int ninfiles = 0;
+    int *outfiles = NULL;
+    unsigned int noutfiles = 0;
+    int rv = -1;
+    virConnectPtr conn = remoteGetHypervisorConn(client);
+    size_t i;
+
+    if (!conn)
+        goto cleanup;
+
+    if (!(dom = get_nonnull_domain(conn, args->dom)))
+        goto cleanup;
+
+    infiles = g_new0(int, msg->nfds);
+    for (i = 0; i < msg->nfds; i++) {
+        if ((infiles[i] = virNetMessageDupFD(msg, i)) < 0)
+            goto cleanup;
+        ninfiles++;
+    }
+
+    /* This API can both receive FDs from the client and send FDs back, but 'msg'
+     * is being reused. Thus we must clear the list of FDs in it to prevent
+     * us sending back the FDs client sent us. */
+    virNetMessageClearFDs(msg);
+
+    if (virDomainQemuMonitorCommandWithFiles(dom, args->cmd, ninfiles, infiles,
+                                             &noutfiles, &outfiles,
+                                             &ret->result, args->flags) < 0)
+        goto cleanup;
+
+    for (i = 0; i < noutfiles; i++) {
+        if (virNetMessageAddFD(msg, outfiles[i]) < 0)
+            goto cleanup;
+    }
+
+    /* return 1 here to let virNetServerProgramDispatchCall know we are passing fds */
+    if (noutfiles > 0)
+        rv = 1;
+    else
+        rv = 0;
+
+ cleanup:
+    for (i = 0; i < ninfiles; i++)
+        VIR_FORCE_CLOSE(infiles[i]);
+
+    for (i = 0; i < noutfiles; i++)
+        VIR_FORCE_CLOSE(outfiles[i]);
+
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virObjectUnref(dom);
@@ -5970,8 +5977,7 @@ remoteDispatchConnectNetworkEventRegisterAny(virNetServer *server G_GNUC_UNUSED,
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetNetworkConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6020,7 +6026,6 @@ remoteDispatchConnectNetworkEventRegisterAny(virNetServer *server G_GNUC_UNUSED,
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -6036,13 +6041,11 @@ remoteDispatchConnectNetworkEventDeregisterAny(virNetServer *server G_GNUC_UNUSE
                                                struct virNetMessageError *rerr G_GNUC_UNUSED,
                                                remote_connect_network_event_deregister_any_args *args)
 {
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetNetworkConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6064,13 +6067,11 @@ remoteDispatchConnectNetworkEventDeregisterAny(virNetServer *server G_GNUC_UNUSE
     VIR_DELETE_ELEMENT(priv->networkEventCallbacks, i,
                        priv->nnetworkEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int
@@ -6089,8 +6090,7 @@ remoteDispatchConnectStoragePoolEventRegisterAny(virNetServer *server G_GNUC_UNU
         virNetServerClientGetPrivateData(client);
     virStoragePoolPtr  pool = NULL;
     virConnectPtr conn = remoteGetStorageConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6139,7 +6139,6 @@ remoteDispatchConnectStoragePoolEventRegisterAny(virNetServer *server G_GNUC_UNU
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -6154,13 +6153,12 @@ remoteDispatchConnectStoragePoolEventDeregisterAny(virNetServer *server G_GNUC_U
                                                struct virNetMessageError *rerr G_GNUC_UNUSED,
                                                remote_connect_storage_pool_event_deregister_any_args *args)
 {
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetStorageConn(client);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
-    virMutexLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6182,13 +6180,11 @@ remoteDispatchConnectStoragePoolEventDeregisterAny(virNetServer *server G_GNUC_U
     VIR_DELETE_ELEMENT(priv->storageEventCallbacks, i,
                        priv->nstorageEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int
@@ -6207,8 +6203,7 @@ remoteDispatchConnectNodeDeviceEventRegisterAny(virNetServer *server G_GNUC_UNUS
         virNetServerClientGetPrivateData(client);
     virNodeDevicePtr  dev = NULL;
     virConnectPtr conn = remoteGetNodeDevConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6257,7 +6252,6 @@ remoteDispatchConnectNodeDeviceEventRegisterAny(virNetServer *server G_GNUC_UNUS
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -6272,13 +6266,11 @@ remoteDispatchConnectNodeDeviceEventDeregisterAny(virNetServer *server G_GNUC_UN
                                                   struct virNetMessageError *rerr G_GNUC_UNUSED,
                                                   remote_connect_node_device_event_deregister_any_args *args)
 {
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetNodeDevConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6300,13 +6292,11 @@ remoteDispatchConnectNodeDeviceEventDeregisterAny(virNetServer *server G_GNUC_UN
     VIR_DELETE_ELEMENT(priv->nodeDeviceEventCallbacks, i,
                        priv->nnodeDeviceEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int
@@ -6325,8 +6315,7 @@ remoteDispatchConnectSecretEventRegisterAny(virNetServer *server G_GNUC_UNUSED,
         virNetServerClientGetPrivateData(client);
     virSecretPtr secret = NULL;
     virConnectPtr conn = remoteGetSecretConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6375,7 +6364,6 @@ remoteDispatchConnectSecretEventRegisterAny(virNetServer *server G_GNUC_UNUSED,
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -6390,13 +6378,11 @@ remoteDispatchConnectSecretEventDeregisterAny(virNetServer *server G_GNUC_UNUSED
                                                   struct virNetMessageError *rerr G_GNUC_UNUSED,
                                                   remote_connect_secret_event_deregister_any_args *args)
 {
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetSecretConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6418,13 +6404,11 @@ remoteDispatchConnectSecretEventDeregisterAny(virNetServer *server G_GNUC_UNUSED
     VIR_DELETE_ELEMENT(priv->secretEventCallbacks, i,
                        priv->nsecretEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int
@@ -6444,8 +6428,7 @@ qemuDispatchConnectDomainMonitorEventRegister(virNetServer *server G_GNUC_UNUSED
     virDomainPtr dom = NULL;
     const char *event = args->event ? *args->event : NULL;
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6489,7 +6472,6 @@ qemuDispatchConnectDomainMonitorEventRegister(virNetServer *server G_GNUC_UNUSED
     rv = 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
     remoteEventCallbackFree(callback);
     if (rv < 0)
         virNetMessageSaveError(rerr);
@@ -6505,13 +6487,11 @@ qemuDispatchConnectDomainMonitorEventDeregister(virNetServer *server G_GNUC_UNUS
                                                 struct virNetMessageError *rerr G_GNUC_UNUSED,
                                                 qemu_connect_domain_monitor_event_deregister_args *args)
 {
-    int rv = -1;
     size_t i;
     struct daemonClientPrivate *priv =
         virNetServerClientGetPrivateData(client);
     virConnectPtr conn = remoteGetHypervisorConn(client);
-
-    virMutexLock(&priv->lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&priv->lock);
 
     if (!conn)
         goto cleanup;
@@ -6534,13 +6514,11 @@ qemuDispatchConnectDomainMonitorEventDeregister(virNetServer *server G_GNUC_UNUS
     VIR_DELETE_ELEMENT(priv->qemuEventCallbacks, i,
                        priv->nqemuEventCallbacks);
 
-    rv = 0;
+    return 0;
 
  cleanup:
-    virMutexUnlock(&priv->lock);
-    if (rv < 0)
-        virNetMessageSaveError(rerr);
-    return rv;
+    virNetMessageSaveError(rerr);
+    return -1;
 }
 
 static int

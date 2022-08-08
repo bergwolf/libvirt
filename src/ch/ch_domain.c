@@ -22,7 +22,6 @@
 
 #include "ch_domain.h"
 #include "domain_driver.h"
-#include "viralloc.h"
 #include "virchrdev.h"
 #include "virlog.h"
 #include "virtime.h"
@@ -31,35 +30,7 @@
 
 #define VIR_FROM_THIS VIR_FROM_CH
 
-VIR_ENUM_IMPL(virCHDomainJob,
-              CH_JOB_LAST,
-              "none",
-              "query",
-              "destroy",
-              "modify",
-);
-
 VIR_LOG_INIT("ch.ch_domain");
-
-static int
-virCHDomainObjInitJob(virCHDomainObjPrivate *priv)
-{
-    memset(&priv->job, 0, sizeof(priv->job));
-
-    if (virCondInit(&priv->job.cond) < 0)
-        return -1;
-
-    return 0;
-}
-
-static void
-virCHDomainObjResetJob(virCHDomainObjPrivate *priv)
-{
-    struct virCHDomainJobObj *job = &priv->job;
-
-    job->active = CH_JOB_NONE;
-    job->owner = 0;
-}
 
 static void
 virCHDomainObjFreeJob(virCHDomainObjPrivate *priv)
@@ -77,7 +48,7 @@ virCHDomainObjFreeJob(virCHDomainObjPrivate *priv)
  * Successful calls must be followed by EndJob eventually.
  */
 int
-virCHDomainObjBeginJob(virDomainObj *obj, enum virCHDomainJob job)
+virCHDomainObjBeginJob(virDomainObj *obj, virDomainJob job)
 {
     virCHDomainObjPrivate *priv = obj->privateData;
     unsigned long long now;
@@ -89,13 +60,13 @@ virCHDomainObjBeginJob(virDomainObj *obj, enum virCHDomainJob job)
 
     while (priv->job.active) {
         VIR_DEBUG("Wait normal job condition for starting job: %s",
-                  virCHDomainJobTypeToString(job));
+                  virDomainJobTypeToString(job));
         if (virCondWaitUntil(&priv->job.cond, &obj->parent.lock, then) < 0) {
             VIR_WARN("Cannot start job (%s) for domain %s;"
-                     " current job is (%s) owned by (%d)",
-                     virCHDomainJobTypeToString(job),
+                     " current job is (%s) owned by (%llu)",
+                     virDomainJobTypeToString(job),
                      obj->def->name,
-                     virCHDomainJobTypeToString(priv->job.active),
+                     virDomainJobTypeToString(priv->job.active),
                      priv->job.owner);
 
             if (errno == ETIMEDOUT)
@@ -108,9 +79,9 @@ virCHDomainObjBeginJob(virDomainObj *obj, enum virCHDomainJob job)
         }
     }
 
-    virCHDomainObjResetJob(priv);
+    virDomainObjResetJob(&priv->job);
 
-    VIR_DEBUG("Starting job: %s", virCHDomainJobTypeToString(job));
+    VIR_DEBUG("Starting job: %s", virDomainJobTypeToString(job));
     priv->job.active = job;
     priv->job.owner = virThreadSelfID();
 
@@ -127,13 +98,22 @@ void
 virCHDomainObjEndJob(virDomainObj *obj)
 {
     virCHDomainObjPrivate *priv = obj->privateData;
-    enum virCHDomainJob job = priv->job.active;
+    virDomainJob job = priv->job.active;
 
     VIR_DEBUG("Stopping job: %s",
-              virCHDomainJobTypeToString(job));
+              virDomainJobTypeToString(job));
 
-    virCHDomainObjResetJob(priv);
+    virDomainObjResetJob(&priv->job);
     virCondSignal(&priv->job.cond);
+}
+
+void
+virCHDomainRemoveInactive(virCHDriver *driver,
+                          virDomainObj *vm)
+{
+    if (vm->persistent) {
+        virDomainObjListRemove(driver->domains, vm);
+    }
 }
 
 static void *
@@ -143,7 +123,7 @@ virCHDomainObjPrivateAlloc(void *opaque)
 
     priv = g_new0(virCHDomainObjPrivate, 1);
 
-    if (virCHDomainObjInitJob(priv) < 0) {
+    if (virDomainObjInitJob(&priv->job, NULL) < 0) {
         g_free(priv);
         return NULL;
     }
@@ -404,7 +384,7 @@ virCHDomainGetMachineName(virDomainObj *vm)
     virCHDriver *driver = priv->driver;
     char *ret = NULL;
 
-    if (vm->pid > 0) {
+    if (vm->pid != 0) {
         ret = virSystemdGetMachineNameByPID(vm->pid);
         if (!ret)
             virResetLastError();

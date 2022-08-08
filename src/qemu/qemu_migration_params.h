@@ -24,8 +24,6 @@
 #include "internal.h"
 
 #include "virbuffer.h"
-#include "virxml.h"
-#include "qemu_monitor.h"
 #include "qemu_conf.h"
 #include "virenum.h"
 
@@ -41,6 +39,7 @@ typedef enum {
     QEMU_MIGRATION_CAP_MULTIFD,
     QEMU_MIGRATION_CAP_BLOCK_DIRTY_BITMAPS,
     QEMU_MIGRATION_CAP_RETURN_PATH,
+    QEMU_MIGRATION_CAP_ZERO_COPY_SEND,
 
     QEMU_MIGRATION_CAP_LAST
 } qemuMigrationCapability;
@@ -99,7 +98,8 @@ int
 qemuMigrationParamsApply(virQEMUDriver *driver,
                          virDomainObj *vm,
                          int asyncJob,
-                         qemuMigrationParams *migParams);
+                         qemuMigrationParams *migParams,
+                         unsigned long apiFlags);
 
 int
 qemuMigrationParamsEnableTLS(virQEMUDriver *driver,
@@ -162,8 +162,12 @@ qemuMigrationParamsParse(xmlXPathContextPtr ctxt,
 int
 qemuMigrationCapsCheck(virQEMUDriver *driver,
                        virDomainObj *vm,
-                       int asyncJob);
+                       int asyncJob,
+                       bool reconnect);
 
 bool
 qemuMigrationCapsGet(virDomainObj *vm,
                      qemuMigrationCapability cap);
+
+const char *
+qemuMigrationParamsGetTLSHostname(qemuMigrationParams *migParams);
