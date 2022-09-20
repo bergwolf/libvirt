@@ -1,4 +1,5 @@
 cpumap_data = [
+  'arm_a64fx.xml',
   'arm_cortex-a53.xml',
   'arm_cortex-a57.xml',
   'arm_cortex-a72.xml',
@@ -14,6 +15,7 @@ cpumap_data = [
   'ppc64_POWER7.xml',
   'ppc64_POWER8.xml',
   'ppc64_POWER9.xml',
+  'ppc64_POWER10.xml',
   'ppc64_POWERPC_e5500.xml',
   'ppc64_POWERPC_e6500.xml',
   'ppc64_vendors.xml',

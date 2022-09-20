@@ -70,18 +70,6 @@ VIR_LOG_INIT("bhyve.bhyve_driver");
 
 struct _bhyveConn *bhyve_driver = NULL;
 
-void
-bhyveDriverLock(struct _bhyveConn *driver)
-{
-    virMutexLock(&driver->lock);
-}
-
-void
-bhyveDriverUnlock(struct _bhyveConn *driver)
-{
-    virMutexUnlock(&driver->lock);
-}
-
 static int
 bhyveAutostartDomain(virDomainObj *vm, void *opaque)
 {
@@ -219,7 +207,7 @@ bhyveConnectClose(virConnectPtr conn)
 {
     struct _bhyveConn *privconn = conn->privateData;
 
-    virCloseCallbacksRun(privconn->closeCallbacks, conn, privconn->domains, privconn);
+    virCloseCallbacksRun(privconn->closeCallbacks, conn, privconn->domains);
     conn->privateData = NULL;
 
     return 0;
@@ -1190,6 +1178,7 @@ bhyveStateCleanup(void)
 static int
 bhyveStateInitialize(bool privileged,
                      const char *root,
+                     bool monolithic G_GNUC_UNUSED,
                      virStateInhibitCallback callback G_GNUC_UNUSED,
                      void *opaque G_GNUC_UNUSED)
 {

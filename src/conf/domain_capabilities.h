@@ -127,6 +127,7 @@ struct _virDomainCapsDeviceTPM {
     virTristateBool supported;
     virDomainCapsEnum model;   /* virDomainTPMModel */
     virDomainCapsEnum backendModel;   /* virDomainTPMBackendType */
+    virDomainCapsEnum backendVersion; /* virDomainTPMVersion */
 };
 
 STATIC_ASSERT_ENUM(VIR_DOMAIN_FS_DRIVER_TYPE_LAST);
@@ -185,6 +186,7 @@ typedef struct _virSEVCapability virSEVCapability;
 struct _virSEVCapability {
     char *pdh;
     char *cert_chain;
+    char *cpu0_id;
     unsigned int cbitpos;
     unsigned int reduced_phys_bits;
     unsigned int max_guests;

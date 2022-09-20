@@ -68,7 +68,7 @@ particularly bad at this.
 
 If everything went well, your patch should show up on the
 `libvir-list
-archives <https://www.redhat.com/archives/libvir-list/>`__ in a
+archives <https://listman.redhat.com/archives/libvir-list/>`__ in a
 matter of minutes; if you still can't find it on there after an
 hour or so, you should double-check your setup. **Note that, if
 you are not already a subscriber, your very first post to the
@@ -89,3 +89,24 @@ Moreover, such patch needs to be prefixed correctly with
 ``--subject-prefix=PATCHv2`` appended to
 ``git send-email`` (substitute ``v2`` with the
 correct version if needed though).
+
+Review process
+--------------
+
+Reviewing patches may take a lot of effort with review bandwidth being limited
+in open source projects. Here are a few rules to follow to streamline the
+process:
+
+ - **don't** contact individual maintainers/developers directly with your
+   patches; reviewers are subscribed to the mailing list
+ - **do** be patient; reviewers may be busy
+ - **do** respond to reviewer's questions
+ - **don't** ignore a suggestion from a reviewer; if you disagree discuss it on
+   the list before sending a new version
+ - **do** remind us of your patches on the list if they haven't gotten any
+   attention for a prolonged period (>1 week) by replying to your patches with a
+   "ping"
+ - **do** test your patches before sending
+
+Don't feel obliged to review whole patch series if you see any major problems
+in any of the comprising patches - just point them out on the list.

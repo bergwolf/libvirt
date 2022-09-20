@@ -20,15 +20,11 @@
 
 #include <config.h>
 #include "virerror.h"
-#include "datatypes.h"
 
 #include "interface_conf.h"
 
-#include "viralloc.h"
 #include "virxml.h"
-#include "viruuid.h"
 #include "virbuffer.h"
-#include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_INTERFACE
 
@@ -233,7 +229,7 @@ virInterfaceDefParseDhcp(virInterfaceProtocolDef *def,
     def->dhcp = 1;
     def->peerdns = -1;
 
-    if (virXMLPropTristateBool(dhcp, "peerdns", VIR_XML_PROP_NONZERO, &peerdns) < 0)
+    if (virXMLPropTristateBool(dhcp, "peerdns", VIR_XML_PROP_NONE, &peerdns) < 0)
         return -1;
 
     if (peerdns != VIR_TRISTATE_BOOL_ABSENT) {

@@ -354,7 +354,7 @@ libvirt_syms = custom_target(
     '@OUTPUT@', 'LIBVIRT_PRIVATE_' + meson.project_version(), '@INPUT@',
   ],
 )
-libvirt_syms_file = libvirt_syms
+
 if host_machine.system() == 'windows'
   libvirt_def = custom_target(
     'libvirt.def',
@@ -366,15 +366,29 @@ if host_machine.system() == 'windows'
     ],
   )
   libvirt_syms_file = libvirt_def
+  libvirt_syms_path = libvirt_syms_file.full_path()
+else
+  libvirt_syms_file = libvirt_syms
+  libvirt_syms_path = libvirt_syms_file.full_path()
 endif
 
 
 # libvirt.so library
 
-libvirt_syms_flags = '@0@@1@'.format(
-  version_script_flags,
-  libvirt_syms_file.full_path(),
-)
+libvirt_link_args = [
+  libvirt_flat_namespace,
+  libvirt_no_undefined,
+  libvirt_nodelete,
+]
+libvirt_link_depends = []
+
+if version_script_flags != ''
+  libvirt_link_args += '@0@@1@'.format(
+    version_script_flags,
+    libvirt_syms_path,
+  )
+  libvirt_link_depends += libvirt_syms_file
+endif
 
 libvirt_lib = shared_library(
   'virt',
@@ -382,18 +396,11 @@ libvirt_lib = shared_library(
   dependencies: [
     src_dep,
   ],
-  link_args: [
-    libvirt_flat_namespace,
-    libvirt_no_undefined,
-    libvirt_nodelete,
-    libvirt_syms_flags,
-  ],
+  link_args: libvirt_link_args,
   link_whole: [
     libvirt_libs,
   ],
-  link_depends: [
-    libvirt_syms_file,
-  ],
+  link_depends: libvirt_link_depends,
   install: true,
   version: libvirt_lib_version,
   soversion: libvirt_so_version,
@@ -403,8 +410,7 @@ libvirt_lib = shared_library(
 # libvirt-qemu.syms symbol files
 
 libvirt_qemu_syms = meson.current_source_dir() / 'libvirt_qemu.syms'
-libvirt_qemu_syms_file = libvirt_qemu_syms
-libvirt_qemu_syms_path = libvirt_qemu_syms
+
 if host_machine.system() == 'windows'
   libvirt_qemu_def = custom_target(
     'libvirt_qemu.def',
@@ -416,16 +422,27 @@ if host_machine.system() == 'windows'
     ],
   )
   libvirt_qemu_syms_file = libvirt_qemu_def
-  libvirt_qemu_syms_path = libvirt_qemu_def.full_path()
+  libvirt_qemu_syms_path = libvirt_qemu_syms_file.full_path()
+else
+  libvirt_qemu_syms_file = libvirt_qemu_syms
+  libvirt_qemu_syms_path = libvirt_qemu_syms
 endif
 
 
 # libvirt-qemu.so
 
-libvirt_qemu_syms_flags = '@0@@1@'.format(
-  version_script_flags,
-  libvirt_qemu_syms_path,
-)
+libvirt_qemu_link_args = [
+  libvirt_nodelete,
+]
+libvirt_qemu_link_depends = []
+
+if version_script_flags != ''
+  libvirt_qemu_link_args += '@0@@1@'.format(
+    version_script_flags,
+    libvirt_qemu_syms_path,
+  )
+  libvirt_qemu_link_depends += libvirt_qemu_syms_file
+endif
 
 libvirt_qemu_sources = files(
   'libvirt-qemu.c',
@@ -437,16 +454,11 @@ libvirt_qemu_lib = shared_library(
   dependencies: [
     src_dep,
   ],
-  link_args: [
-    libvirt_nodelete,
-    libvirt_qemu_syms_flags,
-  ],
+  link_args: libvirt_qemu_link_args,
   link_with: [
     libvirt_lib,
   ],
-  link_depends: [
-    libvirt_qemu_syms_file,
-  ],
+  link_depends: libvirt_qemu_link_depends,
   install: true,
   install_rpath: libvirt_rpath,
   version: libvirt_lib_version,
@@ -457,8 +469,7 @@ libvirt_qemu_lib = shared_library(
 # libvirt-lxc.so symbol files
 
 libvirt_lxc_syms = meson.current_source_dir() / 'libvirt_lxc.syms'
-libvirt_lxc_syms_file = libvirt_lxc_syms
-libvirt_lxc_syms_path = libvirt_lxc_syms
+
 if host_machine.system() == 'windows'
   libvirt_lxc_def = custom_target(
     'libvirt_lxc.def',
@@ -470,16 +481,27 @@ if host_machine.system() == 'windows'
     ],
   )
   libvirt_lxc_syms_file = libvirt_lxc_def
-  libvirt_lxc_syms_path = libvirt_lxc_def.full_path()
+  libvirt_lxc_syms_path = libvirt_lxc_syms_file.full_path()
+else
+  libvirt_lxc_syms_file = libvirt_lxc_syms
+  libvirt_lxc_syms_path = libvirt_lxc_syms
 endif
 
 
 # libvirt-lxc.so
 
-libvirt_lxc_syms_flags = '@0@@1@'.format(
-  version_script_flags,
-  libvirt_lxc_syms_path,
-)
+libvirt_lxc_link_args = [
+  libvirt_nodelete,
+]
+libvirt_lxc_link_depends = []
+
+if version_script_flags != ''
+  libvirt_lxc_link_args += '@0@@1@'.format(
+    version_script_flags,
+    libvirt_lxc_syms_path,
+  )
+  libvirt_lxc_link_depends += libvirt_lxc_syms_file
+endif
 
 libvirt_lxc_sources = files(
   'libvirt-lxc.c',
@@ -493,16 +515,11 @@ libvirt_lxc_lib = shared_library(
     selinux_dep,
     src_dep,
   ],
-  link_args: [
-    libvirt_nodelete,
-    libvirt_lxc_syms_flags,
-  ],
+  link_args: libvirt_lxc_link_args,
   link_with: [
     libvirt_lib,
   ],
-  link_depends: [
-    libvirt_lxc_syms_file,
-  ],
+  link_depends: libvirt_lxc_link_depends,
   install: true,
   install_rpath: libvirt_rpath,
   version: libvirt_lib_version,
@@ -537,16 +554,11 @@ if conf.has('WITH_REMOTE')
       admin_inc_dir,
       remote_inc_dir,
     ],
-    link_args: [
-      libvirt_admin_syms_flags,
-      libvirt_nodelete,
-    ],
+    link_args: libvirt_admin_link_args,
     link_with: [
       libvirt_lib,
     ],
-    link_depends: [
-      libvirt_admin_syms_file,
-    ],
+    link_depends: libvirt_admin_link_depends,
     install: true,
     install_rpath: libvirt_rpath,
     version: libvirt_lib_version,
@@ -698,20 +710,23 @@ endforeach
 foreach data : virt_daemon_confs
   capitalize_args = [ '-c', 'print("@0@".capitalize())'.format(data['name']) ]
   name_uc = run_command(python3_prog, capitalize_args, check: true, env: runutf8).stdout().strip()
-  daemon_conf = configuration_data()
-  daemon_conf.set('runstatedir', runstatedir)
-  daemon_conf.set('sbindir', sbindir)
-  daemon_conf.set('sysconfdir', sysconfdir)
-  daemon_conf.set('DAEMON_NAME', data['name'])
-  daemon_conf.set('DAEMON_NAME_UC', name_uc)
-  # to silence meson warning about missing 'CONFIG' in the configuration_data
-  daemon_conf.set('CONFIG', '@CONFIG@')
+
   if conf.has('WITH_POLKIT')
-    daemon_conf.set('default_auth', 'polkit')
+    default_auth = 'polkit'
   else
-    daemon_conf.set('default_auth', 'none')
+    default_auth = 'none'
   endif
 
+  daemon_conf = configuration_data({
+    'runstatedir': runstatedir,
+    'sbindir': sbindir,
+    'sysconfdir': sysconfdir,
+    'DAEMON_NAME': data['name'],
+    'DAEMON_NAME_UC': name_uc,
+    'default_auth': default_auth,
+    # to silence meson warning about missing 'CONFIG' in the configuration_data
+    'CONFIG': '@CONFIG@',
+  })
 
   if data.get('with_ip', false)
     conf_in = libvirtd_conf_tmp
@@ -783,19 +798,22 @@ if conf.has('WITH_LIBVIRTD')
     )
 
     foreach unit : virt_daemon_units
-      unit_conf = configuration_data()
-      unit_conf.set('runstatedir', runstatedir)
-      unit_conf.set('sbindir', sbindir)
-      unit_conf.set('sysconfdir', sysconfdir)
-      unit_conf.set('name', unit['name'])
-      unit_conf.set('service', unit['service'])
-      unit_conf.set('sockprefix', unit['sockprefix'])
-      unit_conf.set('deps', unit.get('deps', ''))
       if conf.has('WITH_POLKIT')
-        unit_conf.set('mode', '0666')
+        mode = '0666'
       else
-        unit_conf.set('mode', '0600')
+        mode = '0600'
       endif
+
+      unit_conf = configuration_data({
+        'runstatedir': runstatedir,
+        'sbindir': sbindir,
+        'sysconfdir': sysconfdir,
+        'name': unit['name'],
+        'service': unit['service'],
+        'sockprefix': unit['sockprefix'],
+        'deps': unit.get('deps', ''),
+        'mode': mode,
+      })
 
       configure_file(
         input: unit['service_in'],
@@ -829,15 +847,17 @@ if conf.has('WITH_LIBVIRTD')
   # Generate openrc init files
   if init_script == 'openrc'
     foreach init : openrc_init_files
-      init_conf = configuration_data()
-      init_conf.set('sbindir', sbindir)
-      init_conf.set('runstatedir', runstatedir)
       if conf.has('WITH_FIREWALLD')
         need_firewalld = 'need firewalld'
       else
         need_firewalld = ''
       endif
-      init_conf.set('NEED_FIREWALLD', need_firewalld)
+
+      init_conf = configuration_data({
+        'sbindir': sbindir,
+        'runstatedir': runstatedir,
+        'NEED_FIREWALLD': need_firewalld,
+      })
 
       init_file = configure_file(
         input: init['in_file'],
@@ -848,6 +868,7 @@ if conf.has('WITH_LIBVIRTD')
       install_data(
         init_file,
         install_dir: sysconfdir / 'init.d',
+        install_mode: 'rwxr-xr-x',
         rename: [ init['name'] ],
       )
 
@@ -1009,10 +1030,11 @@ run_pkg_config_files = [
   'libvirt.pc.in',
 ]
 
-run_pkg_config_conf = configuration_data()
-run_pkg_config_conf.set('VERSION', meson.project_version())
-run_pkg_config_conf.set('abs_top_builddir', meson.build_root())
-run_pkg_config_conf.set('abs_top_srcdir', meson.source_root())
+run_pkg_config_conf = configuration_data({
+  'VERSION': meson.project_version(),
+  'abs_top_builddir': meson.build_root(),
+  'abs_top_srcdir': meson.source_root(),
+})
 
 foreach file : run_pkg_config_files
   configure_file(

@@ -27,8 +27,6 @@
 #include "ch_monitor.h"
 #include "ch_process.h"
 #include "domain_cgroup.h"
-#include "virnuma.h"
-#include "viralloc.h"
 #include "virerror.h"
 #include "virjson.h"
 #include "virlog.h"
@@ -254,7 +252,8 @@ virCHProcessSetupPid(virDomainObj *vm,
         virCgroupHasController(priv->cgroup, VIR_CGROUP_CONTROLLER_CPUSET)) {
 
         if (virDomainNumatuneGetMode(vm->def->numa, -1, &mem_mode) == 0 &&
-            mem_mode == VIR_DOMAIN_NUMATUNE_MEM_STRICT &&
+            (mem_mode == VIR_DOMAIN_NUMATUNE_MEM_STRICT ||
+             mem_mode == VIR_DOMAIN_NUMATUNE_MEM_RESTRICTIVE) &&
             virDomainNumatuneMaybeFormatNodeset(vm->def->numa,
                                                 priv->autoNodeset,
                                                 &mem_mask, -1) < 0)
@@ -470,6 +469,12 @@ virCHProcessStart(virCHDriver *driver,
     g_autofree int *nicindexes = NULL;
     size_t nnicindexes = 0;
 
+    if (virDomainObjIsActive(vm)) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("VM is already active"));
+        return -1;
+    }
+
     if (!priv->monitor) {
         /* And we can get the first monitor connection now too */
         if (!(priv->monitor = virCHProcessConnectMonitor(driver, vm))) {
@@ -520,8 +525,7 @@ virCHProcessStart(virCHDriver *driver,
 
     VIR_DEBUG("Setting global CPU cgroup (if required)");
     if (virDomainCgroupSetupGlobalCpuCgroup(vm,
-                                            priv->cgroup,
-                                            priv->autoNodeset) < 0)
+                                            priv->cgroup) < 0)
         goto cleanup;
 
     VIR_DEBUG("Setting vCPU tuning/settings");
@@ -553,8 +557,7 @@ virCHProcessStop(virCHDriver *driver G_GNUC_UNUSED,
               vm->def->name, (int)vm->pid, (int)reason);
 
     if (priv->monitor) {
-        virCHMonitorClose(priv->monitor);
-        priv->monitor = NULL;
+        g_clear_pointer(&priv->monitor, virCHMonitorClose);
     }
 
  retry:
@@ -569,7 +572,7 @@ virCHProcessStop(virCHDriver *driver G_GNUC_UNUSED,
                  vm->def->name);
     }
 
-    vm->pid = -1;
+    vm->pid = 0;
     vm->def->id = -1;
     g_clear_pointer(&priv->machineName, g_free);
 

@@ -179,8 +179,7 @@ getJobResultHelper(PRL_HANDLE job, unsigned int timeout, PRL_HANDLE *result,
         ret = PrlJob_GetResult(job, result);
         if (PRL_FAILED(ret)) {
             logPrlErrorHelper(ret, filename, funcname, linenr);
-            PrlHandle_Free(*result);
-            *result = NULL;
+            g_clear_pointer(result, PrlHandle_Free);
             goto cleanup;
         }
 
@@ -1131,26 +1130,25 @@ prlsdkGetSerialInfo(PRL_HANDLE serialPort, virDomainChrDef *chr)
     PRL_RESULT pret;
     PRL_UINT32 serialPortIndex;
     PRL_UINT32 emulatedType;
-    char *friendlyName = NULL;
+    g_autofree char *friendlyName = NULL;
     PRL_SERIAL_PORT_SOCKET_OPERATION_MODE socket_mode;
-    char *uristr = NULL;
-    virURI *uri = NULL;
-    int ret = -1;
+    g_autofree char *uristr = NULL;
+    g_autoptr(virURI) uri = NULL;
 
     chr->deviceType = VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL;
     pret = PrlVmDev_GetIndex(serialPort, &serialPortIndex);
-    prlsdkCheckRetGoto(pret, cleanup);
+    prlsdkCheckRetExit(pret, -1);
     chr->target.port = serialPortIndex;
 
     pret = PrlVmDev_GetEmulatedType(serialPort, &emulatedType);
-    prlsdkCheckRetGoto(pret, cleanup);
+    prlsdkCheckRetExit(pret, -1);
 
     if (!(friendlyName = prlsdkGetStringParamVar(PrlVmDev_GetFriendlyName,
                                                  serialPort)))
-        goto cleanup;
+        return -1;
 
     pret = PrlVmDevSerial_GetSocketMode(serialPort, &socket_mode);
-    prlsdkCheckRetGoto(pret, cleanup);
+    prlsdkCheckRetExit(pret, -1);
 
     switch (emulatedType) {
     case PDT_USE_OUTPUT_FILE:
@@ -1170,7 +1168,7 @@ prlsdkGetSerialInfo(PRL_HANDLE serialPort, virDomainChrDef *chr)
         chr->source->type = VIR_DOMAIN_CHR_TYPE_TCP;
         uristr = g_strdup_printf("tcp://%s", friendlyName);
         if (!(uri = virURIParse(uristr)))
-            goto cleanup;
+            return -1;
         chr->source->data.tcp.host = g_strdup(uri->server);
         chr->source->data.tcp.service = g_strdup_printf("%d", uri->port);
         chr->source->data.tcp.listen = socket_mode == PSP_SERIAL_SOCKET_SERVER;
@@ -1179,7 +1177,7 @@ prlsdkGetSerialInfo(PRL_HANDLE serialPort, virDomainChrDef *chr)
         chr->source->type = VIR_DOMAIN_CHR_TYPE_UDP;
         uristr = g_strdup_printf("udp://%s", friendlyName);
         if (!(uri = virURIParse(uristr)))
-            goto cleanup;
+            return -1;
         chr->source->data.udp.bindHost = g_strdup(uri->server);
         chr->source->data.udp.bindService = g_strdup_printf("%d", uri->port);
         chr->source->data.udp.connectHost = g_strdup(uri->server);
@@ -1188,18 +1186,10 @@ prlsdkGetSerialInfo(PRL_HANDLE serialPort, virDomainChrDef *chr)
     default:
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Unknown serial type: %X"), emulatedType);
-        goto cleanup;
-        break;
+        return -1;
     }
 
-    ret = 0;
-
- cleanup:
-    VIR_FREE(friendlyName);
-    VIR_FREE(uristr);
-    virURIFree(uri);
-
-    return ret;
+    return 0;
 }
 
 
@@ -4641,7 +4631,7 @@ prlsdkParseSnapshotTree(const char *treexml)
 
         def->parent.description = virXPathString("string(./Description)", ctxt);
 
-        def->memory = VIR_DOMAIN_SNAPSHOT_LOCATION_NONE;
+        def->memory = VIR_DOMAIN_SNAPSHOT_LOCATION_NO;
         xmlstr = virXPathString("string(./@state)", ctxt);
         if (!xmlstr) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",

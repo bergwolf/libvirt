@@ -30,7 +30,6 @@ exec "$@"' > /usr/bin/nosync && \
         cyrus-sasl-devel \
         device-mapper-devel \
         diffutils \
-        dnsmasq \
         dwarves \
         ebtables \
         firewalld-filesystem \
@@ -89,7 +88,6 @@ exec "$@"' > /usr/bin/nosync && \
         sanlock-devel \
         scrub \
         sed \
-        sheepdog \
         systemd-devel \
         systemtap-sdt-devel \
         wireshark-devel \

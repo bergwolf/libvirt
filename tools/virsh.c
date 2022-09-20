@@ -21,30 +21,24 @@
 #include <config.h>
 #include "virsh.h"
 
-#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <sys/time.h>
 #include <fcntl.h>
-#include <time.h>
 #include <sys/stat.h>
-#include <inttypes.h>
 
 #include "internal.h"
 #include "virerror.h"
-#include "virbuffer.h"
 #include "viralloc.h"
 #include "virfile.h"
 #include "virthread.h"
-#include "vircommand.h"
-#include "virtypedparam.h"
 #include "virstring.h"
 #include "virgettext.h"
 
 #include "virsh-backup.h"
 #include "virsh-checkpoint.h"
-#include "virsh-console.h"
 #include "virsh-domain.h"
+#include "virsh-domain-event.h"
 #include "virsh-domain-monitor.h"
 #include "virsh-host.h"
 #include "virsh-interface.h"
@@ -174,8 +168,7 @@ virshConnect(vshControl *ctl, const char *uri, bool readonly)
             vshError(ctl, "%s",
                      _("Cannot setup keepalive on connection "
                        "as requested, disconnecting"));
-            virConnectClose(c);
-            c = NULL;
+            g_clear_pointer(&c, virConnectClose);
             goto cleanup;
         }
         vshDebug(ctl, VSH_ERR_INFO, "%s",
@@ -413,13 +406,13 @@ virshDeinit(vshControl *ctl)
     virResetLastError();
 
     if (ctl->eventLoopStarted) {
-        int timer;
+        int timer = -1;
 
-        virMutexLock(&ctl->lock);
-        ctl->quit = true;
-        /* HACK: Add a dummy timeout to break event loop */
-        timer = virEventAddTimeout(0, virshDeinitTimer, NULL, NULL);
-        virMutexUnlock(&ctl->lock);
+        VIR_WITH_MUTEX_LOCK_GUARD(&ctl->lock) {
+            ctl->quit = true;
+            /* HACK: Add a dummy timeout to break event loop */
+            timer = virEventAddTimeout(0, virshDeinitTimer, NULL, NULL);
+        }
 
         virThreadJoin(&ctl->eventLoop);
 
@@ -585,9 +578,6 @@ virshShowVersion(vshControl *ctl G_GNUC_UNUSED)
 #endif
 #ifdef WITH_STORAGE_RBD
     vshPrint(ctl, " RBD");
-#endif
-#ifdef WITH_STORAGE_SHEEPDOG
-    vshPrint(ctl, " Sheepdog");
 #endif
 #ifdef WITH_STORAGE_GLUSTER
     vshPrint(ctl, " Gluster");
@@ -815,6 +805,7 @@ static const vshCmdDef virshCmds[] = {
 static const vshCmdGrp cmdGroups[] = {
     {VIRSH_CMD_GRP_DOM_MANAGEMENT, "domain", domManagementCmds},
     {VIRSH_CMD_GRP_DOM_MONITORING, "monitor", domMonitoringCmds},
+    {VIRSH_CMD_GRP_DOM_EVENTS, "events", domEventCmds},
     {VIRSH_CMD_GRP_HOST_AND_HV, "host", hostAndHypervisorCmds},
     {VIRSH_CMD_GRP_CHECKPOINT, "checkpoint", checkpointCmds},
     {VIRSH_CMD_GRP_IFACE, "interface", ifaceCmds},

@@ -29,7 +29,6 @@
 #include "internal.h"
 #include "virconftypes.h"
 #include "capabilities.h"
-#include "storage_encryption_conf.h"
 #include "cpu_conf.h"
 #include "virthread.h"
 #include "virhash.h"
@@ -57,6 +56,7 @@
 #include "virsavecookie.h"
 #include "virresctrl.h"
 #include "virenum.h"
+#include "virdomainjob.h"
 
 /* Flags for the 'type' field in virDomainDeviceDef */
 typedef enum {
@@ -234,6 +234,17 @@ typedef enum {
 
 VIR_ENUM_DECL(virDomainHostdevSubsysSCSIProtocol);
 
+typedef enum {
+    VIR_DOMAIN_HOSTDEV_USB_GUEST_RESET_DEFAULT = 0,
+    VIR_DOMAIN_HOSTDEV_USB_GUEST_RESET_OFF,           /* reset forbidden */
+    VIR_DOMAIN_HOSTDEV_USB_GUEST_RESET_UNINITIALIZED, /* reset iff uninitialized */
+    VIR_DOMAIN_HOSTDEV_USB_GUEST_RESET_ON,            /* reset allowed */
+
+    VIR_DOMAIN_HOSTDEV_USB_GUEST_RESET_LAST
+} virDomainHostdevSubsysUSBGuestReset;
+
+VIR_ENUM_DECL(virDomainHostdevSubsysUSBGuestReset);
+
 struct _virDomainHostdevSubsysUSB {
     bool autoAddress; /* bus/device were filled automatically based
                          on vendor/product */
@@ -242,6 +253,8 @@ struct _virDomainHostdevSubsysUSB {
 
     unsigned vendor;
     unsigned product;
+
+    virDomainHostdevSubsysUSBGuestReset guestReset;
 };
 
 struct _virDomainHostdevSubsysPCI {
@@ -537,6 +550,19 @@ typedef enum {
 } virDomainMemoryAllocation;
 
 
+typedef enum {
+    VIR_DOMAIN_SNAPSHOT_LOCATION_DEFAULT = 0,
+    VIR_DOMAIN_SNAPSHOT_LOCATION_NO,
+    VIR_DOMAIN_SNAPSHOT_LOCATION_INTERNAL,
+    VIR_DOMAIN_SNAPSHOT_LOCATION_EXTERNAL,
+    VIR_DOMAIN_SNAPSHOT_LOCATION_MANUAL,
+
+    VIR_DOMAIN_SNAPSHOT_LOCATION_LAST
+} virDomainSnapshotLocation;
+
+VIR_ENUM_DECL(virDomainSnapshotLocation);
+
+
 /* Stores the virtual disk configuration */
 struct _virDomainDiskDef {
     virStorageSource *src; /* non-NULL.  XXX Allow NULL for empty cdrom? */
@@ -581,7 +607,7 @@ struct _virDomainDiskDef {
     virTristateSwitch ioeventfd;
     virTristateSwitch event_idx;
     virTristateSwitch copy_on_read;
-    unsigned int snapshot; /* virDomainSnapshotLocation, snapshot_conf.h */
+    virDomainSnapshotLocation snapshot;
     virDomainStartupPolicy startupPolicy;
     bool transient;
     virTristateBool transientShareBacking;
@@ -893,6 +919,7 @@ struct _virDomainFSDef {
     virTristateSwitch posix_lock;
     virTristateSwitch flock;
     virDomainFSSandboxMode sandbox;
+    int thread_pool_size;
     virDomainVirtioOptions *virtio;
     virObject *privateData;
 };
@@ -913,6 +940,8 @@ typedef enum {
     VIR_DOMAIN_NET_TYPE_HOSTDEV,
     VIR_DOMAIN_NET_TYPE_UDP,
     VIR_DOMAIN_NET_TYPE_VDPA,
+    VIR_DOMAIN_NET_TYPE_NULL,
+    VIR_DOMAIN_NET_TYPE_VDS,
 
     VIR_DOMAIN_NET_TYPE_LAST
 } virDomainNetType;
@@ -1056,6 +1085,8 @@ struct _virDomainNetDef {
                 virTristateSwitch ecn;
                 virTristateSwitch ufo;
             } guest;
+            virTristateSwitch rss;
+            virTristateSwitch rss_hash_report;
         } virtio;
     } driver;
     struct {
@@ -1104,6 +1135,12 @@ struct _virDomainNetDef {
         struct {
             virDomainHostdevDef def;
         } hostdev;
+        struct {
+            unsigned char switch_id[VIR_UUID_BUFLEN];
+            char *portgroup_id;
+            long long port_id;
+            long long connection_id;
+        } vds;
     } data;
     /* virtPortProfile is used by network/bridge/direct/hostdev */
     virNetDevVPortProfile *virtPortProfile;
@@ -1226,6 +1263,8 @@ typedef enum {
     VIR_DOMAIN_CHR_TYPE_SPICEVMC,
     VIR_DOMAIN_CHR_TYPE_SPICEPORT,
     VIR_DOMAIN_CHR_TYPE_NMDM,
+    VIR_DOMAIN_CHR_TYPE_QEMU_VDAGENT,
+    VIR_DOMAIN_CHR_TYPE_DBUS,
 
     VIR_DOMAIN_CHR_TYPE_LAST
 } virDomainChrType;
@@ -1253,6 +1292,13 @@ struct _virDomainChrSourceReconnectDef {
     unsigned int timeout;
 };
 
+typedef enum {
+    VIR_DOMAIN_MOUSE_MODE_DEFAULT = 0,
+    VIR_DOMAIN_MOUSE_MODE_SERVER,
+    VIR_DOMAIN_MOUSE_MODE_CLIENT,
+
+    VIR_DOMAIN_MOUSE_MODE_LAST
+} virDomainMouseMode;
 
 /* The host side information for a character device.  */
 struct _virDomainChrSourceDef {
@@ -1294,6 +1340,13 @@ struct _virDomainChrSourceDef {
         struct {
             char *channel;
         } spiceport;
+        struct {
+            virDomainMouseMode mouse;
+            virTristateBool clipboard;
+        } qemuVdagent;
+        struct {
+            char *channel;
+        } dbus;
     } data;
     char *logfile;
     virTristateSwitch logappend;
@@ -1356,7 +1409,7 @@ struct _virDomainHubDef {
 };
 
 typedef enum {
-    VIR_DOMAIN_TPM_MODEL_DEFAULT,
+    VIR_DOMAIN_TPM_MODEL_DEFAULT = 0,
     VIR_DOMAIN_TPM_MODEL_TIS,
     VIR_DOMAIN_TPM_MODEL_CRB,
     VIR_DOMAIN_TPM_MODEL_SPAPR,
@@ -1373,7 +1426,7 @@ typedef enum {
 } virDomainTPMBackendType;
 
 typedef enum {
-    VIR_DOMAIN_TPM_VERSION_DEFAULT,
+    VIR_DOMAIN_TPM_VERSION_DEFAULT = 0,
     VIR_DOMAIN_TPM_VERSION_1_2,
     VIR_DOMAIN_TPM_VERSION_2_0,
 
@@ -1392,22 +1445,22 @@ typedef enum {
 #define VIR_DOMAIN_TPM_DEFAULT_DEVICE "/dev/tpm0"
 
 struct _virDomainTPMDef {
-    int type; /* virDomainTPMBackendType */
+    virDomainTPMModel model;
+    virDomainTPMBackendType type;
     virDomainDeviceInfo info;
-    int model; /* virDomainTPMModel */
-    int version; /* virDomainTPMVersion */
     union {
         struct {
             virDomainChrSourceDef *source;
         } passthrough;
         struct {
+            virDomainTPMVersion version;
             virDomainChrSourceDef *source;
             char *storagepath;
             char *logfile;
             unsigned char secretuuid[VIR_UUID_BUFLEN];
             bool hassecretuuid;
             bool persistent_state;
-            unsigned int activePcrBanks;
+            virBitmap *activePcrBanks;
         } emulator;
     } data;
 };
@@ -1521,6 +1574,7 @@ typedef enum {
     VIR_DOMAIN_AUDIO_TYPE_SDL,
     VIR_DOMAIN_AUDIO_TYPE_SPICE,
     VIR_DOMAIN_AUDIO_TYPE_FILE,
+    VIR_DOMAIN_AUDIO_TYPE_DBUS,
 
     VIR_DOMAIN_AUDIO_TYPE_LAST
 } virDomainAudioType;
@@ -1750,6 +1804,7 @@ typedef enum {
     VIR_DOMAIN_GRAPHICS_TYPE_DESKTOP,
     VIR_DOMAIN_GRAPHICS_TYPE_SPICE,
     VIR_DOMAIN_GRAPHICS_TYPE_EGL_HEADLESS,
+    VIR_DOMAIN_GRAPHICS_TYPE_DBUS,
 
     VIR_DOMAIN_GRAPHICS_TYPE_LAST
 } virDomainGraphicsType;
@@ -1831,14 +1886,6 @@ typedef enum {
 } virDomainGraphicsSpiceZlibCompression;
 
 typedef enum {
-    VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_DEFAULT = 0,
-    VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_SERVER,
-    VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_CLIENT,
-
-    VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_LAST
-} virDomainGraphicsSpiceMouseMode;
-
-typedef enum {
     VIR_DOMAIN_GRAPHICS_SPICE_STREAMING_MODE_DEFAULT = 0,
     VIR_DOMAIN_GRAPHICS_SPICE_STREAMING_MODE_FILTER,
     VIR_DOMAIN_GRAPHICS_SPICE_STREAMING_MODE_ALL,
@@ -1886,6 +1933,7 @@ struct _virDomainGraphicsDef {
             bool portReserved;
             int websocket;
             bool websocketGenerated;
+            bool websocketReserved;
             bool autoport;
             char *keymap;
             virDomainGraphicsAuthDef auth;
@@ -1914,7 +1962,7 @@ struct _virDomainGraphicsDef {
             int tlsPort;
             bool portReserved;
             bool tlsPortReserved;
-            virDomainGraphicsSpiceMouseMode mousemode;
+            virDomainMouseMode mousemode;
             char *keymap;
             virDomainGraphicsAuthDef auth;
             bool autoport;
@@ -1933,6 +1981,14 @@ struct _virDomainGraphicsDef {
         struct {
             char *rendernode;
         } egl_headless;
+        struct {
+            bool p2p;
+            char *address;
+            char *rendernode;
+            virTristateBool gl;
+            unsigned int audioId;
+            bool fromConfig;    /* true if the @address is config file originated */
+        } dbus;
     } data;
     /* nListens, listens, and *port are only useful if type is vnc,
      * rdp, or spice. They've been extracted from the union only to
@@ -2219,8 +2275,10 @@ struct _virDomainLoaderDef {
     virTristateBool readonly;
     virDomainLoader type;
     virTristateBool secure;
-    char *nvram;    /* path to non-volatile RAM */
-    char *templt;   /* user override of path to master nvram */
+    virTristateBool stateless;
+    virStorageSource *nvram;
+    bool newStyleNVRAM;
+    char *nvramTemplate;   /* user override of path to master nvram */
 };
 
 void virDomainLoaderDefFree(virDomainLoaderDef *loader);
@@ -2433,6 +2491,7 @@ typedef enum {
     VIR_DOMAIN_CLOCK_OFFSET_LOCALTIME = 1,
     VIR_DOMAIN_CLOCK_OFFSET_VARIABLE = 2,
     VIR_DOMAIN_CLOCK_OFFSET_TIMEZONE = 3,
+    VIR_DOMAIN_CLOCK_OFFSET_ABSOLUTE = 4,
 
     VIR_DOMAIN_CLOCK_OFFSET_LAST
 } virDomainClockOffsetType;
@@ -2467,6 +2526,9 @@ struct _virDomainClockDef {
         /* Timezone name, when
          * offset == VIR_DOMAIN_CLOCK_OFFSET_LOCALTIME */
         char *timezone;
+
+        /* absolute clock start time for VIR_DOMAIN_CLOCK_OFFSET_ABSOLUTE */
+        unsigned long long starttime;
     } data;
 
     size_t ntimers;
@@ -2608,10 +2670,19 @@ struct _virDomainIOThreadIDDef {
     virBitmap *cpumask;
 
     virDomainThreadSchedParam sched;
+
+    int thread_pool_min;
+    int thread_pool_max;
 };
 
 void virDomainIOThreadIDDefFree(virDomainIOThreadIDDef *def);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virDomainIOThreadIDDef, virDomainIOThreadIDDefFree);
+
+
+struct _virDomainDefaultIOThreadDef {
+    int thread_pool_min;
+    int thread_pool_max;
+};
 
 
 struct _virDomainCputune {
@@ -2689,6 +2760,7 @@ struct _virDomainMemtune {
     int source; /* enum virDomainMemorySource */
     int access; /* enum virDomainMemoryAccess */
     int allocation; /* enum virDomainMemoryAllocation */
+    unsigned int allocation_threads;
 
     virTristateBool discard;
 };
@@ -2741,6 +2813,7 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(virDomainSecDef, virDomainSecDefFree);
 typedef enum {
     VIR_DOMAIN_IOMMU_MODEL_INTEL,
     VIR_DOMAIN_IOMMU_MODEL_SMMUV3,
+    VIR_DOMAIN_IOMMU_MODEL_VIRTIO,
 
     VIR_DOMAIN_IOMMU_MODEL_LAST
 } virDomainIOMMUModel;
@@ -2752,6 +2825,7 @@ struct _virDomainIOMMUDef {
     virTristateSwitch eim;
     virTristateSwitch iotlb;
     unsigned int aw_bits;
+    virDomainDeviceInfo info;
 };
 
 typedef enum {
@@ -2818,6 +2892,8 @@ struct _virDomainDef {
 
     size_t niothreadids;
     virDomainIOThreadIDDef **iothreadids;
+
+    virDomainDefaultIOThreadDef *defaultIOThread;
 
     virDomainCputune cputune;
 
@@ -2997,6 +3073,7 @@ typedef enum {
     VIR_DOMAIN_TAINT_CUSTOM_GA_COMMAND, /* Custom guest agent command */
     VIR_DOMAIN_TAINT_CUSTOM_HYPERVISOR_FEATURE, /* custom hypervisor feature control */
     VIR_DOMAIN_TAINT_DEPRECATED_CONFIG,  /* Configuration that is marked deprecated */
+    VIR_DOMAIN_TAINT_CUSTOM_DEVICE, /* hypervisor device config customized */
 
     VIR_DOMAIN_TAINT_LAST
 } virDomainTaintFlags;
@@ -3017,7 +3094,9 @@ struct _virDomainObj {
     virObjectLockable parent;
     virCond cond;
 
-    pid_t pid;
+    virDomainJobObj *job;
+
+    pid_t pid; /* 0 for no PID, avoid negative values like -1 */
     virDomainStateReason state;
 
     unsigned int autostart : 1;
@@ -3040,9 +3119,6 @@ struct _virDomainObj {
     int taint;
     size_t ndeprecations;
     char **deprecations;
-
-    unsigned long long originalMemlock; /* Original RLIMIT_MEMLOCK, zero if no
-                                         * restore will be required later */
 };
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virDomainObj, virObjectUnref);
@@ -3204,11 +3280,19 @@ struct _virDomainABIStability {
     virDomainABIStabilityDomain domain;
 };
 
+
+struct _virDomainJobObjConfig {
+    virDomainObjPrivateJobCallbacks cb;
+    virDomainJobDataPrivateDataCallbacks jobDataPrivateCb;
+    unsigned int maxQueuedJobs;
+};
+
 virDomainXMLOption *virDomainXMLOptionNew(virDomainDefParserConfig *config,
                                           virDomainXMLPrivateDataCallbacks *priv,
                                           virXMLNamespace *xmlns,
                                           virDomainABIStability *abi,
-                                          virSaveCookieCallbacks *saveCookie);
+                                          virSaveCookieCallbacks *saveCookie,
+                                          virDomainJobObjConfig *jobConfig);
 
 virSaveCookieCallbacks *
 virDomainXMLOptionGetSaveCookie(virDomainXMLOption *xmlopt);
@@ -3248,23 +3332,16 @@ struct _virDomainXMLOption {
 
     /* Snapshot postparse callbacks */
     virDomainMomentPostParseCallback momentPostParse;
+
+    /* virDomainJobObj callbacks, private data callbacks and defaults */
+    virDomainJobObjConfig jobObjConfig;
 };
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virDomainXMLOption, virObjectUnref);
-
-struct virDomainDefPostParseDeviceIteratorData {
-    virDomainXMLOption *xmlopt;
-    void *parseOpaque;
-    unsigned int parseFlags;
-};
 
 bool
 virDomainSCSIDriveAddressIsUsed(const virDomainDef *def,
                                 const virDomainDeviceDriveAddress *addr);
 
-int virDomainDefPostParse(virDomainDef *def,
-                          unsigned int parseFlags,
-                          virDomainXMLOption *xmlopt,
-                          void *parseOpaque);
 bool virDomainDefHasUSB(const virDomainDef *def);
 
 bool virDomainDeviceAliasIsUserAlias(const char *aliasStr);
@@ -3635,12 +3712,12 @@ void virDomainRNGDefFree(virDomainRNGDef *def);
 
 int virDomainDiskIndexByAddress(virDomainDef *def,
                                 virPCIDeviceAddress *pci_controller,
-                                virDomainDeviceCCWAddress *ccw_addr,
+                                virCCWDeviceAddress *ccw_addr,
                                 unsigned int bus, unsigned int target,
                                 unsigned int unit);
 virDomainDiskDef *virDomainDiskByAddress(virDomainDef *def,
                                          virPCIDeviceAddress *pci_controller,
-                                         virDomainDeviceCCWAddress *ccw_addr,
+                                         virCCWDeviceAddress *ccw_addr,
                                          unsigned int bus,
                                          unsigned int target,
                                          unsigned int unit);
@@ -3725,7 +3802,7 @@ void virDomainControllerInsertPreAlloced(virDomainDef *def,
 int virDomainControllerFind(const virDomainDef *def, int type, int idx);
 int virDomainControllerFindByType(virDomainDef *def, int type);
 int virDomainControllerFindByCCWAddress(virDomainDef *def,
-                                        virDomainDeviceCCWAddress *addr);
+                                        virCCWDeviceAddress *addr);
 int virDomainControllerFindByPCIAddress(virDomainDef *def,
                                         virPCIDeviceAddress *addr);
 int virDomainControllerFindUnusedIndex(virDomainDef const *def, int type);
@@ -3845,6 +3922,14 @@ virDomainObjSetState(virDomainObj *obj, virDomainState state, int reason)
         ATTRIBUTE_NONNULL(1);
 virDomainState
 virDomainObjGetState(virDomainObj *obj, int *reason)
+        ATTRIBUTE_NONNULL(1);
+
+bool
+virDomainObjIsFailedPostcopy(virDomainObj *obj)
+        ATTRIBUTE_NONNULL(1);
+bool
+virDomainObjIsPostcopy(virDomainObj *dom,
+                       virDomainJobOperation op)
         ATTRIBUTE_NONNULL(1);
 
 virSecurityLabelDef *
@@ -3976,7 +4061,7 @@ VIR_ENUM_DECL(virDomainGraphicsSpiceImageCompression);
 VIR_ENUM_DECL(virDomainGraphicsSpiceJpegCompression);
 VIR_ENUM_DECL(virDomainGraphicsSpiceZlibCompression);
 VIR_ENUM_DECL(virDomainGraphicsSpiceStreamingMode);
-VIR_ENUM_DECL(virDomainGraphicsSpiceMouseMode);
+VIR_ENUM_DECL(virDomainMouseMode);
 VIR_ENUM_DECL(virDomainGraphicsVNCSharePolicy);
 VIR_ENUM_DECL(virDomainHyperv);
 VIR_ENUM_DECL(virDomainKVM);
@@ -4256,3 +4341,6 @@ int
 virDomainObjGetMessages(virDomainObj *vm,
                         char ***msgs,
                         unsigned int flags);
+
+bool
+virDomainDefHasSpiceGraphics(const virDomainDef *def);

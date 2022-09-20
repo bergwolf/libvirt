@@ -45,8 +45,6 @@
 #include "virfdstream.h"
 #include "virpidfile.h"
 #include "configmake.h"
-#include "virsecret.h"
-#include "virstring.h"
 #include "viraccessapicheck.h"
 #include "storage_util.h"
 #include "virutil.h"
@@ -64,16 +62,6 @@ struct _virStorageVolStreamInfo {
     char *pool_name;
     char *vol_path;
 };
-
-static void storageDriverLock(void)
-{
-    virMutexLock(&driver->lock);
-}
-static void storageDriverUnlock(void)
-{
-    virMutexUnlock(&driver->lock);
-}
-
 
 static void
 storagePoolRefreshFailCleanup(virStorageBackend *backend,
@@ -254,6 +242,7 @@ storageDriverAutostart(void)
 static int
 storageStateInitialize(bool privileged,
                        const char *root,
+                       bool monolithic G_GNUC_UNUSED,
                        virStateInhibitCallback callback G_GNUC_UNUSED,
                        void *opaque G_GNUC_UNUSED)
 {
@@ -274,7 +263,6 @@ storageStateInitialize(bool privileged,
         VIR_FREE(driver);
         return VIR_DRV_STATE_INIT_ERROR;
     }
-    storageDriverLock();
 
     if (!(driver->pools = virStoragePoolObjListNew()))
         goto error;
@@ -330,12 +318,9 @@ storageStateInitialize(bool privileged,
     if (!(driver->caps = virStorageBackendGetCapabilities()))
         goto error;
 
-    storageDriverUnlock();
-
     return VIR_DRV_STATE_INIT_COMPLETE;
 
  error:
-    storageDriverUnlock();
     storageStateCleanup();
     return VIR_DRV_STATE_INIT_ERROR;
 }
@@ -352,14 +337,13 @@ storageStateReload(void)
     if (!driver)
         return -1;
 
-    storageDriverLock();
-    virStoragePoolObjLoadAllState(driver->pools,
-                                  driver->stateDir);
-    virStoragePoolObjLoadAllConfigs(driver->pools,
-                                    driver->configDir,
-                                    driver->autostartDir);
-    storageDriverAutostart();
-    storageDriverUnlock();
+    VIR_WITH_MUTEX_LOCK_GUARD(&driver->lock) {
+        virStoragePoolObjLoadAllState(driver->pools, driver->stateDir);
+        virStoragePoolObjLoadAllConfigs(driver->pools,
+                                        driver->configDir,
+                                        driver->autostartDir);
+        storageDriverAutostart();
+    }
 
     return 0;
 }
@@ -376,8 +360,6 @@ storageStateCleanup(void)
     if (!driver)
         return -1;
 
-    storageDriverLock();
-
     virObjectUnref(driver->caps);
     virObjectUnref(driver->storageEventState);
 
@@ -391,7 +373,6 @@ storageStateCleanup(void)
     VIR_FREE(driver->configDir);
     VIR_FREE(driver->autostartDir);
     VIR_FREE(driver->stateDir);
-    storageDriverUnlock();
     virMutexDestroy(&driver->lock);
     VIR_FREE(driver);
 

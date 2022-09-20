@@ -33,9 +33,6 @@
 /* Yes, we want linux private one, for _syscall2() macro */
 #include <linux/unistd.h>
 
-/* For MS_MOVE */
-#include <linux/fs.h>
-
 #if WITH_CAPNG
 # include <cap-ng.h>
 #endif
@@ -52,10 +49,8 @@
 #include "virlog.h"
 #include "lxc_container.h"
 #include "viralloc.h"
-#include "virnetdevveth.h"
 #include "viruuid.h"
 #include "virfile.h"
-#include "virusb.h"
 #include "vircommand.h"
 #include "virnetdevip.h"
 #include "virprocess.h"

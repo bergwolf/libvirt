@@ -18,24 +18,43 @@ docs_assets = [
 ]
 
 docs_html_in_files = [
-  '404',
+  'index',
+]
+
+docs_rst_files = [
+  'aclpolkit',
+  'advanced-tests',
+  'api',
+  'api_extension',
+  'apps',
+  'auditlog',
+  'auth',
+  'best-practices',
+  'bindings',
   'bugs',
   'cgroups',
+  'ci',
+  'ci-dashboard',
+  'ci-runners',
+  'coding-style',
+  'committer-guidelines',
+  'compiling',
   'contact',
   'contribute',
   'csharp',
+  'daemons',
   'dbus',
-  'devguide',
   'docs',
   'downloads',
   'drivers',
   'drvbhyve',
+  'drvch',
   'drvesx',
   'drvhyperv',
   'drvlxc',
   'drvnodedev',
   'drvopenvz',
-  'drvremote',
+  'drvqemu',
   'drvsecret',
   'drvtest',
   'drvvbox',
@@ -44,76 +63,53 @@ docs_html_in_files = [
   'drvxen',
   'errors',
   'firewall',
-  'formatcaps',
-  'formatdomaincaps',
   'format',
+  'formatbackup',
+  'formatcaps',
+  'formatcheckpoint',
+  'formatdomain',
+  'formatdomaincaps',
   'formatnetwork',
   'formatnetworkport',
   'formatnode',
   'formatnwfilter',
   'formatsecret',
   'formatsnapshot',
+  'formatstorage',
   'formatstoragecaps',
   'formatstorageencryption',
+  'glib-adoption',
   'goals',
   'governance',
+  'hacking',
   'hooks',
-  'index',
-  'internals',
+  'issue-handling',
   'java',
+  'libvirt-go',
+  'libvirt-go-xml',
   'logging',
+  'macos',
+  'migration',
+  'newreposetup',
   'nss',
+  'pci-addresses',
   'pci-hotplug',
   'php',
+  'platforms',
+  'programming-languages',
   'python',
   'remote',
   'securityprocess',
   'storage',
   'strategy',
-  'support',
-  'testapi',
-  'testsuites',
-  'testtck',
-  'tlscerts',
-  'uri',
-  'virshcmdref',
-  'windows',
-]
-
-docs_rst_files = [
-  'aclpolkit',
-  'advanced-tests',
-  'api_extension',
-  'api',
-  'apps',
-  'auditlog',
-  'auth',
-  'bindings',
-  'best-practices',
-  'ci',
-  'coding-style',
-  'committer-guidelines',
-  'compiling',
-  'daemons',
-  'developer-tooling',
-  'drvqemu',
-  'drvch',
-  'formatbackup',
-  'formatcheckpoint',
-  'formatdomain',
-  'formatstorage',
-  'glib-adoption',
-  'hacking',
-  'libvirt-go',
-  'libvirt-go-xml',
-  'macos',
-  'migration',
-  'newreposetup',
-  'pci-addresses',
-  'platforms',
-  'programming-languages',
   'styleguide',
   'submitting-patches',
+  'support',
+  'testapi',
+  'testing',
+  'testtck',
+  'uri',
+  'windows',
 ]
 
 # list of web targets to build for docs/web rule
@@ -137,7 +133,6 @@ docs_timestamp = run_command(
 ).stdout().strip()
 
 site_xsl = files('site.xsl')
-subsite_xsl = files('subsite.xsl')
 page_xsl = files('page.xsl')
 newapi_xsl = files('newapi.xsl')
 
@@ -223,7 +218,6 @@ docs_rst2html5_gen = generator(
 
 # html_xslt_gen config
 
-html_xslt_gen_xslt = site_xsl
 html_xslt_gen_install_dir = docs_html_dir
 
 html_xslt_gen = []
@@ -254,6 +248,12 @@ html_xslt_gen += {
   'name': 'acl',
   'source': 'docs' / 'acl.html.in',
   'depends': aclperms_gen,
+}
+
+html_xslt_gen += {
+  'name': '404',
+  'source': 'docs' / '404.html.in',
+  'href_base': '/',
 }
 
 hvsupport_html_in = custom_target(
@@ -307,8 +307,9 @@ foreach data : html_xslt_gen
       '--stringparam', 'pagesrc', data.get('source', ''),
       '--stringparam', 'builddir', meson.build_root(),
       '--stringparam', 'timestamp', docs_timestamp,
+      '--stringparam', 'href_base', data.get('href_base', ''),
       '--nonet',
-      html_xslt_gen_xslt,
+      site_xsl,
       '@INPUT@',
     ],
     depends: data.get('depends', []),
@@ -331,13 +332,10 @@ subdir('fonts')
 subdir('go')
 subdir('html')
 subdir('images')
-subdir('internals')
 subdir('js')
 subdir('kbase')
 subdir('logos')
 subdir('manpages')
-subdir('schemas')
-
 
 foreach file : docs_assets
   # This hack enables us to view the web pages
@@ -354,4 +352,15 @@ run_target(
     install_web_files,
   ],
   depends: install_web_deps,
+)
+
+test(
+  'check-html-references',
+  python3_prog,
+  args: [
+    check_html_references_prog.path(),
+    '--prefix',
+    meson.build_root() / 'docs'
+  ],
+  env: runutf8,
 )

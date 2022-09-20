@@ -132,8 +132,7 @@ qemuVirtioFSBuildCommandLine(virQEMUDriverConfig *cfg,
     g_autoptr(virCommand) cmd = NULL;
     g_auto(virBuffer) opts = VIR_BUFFER_INITIALIZER;
 
-    if (!(cmd = virCommandNew(fs->binary)))
-        return NULL;
+    cmd = virCommandNew(fs->binary);
 
     virCommandAddArgFormat(cmd, "--fd=%d", *fd);
     virCommandPassFD(cmd, *fd, VIR_COMMAND_PASS_FD_CLOSE_PARENT);
@@ -163,6 +162,10 @@ qemuVirtioFSBuildCommandLine(virQEMUDriverConfig *cfg,
         virBufferAddLit(&opts, ",no_posix_lock");
 
     virCommandAddArgBuffer(cmd, &opts);
+
+    if (fs->thread_pool_size >= 0)
+        virCommandAddArgFormat(cmd, "--thread-pool-size=%i", fs->thread_pool_size);
+
     if (cfg->virtiofsdDebug)
         virCommandAddArg(cmd, "-d");
 

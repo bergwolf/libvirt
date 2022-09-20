@@ -104,8 +104,7 @@ virVBoxSnapshotConfCreateVBoxSnapshotConfHardDiskPtr(xmlNodePtr diskNode,
     VIR_FREE(location);
     VIR_FREE(tmp);
     if (result < 0) {
-        virVboxSnapshotConfHardDiskFree(hardDisk);
-        hardDisk = NULL;
+        g_clear_pointer(&hardDisk, virVboxSnapshotConfHardDiskFree);
     }
     return hardDisk;
 }
@@ -165,8 +164,7 @@ virVBoxSnapshotConfRetrieveMediaRegistry(xmlNodePtr mediaRegistryNode,
 
  cleanup:
     if (result < 0) {
-        virVBoxSnapshotConfMediaRegistryFree(mediaRegistry);
-        mediaRegistry = NULL;
+        g_clear_pointer(&mediaRegistry, virVBoxSnapshotConfMediaRegistryFree);
     }
     VIR_FREE(nodes);
     return mediaRegistry;
@@ -264,8 +262,7 @@ virVBoxSnapshotConfRetrieveSnapshot(xmlNodePtr snapshotNode,
 
  cleanup:
     if (result < 0) {
-        virVBoxSnapshotConfSnapshotFree(snapshot);
-        snapshot = NULL;
+        g_clear_pointer(&snapshot, virVBoxSnapshotConfSnapshotFree);
     }
     VIR_FREE(nodes);
     VIR_FREE(uuid);
@@ -348,8 +345,7 @@ virVBoxSnapshotConfCreateHardDiskNode(virVBoxSnapshotConfHardDisk *hardDisk)
  cleanup:
     if (result < 0) {
         xmlUnlinkNode(ret);
-        xmlFreeNode(ret);
-        ret = NULL;
+        g_clear_pointer(&ret, xmlFreeNode);
     }
     VIR_FREE(uuid);
     return ret;
@@ -458,7 +454,6 @@ virVBoxSnapshotConfAllChildren(virVBoxSnapshotConfHardDisk *disk,
                                virVBoxSnapshotConfHardDisk ***list)
 {
     size_t returnSize = 0;
-    size_t tempSize = 0;
     virVBoxSnapshotConfHardDisk **ret = NULL;
     virVBoxSnapshotConfHardDisk **tempList = NULL;
     size_t i = 0;
@@ -467,7 +462,7 @@ virVBoxSnapshotConfAllChildren(virVBoxSnapshotConfHardDisk *disk,
     ret = g_new0(virVBoxSnapshotConfHardDisk *, 0);
 
     for (i = 0; i < disk->nchildren; i++) {
-        tempSize = virVBoxSnapshotConfAllChildren(disk->children[i], &tempList);
+        size_t tempSize = virVBoxSnapshotConfAllChildren(disk->children[i], &tempList);
         VIR_EXPAND_N(ret, returnSize, tempSize);
 
         for (j = 0; j < tempSize; j++)

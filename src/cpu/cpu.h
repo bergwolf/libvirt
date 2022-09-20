@@ -20,7 +20,6 @@
 
 #pragma once
 
-#include "virerror.h"
 #include "datatypes.h"
 #include "virarch.h"
 #include "domain_capabilities.h"
@@ -213,7 +212,7 @@ virCPUGetHost(virArch arch,
               virDomainCapsCPUModels *models);
 
 virCPUDef *
-virCPUProbeHost(virArch arch) G_GNUC_NO_INLINE;
+virCPUProbeHost(virArch arch) G_NO_INLINE;
 
 virCPUDef *
 virCPUBaseline(virArch arch,

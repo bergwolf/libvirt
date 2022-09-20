@@ -1,6 +1,6 @@
 project(
   'libvirt', 'c',
-  version: '8.1.0',
+  version: '8.8.0',
   license: 'LGPLv2+',
   meson_version: '>= 0.54.0',
   default_options: [
@@ -510,12 +510,13 @@ libvirt_no_indirect = cc.get_supported_link_arguments([
 
 if host_machine.system() == 'windows'
   version_script_flags = '-Wl,'
+elif host_machine.system() == 'darwin'
+  # macOS libraries don't support symbol versioning
+  version_script_flags = ''
 else
   test_file = '@0@/src/libvirt_qemu.syms'.format(meson.source_root())
   if cc.has_link_argument('-Wl,--version-script=@0@'.format(test_file))
     version_script_flags = '-Wl,--version-script='
-  elif cc.has_link_argument('-Wl,-M,')
-    version_script_flags = '-Wl,-M,'
   else
     error('No supported version script link argument found.')
   endif
@@ -556,7 +557,6 @@ functions = [
   'prlimit',
   'sched_setscheduler',
   'setgroups',
-  'setns',
   'setrlimit',
   'symlink',
   'sysctlbyname',
@@ -947,10 +947,16 @@ if dlopen_dep.found()
   conf.set('WITH_DLFCN_H', 1)
 endif
 
-fuse_version = '2.8.6'
-fuse_dep = dependency('fuse', version: '>=' + fuse_version, required: get_option('fuse'))
+fuse_version = '3.1.0'
+fuse_dep = dependency('fuse3', version: '>=' + fuse_version, required: false)
 if fuse_dep.found()
-  conf.set('WITH_FUSE', 1)
+  conf.set('WITH_FUSE', 3)
+else
+  fuse_version = '2.8.6'
+  fuse_dep = dependency('fuse', version: '>=' + fuse_version, required: get_option('fuse'))
+  if fuse_dep.found()
+    conf.set('WITH_FUSE', 1)
+  endif
 endif
 
 glib_version = '2.56.0'
@@ -976,7 +982,7 @@ conf.set('GLIB_VERSION_MAX_ALLOWED', glib_version_str)
 glusterfs_version = '3.4.1'
 glusterfs_dep = dependency('glusterfs-api', version: '>=' + glusterfs_version, required: get_option('glusterfs'))
 
-gnutls_version = '3.2.0'
+gnutls_version = '3.6.0'
 gnutls_dep = dependency('gnutls', version: '>=' + gnutls_version)
 
 # Check for BSD kvm (kernel memory interface)
@@ -1007,7 +1013,7 @@ else
 endif
 
 libparted_version = '1.8.0'
-libparted_dep = dependency('libparted', version: '>=' + libparted_version, required: false)
+libparted_dep = dependency('libparted', version: '>=' + libparted_version, required: get_option('storage_disk'))
 
 libpcap_version = '1.5.0'
 if not get_option('libpcap').disabled()
@@ -1019,24 +1025,11 @@ else
   libpcap_dep = dependency('', required: false)
 endif
 
-libssh_version = '0.7'
+libssh_version = '0.8.1'
 if conf.has('WITH_REMOTE')
   libssh_dep = dependency('libssh', version: '>=' + libssh_version, required: get_option('libssh'))
   if libssh_dep.found()
     conf.set('WITH_LIBSSH', 1)
-
-    # Check if new functions exists, if not redefine them with old deprecated ones.
-    # List of [ new_function, deprecated_function ].
-    functions = [
-      [ 'ssh_get_server_publickey', 'ssh_get_publickey' ],
-      [ 'ssh_session_is_known_server', 'ssh_is_server_known' ],
-      [ 'ssh_session_update_known_hosts', 'ssh_write_knownhost' ],
-    ]
-    foreach name : functions
-      if not cc.has_function(name[0], dependencies: libssh_dep)
-        conf.set(name[0], name[1])
-      endif
-    endforeach
   endif
 else
   libssh_dep = dependency('', required: false)
@@ -1121,8 +1114,8 @@ parallels_sdk_dep = dependency('parallels-sdk', version: '>=' + parallels_sdk_ve
 pciaccess_version = '0.10.0'
 pciaccess_dep = dependency('pciaccess', version: '>=' + pciaccess_version, required: get_option('pciaccess'))
 
-rbd_dep = cc.find_library('rbd', required: false)
-rados_dep = cc.find_library('rados', required: false)
+rbd_dep = cc.find_library('rbd', required: get_option('storage_rbd'))
+rados_dep = cc.find_library('rados', required: get_option('storage_rbd'))
 if rbd_dep.found() and not cc.has_function('rbd_get_features', dependencies: rbd_dep)
   rbd_dep = dependency('', required: false)
 endif
@@ -1665,24 +1658,23 @@ if not get_option('driver_qemu').disabled()
         qemu_user = 'root'
         qemu_group = 'wheel'
       else
-        os_release = run_command('grep', '^ID=', '/etc/os-release', check: false).stdout()
+        os_release = run_command('grep', '-E', '^ID(_LIKE)*=', '/etc/os-release', check: false).stdout()
         if os_release.contains('arch')
           qemu_user = 'nobody'
           qemu_group = 'nobody'
-        elif (os_release.contains('centos') or
-              os_release.contains('fedora') or
+        # RHEL and CentOS both have ID_LIKE=fedora, SLES has ID_LIKE=suse
+        elif (os_release.contains('fedora') or
               os_release.contains('gentoo') or
-              os_release.contains('rhel') or
-              os_release.contains('sles') or
               os_release.contains('suse'))
           qemu_user = 'qemu'
           qemu_group = 'qemu'
-        elif os_release.contains('debian')
-          qemu_user = 'libvirt-qemu'
-          qemu_group = 'libvirt-qemu'
+        # Ubuntu has ID_LIKE=debian so we need to handle it first
         elif os_release.contains('ubuntu')
           qemu_user = 'libvirt-qemu'
           qemu_group = 'kvm'
+        elif os_release.contains('debian')
+          qemu_user = 'libvirt-qemu'
+          qemu_group = 'libvirt-qemu'
         else
           qemu_user = 'root'
           qemu_group = 'root'
@@ -1911,16 +1903,6 @@ if conf.has('WITH_LIBVIRTD')
     conf.set('WITH_STORAGE_SCSI', 1)
   endif
 
-  if not get_option('storage_sheepdog').disabled()
-    sheepdogcli_prog = find_program('dog', required: get_option('storage_sheepdog'), dirs: libvirt_sbin_path)
-
-    if sheepdogcli_prog.found()
-      use_storage = true
-      conf.set('WITH_STORAGE_SHEEPDOG', 1)
-      conf.set_quoted('SHEEPDOGCLI', sheepdogcli_prog.path())
-    endif
-  endif
-
   if not get_option('storage_vstorage').disabled()
     vstorage_enable = true
     if host_machine.system() != 'linux'
@@ -2130,14 +2112,15 @@ pkgconfig_files = [
   'libvirt-admin.pc.in',
 ]
 
-pkgconfig_conf = configuration_data()
-pkgconfig_conf.set('VERSION', meson.project_version())
-pkgconfig_conf.set('datadir', datadir)
-pkgconfig_conf.set('datarootdir', datadir)
-pkgconfig_conf.set('exec_prefix', prefix)
-pkgconfig_conf.set('includedir', includedir)
-pkgconfig_conf.set('libdir', libdir)
-pkgconfig_conf.set('prefix', prefix)
+pkgconfig_conf = configuration_data({
+  'VERSION': meson.project_version(),
+  'datadir': datadir,
+  'datarootdir': datadir,
+  'exec_prefix': prefix,
+  'includedir': includedir,
+  'libdir': libdir,
+  'prefix': prefix,
+})
 
 pkgconfig_dir = libdir / 'pkgconfig'
 
@@ -2155,28 +2138,23 @@ endforeach
 # generate dist files
 
 if git
-  spec_files = [
-    'libvirt.spec.in',
-    'mingw-libvirt.spec.in',
-  ]
+  spec_conf = configuration_data({
+    'VERSION': meson.project_version(),
+  })
 
-  spec_conf = configuration_data()
-  spec_conf.set('VERSION', meson.project_version())
-
-  foreach file : spec_files
-    configure_file(
-      input: file,
-      output: '@BASENAME@',
-      configuration: spec_conf,
-    )
-  endforeach
+  configure_file(
+    input: 'libvirt.spec.in',
+    output: '@BASENAME@',
+    configuration: spec_conf,
+  )
 
   authors = run_command(python3_prog, meson_gen_authors_prog.path(),
                         env: runutf8, check: true)
   authors_file = 'AUTHORS.rst.in'
 
-  authors_conf = configuration_data()
-  authors_conf.set('contributorslist', authors.stdout())
+  authors_conf = configuration_data({
+    'contributorslist': authors.stdout(),
+  })
 
   configure_file(
     input: authors_file,
@@ -2204,34 +2182,17 @@ configure_file(output: 'meson-config.h', configuration: conf)
 
 
 # generate run helper
-run_conf = configuration_data()
-run_conf.set('abs_builddir', meson.build_root())
-run_conf.set('abs_top_builddir', meson.build_root())
+run_conf = configuration_data({
+  'abs_builddir': meson.build_root(),
+  'abs_top_builddir': meson.build_root(),
+})
+
 configure_file(
   input: 'run.in',
   output: '@BASENAME@',
   configuration: run_conf,
 )
 run_command('chmod', 'a+x', meson.current_build_dir() / 'run', check: true)
-
-
-# generate developer tooling files
-tooling_files = [
-  '.color_coded.in',
-  '.ycm_extra_conf.py.in',
-]
-
-tooling_conf = configuration_data()
-tooling_conf.set('abs_top_builddir', meson.build_root())
-tooling_conf.set('abs_top_srcdir', meson.source_root())
-
-foreach file : tooling_files
-  configure_file(
-    input: file,
-    output: '@BASENAME@',
-    configuration: tooling_conf,
-  )
-endforeach
 
 
 # print configuration summary
@@ -2267,7 +2228,6 @@ storagedriver_summary = {
   'mpath': conf.has('WITH_STORAGE_MPATH'),
   'Disk': conf.has('WITH_STORAGE_DISK'),
   'RBD': conf.has('WITH_STORAGE_RBD'),
-  'Sheepdog': conf.has('WITH_STORAGE_SHEEPDOG'),
   'Gluster': conf.has('WITH_STORAGE_GLUSTER'),
   'ZFS': conf.has('WITH_STORAGE_ZFS'),
   'Virtuozzo storage': conf.has('WITH_STORAGE_VSTORAGE'),
