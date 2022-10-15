@@ -166,6 +166,7 @@ VIR_ENUM_IMPL(virshDomainRunningReason,
               N_("event wakeup"),
               N_("crashed"),
               N_("post-copy"),
+              N_("post-copy failed"),
 );
 
 VIR_ENUM_DECL(virshDomainBlockedReason);
@@ -1740,8 +1741,7 @@ virshDomainListCollect(vshControl *ctl, unsigned int flags)
 
  remove_entry:
         /* the domain has to be removed as it failed one of the filters */
-        virshDomainFree(list->domains[i]);
-        list->domains[i] = NULL;
+        g_clear_pointer(&list->domains[i], virshDomainFree);
         deleted++;
     }
 
@@ -1762,8 +1762,7 @@ virshDomainListCollect(vshControl *ctl, unsigned int flags)
         VIR_FREE(names[i]);
 
     if (!success) {
-        virshDomainListFree(list);
-        list = NULL;
+        g_clear_pointer(&list, virshDomainListFree);
     }
 
     VIR_FREE(names);

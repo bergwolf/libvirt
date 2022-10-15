@@ -120,9 +120,15 @@
       <body onload="pageload()">
         <div id="body">
           <xsl:choose>
+            <!-- docutils-0.16 and older use a div as container for contents -->
             <xsl:when test="html:html/html:body/html:div/@class='document'">
               <xsl:apply-templates select="/html:html/html:body/*" mode="content"/>
             </xsl:when>
+            <!-- docutils-0.17 adopted use of the 'main' semantic container -->
+            <xsl:when test="html:html/html:body/html:main">
+              <xsl:apply-templates select="/html:html/html:body/*" mode="content"/>
+            </xsl:when>
+            <!-- for our older html-only files -->
             <xsl:otherwise>
               <div class="document">
                 <xsl:if test="html:html/html:body/@id">
@@ -166,7 +172,7 @@
           <div id="contact">
             <h3>Contact</h3>
             <ul>
-              <li><a href="{$href_base}contact.html#email">email</a></li>
+              <li><a href="{$href_base}contact.html#mailing-lists">email</a></li>
               <li><a href="{$href_base}contact.html#irc">irc</a></li>
             </ul>
           </div>
@@ -187,7 +193,7 @@
             </div>
           </xsl:if>
           <div id="conduct">
-            Participants in the libvirt project agree to abide by <a href="{$href_base}governance.html#codeofconduct">the project code of conduct</a>
+            Participants in the libvirt project agree to abide by <a href="{$href_base}governance.html#code-of-conduct">the project code of conduct</a>
           </div>
           <br class="clear"/>
         </div>
@@ -215,11 +221,11 @@
     </xsl:element>
   </xsl:template>
 
-  <xsl:template match="text()" mode="copy">
+  <xsl:template match="text()" mode="copy" priority="0">
     <xsl:value-of select="."/>
   </xsl:template>
 
-  <xsl:template match="node()" mode="copy">
+  <xsl:template match="*" mode="copy">
     <xsl:element name="{name()}">
       <xsl:copy-of select="./@*"/>
       <xsl:apply-templates mode="copy" />

@@ -38,7 +38,6 @@
 #include "qemu_hostdev.h"
 #include "viralloc.h"
 #include "virlog.h"
-#include "virstring.h"
 #include "virdevmapper.h"
 #include "virglibutil.h"
 
@@ -110,6 +109,8 @@ qemuDomainGetPreservedMountPath(virQEMUDriverConfig *cfg,
  * b) generate backup path for all the entries in a)
  *
  * Any of the return pointers can be NULL. Both arrays are NULL-terminated.
+ * Get the mount table either from @vm's PID (if running), or from the
+ * namespace we're in (if @vm's not running).
  *
  * Returns 0 on success, -1 otherwise (with error reported)
  */
@@ -124,12 +125,18 @@ qemuDomainGetPreservedMounts(virQEMUDriverConfig *cfg,
     size_t nmounts = 0;
     g_auto(GStrv) paths = NULL;
     g_auto(GStrv) savePaths = NULL;
+    g_autofree char *mountsPath = NULL;
     size_t i;
 
     if (ndevPath)
         *ndevPath = 0;
 
-    if (virFileGetMountSubtree(QEMU_PROC_MOUNTS, "/dev", &mounts, &nmounts) < 0)
+    if (vm->pid > 0)
+        mountsPath = g_strdup_printf("/proc/%lld/mounts", (long long) vm->pid);
+    else
+        mountsPath = g_strdup(QEMU_PROC_MOUNTS);
+
+    if (virFileGetMountSubtree(mountsPath, "/dev", &mounts, &nmounts) < 0)
         return -1;
 
     if (nmounts == 0)
@@ -572,8 +579,10 @@ qemuDomainSetupLoader(virDomainObj *vm,
         case VIR_DOMAIN_LOADER_TYPE_PFLASH:
             *paths = g_slist_prepend(*paths, g_strdup(loader->path));
 
-            if (loader->nvram)
-                *paths = g_slist_prepend(*paths, g_strdup(loader->nvram));
+            if (loader->nvram &&
+                qemuDomainSetupDisk(loader->nvram, paths) < 0)
+                return -1;
+
             break;
 
         case VIR_DOMAIN_LOADER_TYPE_NONE:
@@ -833,8 +842,7 @@ qemuDomainDisableNamespace(virDomainObj *vm,
     if (priv->namespaces) {
         ignore_value(virBitmapClearBit(priv->namespaces, ns));
         if (virBitmapIsAllClear(priv->namespaces)) {
-            virBitmapFree(priv->namespaces);
-            priv->namespaces = NULL;
+            g_clear_pointer(&priv->namespaces, virBitmapFree);
         }
     }
 }
@@ -949,38 +957,54 @@ qemuNamespaceMknodOne(qemuNamespaceMknodItem *data)
     }
 
     if (isLink) {
-        VIR_DEBUG("Creating symlink %s -> %s", data->file, data->target);
+        g_autofree char *target = NULL;
 
-        /* First, unlink the symlink target. Symlinks change and
-         * therefore we have no guarantees that pre-existing
-         * symlink is still valid. */
-        if (unlink(data->file) < 0 &&
-            errno != ENOENT) {
-            virReportSystemError(errno,
-                                 _("Unable to remove symlink %s"),
-                                 data->file);
-            goto cleanup;
-        }
-
-        if (symlink(data->target, data->file) < 0) {
-            virReportSystemError(errno,
-                                 _("Unable to create symlink %s (pointing to %s)"),
-                                 data->file, data->target);
-            goto cleanup;
+        if ((target = g_file_read_link(data->file, NULL)) &&
+            STREQ(target, data->target)) {
+            VIR_DEBUG("Skipping symlink %s -> %s which exists and points to correct target",
+                      data->file, data->target);
         } else {
-            delDevice = true;
+            VIR_DEBUG("Creating symlink %s -> %s", data->file, data->target);
+
+            /* First, unlink the symlink target. Symlinks change and
+             * therefore we have no guarantees that pre-existing
+             * symlink is still valid. */
+            if (unlink(data->file) < 0 &&
+                errno != ENOENT) {
+                virReportSystemError(errno,
+                                     _("Unable to remove symlink %s"),
+                                     data->file);
+                goto cleanup;
+            }
+
+            if (symlink(data->target, data->file) < 0) {
+                virReportSystemError(errno,
+                                     _("Unable to create symlink %s (pointing to %s)"),
+                                     data->file, data->target);
+                goto cleanup;
+            } else {
+                delDevice = true;
+            }
         }
     } else if (isDev) {
-        VIR_DEBUG("Creating dev %s (%d,%d)",
-                  data->file, major(data->sb.st_rdev), minor(data->sb.st_rdev));
-        unlink(data->file);
-        if (mknod(data->file, data->sb.st_mode, data->sb.st_rdev) < 0) {
-            virReportSystemError(errno,
-                                 _("Unable to create device %s"),
-                                 data->file);
-            goto cleanup;
+        GStatBuf sb;
+
+        if (g_lstat(data->file, &sb) >= 0 &&
+            sb.st_rdev == data->sb.st_rdev) {
+            VIR_DEBUG("Skipping dev %s (%d,%d) which exists and has correct MAJ:MIN",
+                       data->file, major(data->sb.st_rdev), minor(data->sb.st_rdev));
         } else {
-            delDevice = true;
+            VIR_DEBUG("Creating dev %s (%d,%d)",
+                      data->file, major(data->sb.st_rdev), minor(data->sb.st_rdev));
+            unlink(data->file);
+            if (mknod(data->file, data->sb.st_mode, data->sb.st_rdev) < 0) {
+                virReportSystemError(errno,
+                                     _("Unable to create device %s"),
+                                     data->file);
+                goto cleanup;
+            } else {
+                delDevice = true;
+            }
         }
     } else if (isReg || isDir) {
         /* We are not cleaning up disks on virDomainDetachDevice
@@ -1023,8 +1047,7 @@ qemuNamespaceMknodOne(qemuNamespaceMknodItem *data)
         goto cleanup;
     }
 
-    /* Symlinks don't have ACLs. */
-    if (!isLink &&
+    if (data->acl &&
         virFileSetACLs(data->file, data->acl) < 0 &&
         errno != ENOTSUP) {
         virReportSystemError(errno,
@@ -1269,6 +1292,9 @@ qemuNamespaceMknodPaths(virDomainObj *vm,
             goto cleanup;
     }
 
+    if (data.nitems == 0)
+        return 0;
+
     for (i = 0; i < data.nitems; i++) {
         qemuNamespaceMknodItem *item = &data.items[i];
         if (item->target &&
@@ -1365,6 +1391,7 @@ qemuNamespaceUnlinkPaths(virDomainObj *vm,
         if (STRPREFIX(path, QEMU_DEVPREFIX)) {
             GStrv mount;
             bool inSubmount = false;
+            const char *const *devices = (const char *const *)cfg->cgroupDeviceACL;
 
             for (mount = devMountsPath; *mount; mount++) {
                 if (STREQ(*mount, "/dev"))
@@ -1376,8 +1403,16 @@ qemuNamespaceUnlinkPaths(virDomainObj *vm,
                 }
             }
 
-            if (!inSubmount)
-                unlinkPaths = g_slist_prepend(unlinkPaths, g_strdup(path));
+            if (inSubmount)
+                continue;
+
+            if (!devices)
+                devices = defaultDeviceACL;
+
+            if (g_strv_contains(devices, path))
+                continue;
+
+            unlinkPaths = g_slist_prepend(unlinkPaths, g_strdup(path));
         }
     }
 
@@ -1385,6 +1420,25 @@ qemuNamespaceUnlinkPaths(virDomainObj *vm,
         virProcessRunInMountNamespace(vm->pid,
                                       qemuNamespaceUnlinkHelper,
                                       unlinkPaths) < 0)
+        return -1;
+
+    return 0;
+}
+
+
+int
+qemuDomainNamespaceSetupPath(virDomainObj *vm,
+                             const char *path,
+                             bool *created)
+{
+    g_autoptr(virGSListString) paths = NULL;
+
+    if (!qemuDomainNamespaceEnabled(vm, QEMU_DOMAIN_NS_MOUNT))
+        return 0;
+
+    paths = g_slist_prepend(paths, g_strdup(path));
+
+    if (qemuNamespaceMknodPaths(vm, paths, created) < 0)
         return -1;
 
     return 0;

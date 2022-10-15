@@ -25,8 +25,6 @@
 #include "internal.h"
 #include "datatypes.h"
 #include "virdomainobjlist.h"
-#include "checkpoint_conf.h"
-#include "snapshot_conf.h"
 #include "viralloc.h"
 #include "virfile.h"
 #include "virlog.h"
@@ -46,11 +44,11 @@ struct _virDomainObjList {
     virObjectRWLockable parent;
 
     /* uuid string -> virDomainObj  mapping
-     * for O(1), lockless lookup-by-uuid */
+     * for O(1), lookup-by-uuid */
     GHashTable *objs;
 
     /* name -> virDomainObj mapping for O(1),
-     * lockless lookup-by-name */
+     * lookup-by-name */
     GHashTable *objsName;
 };
 
@@ -75,8 +73,8 @@ virDomainObjList *virDomainObjListNew(void)
     if (!(doms = virObjectRWLockableNew(virDomainObjListClass)))
         return NULL;
 
-    doms->objs = virHashNew(virObjectFreeHashData);
-    doms->objsName = virHashNew(virObjectFreeHashData);
+    doms->objs = virHashNew(virObjectUnref);
+    doms->objsName = virHashNew(virObjectUnref);
     return doms;
 }
 
@@ -219,7 +217,7 @@ virDomainObjListFindByName(virDomainObjList *doms,
  * tables. Once successfully added into a table, increase the
  * reference count since upon removal in virHashRemoveEntry
  * the virObjectUnref will be called since the hash tables were
- * configured to call virObjectFreeHashData when the object is
+ * configured to call virObjectUnref when the object is
  * removed from the hash table.
  *
  * Returns 0 on success with 3 references and locked
@@ -455,7 +453,7 @@ virDomainObjListRename(virDomainObjList *doms,
 
     /* Increment the refcnt for @new_name. We're about to remove
      * the @old_name which will cause the refcnt to be decremented
-     * via the virObjectUnref call made during the virObjectFreeHashData
+     * via the virObjectUnref call made during the virObjectUnref
      * as a result of removing something from the object list hash
      * table as set up during virDomainObjListNew. */
     virObjectRef(dom);

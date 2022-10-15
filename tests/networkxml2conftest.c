@@ -8,10 +8,8 @@
 #include "internal.h"
 #include "testutils.h"
 #include "network_conf.h"
-#include "vircommand.h"
 #include "viralloc.h"
 #include "network/bridge_driver.h"
-#include "virstring.h"
 #define LIBVIRT_VIRCOMMANDPRIV_H_ALLOW
 #include "vircommandpriv.h"
 
@@ -33,7 +31,7 @@ testCompareXMLToConfFiles(const char *inxml, const char *outconf,
     if (!(xmlopt = networkDnsmasqCreateXMLConf()))
         goto fail;
 
-    if (!(def = virNetworkDefParseFile(inxml, xmlopt)))
+    if (!(def = virNetworkDefParse(NULL, inxml, xmlopt, false)))
         goto fail;
 
     if (!(obj = virNetworkObjNew()))
@@ -168,6 +166,7 @@ mymain(void)
     DO_TEST("isolated-network", full);
     DO_TEST("netboot-network", full);
     DO_TEST("netboot-proxy-network", full);
+    DO_TEST("netboot-tftp", full);
     DO_TEST("nat-network-dns-srv-record-minimal", full);
     DO_TEST("nat-network-name-with-quotes", full);
     DO_TEST("routed-network", full);

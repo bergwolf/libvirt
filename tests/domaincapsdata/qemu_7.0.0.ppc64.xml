@@ -40,9 +40,10 @@
       <model fallback='allow'>POWER8</model>
     </mode>
     <mode name='custom' supported='yes'>
-      <model usable='unknown'>POWER9</model>
-      <model usable='unknown'>POWER8</model>
-      <model usable='unknown'>POWER7</model>
+      <model usable='unknown' vendor='IBM'>POWER10</model>
+      <model usable='unknown' vendor='IBM'>POWER9</model>
+      <model usable='unknown' vendor='IBM'>POWER8</model>
+      <model usable='unknown' vendor='IBM'>POWER7</model>
     </mode>
   </cpu>
   <memoryBacking supported='yes'>
@@ -73,7 +74,9 @@
     </disk>
     <graphics supported='yes'>
       <enum name='type'>
+        <value>sdl</value>
         <value>vnc</value>
+        <value>egl-headless</value>
       </enum>
     </graphics>
     <video supported='yes'>
@@ -135,7 +138,15 @@
         <value>passthrough</value>
         <value>emulator</value>
       </enum>
+      <enum name='backendVersion'>
+        <value>2.0</value>
+      </enum>
     </tpm>
+    <redirdev supported='yes'>
+      <enum name='bus'>
+        <value>usb</value>
+      </enum>
+    </redirdev>
   </devices>
   <features>
     <gic supported='no'/>

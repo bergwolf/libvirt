@@ -34,12 +34,10 @@
 #include "virerror.h"
 #include "virjson.h"
 #include "virfile.h"
-#include "virprocess.h"
 #include "virtime.h"
 #include "virobject.h"
 #include "virstring.h"
 #include "virenum.h"
-#include "virsocket.h"
 #include "virutil.h"
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
@@ -233,12 +231,12 @@ qemuAgentIOProcessLine(qemuAgent *agent,
         return -1;
     }
 
-    if (virJSONValueObjectHasKey(obj, "QMP") == 1) {
+    if (virJSONValueObjectHasKey(obj, "QMP")) {
         return 0;
-    } else if (virJSONValueObjectHasKey(obj, "event") == 1) {
+    } else if (virJSONValueObjectHasKey(obj, "event")) {
         return qemuAgentIOProcessEvent(agent, obj);
-    } else if (virJSONValueObjectHasKey(obj, "error") == 1 ||
-               virJSONValueObjectHasKey(obj, "return") == 1) {
+    } else if (virJSONValueObjectHasKey(obj, "error") ||
+               virJSONValueObjectHasKey(obj, "return")) {
         if (msg) {
             if (msg->sync) {
                 unsigned long long id;
@@ -680,9 +678,9 @@ qemuAgentNotifyClose(qemuAgent *agent)
 
     VIR_DEBUG("agent=%p", agent);
 
-    virObjectLock(agent);
-    qemuAgentNotifyCloseLocked(agent);
-    virObjectUnlock(agent);
+    VIR_WITH_OBJECT_LOCK_GUARD(agent) {
+        qemuAgentNotifyCloseLocked(agent);
+    }
 }
 
 
@@ -693,17 +691,15 @@ void qemuAgentClose(qemuAgent *agent)
 
     VIR_DEBUG("agent=%p", agent);
 
-    virObjectLock(agent);
+    VIR_WITH_OBJECT_LOCK_GUARD(agent) {
+        if (agent->socket) {
+            qemuAgentUnregister(agent);
+            g_clear_pointer(&agent->socket, g_object_unref);
+            agent->fd = -1;
+        }
 
-    if (agent->socket) {
-        qemuAgentUnregister(agent);
-        g_object_unref(agent->socket);
-        agent->socket = NULL;
-        agent->fd = -1;
+        qemuAgentNotifyCloseLocked(agent);
     }
-
-    qemuAgentNotifyCloseLocked(agent);
-    virObjectUnlock(agent);
 
     virObjectUnref(agent);
 }
@@ -1127,7 +1123,7 @@ qemuAgentMakeStringsArray(const char **strings, unsigned int len)
 void qemuAgentNotifyEvent(qemuAgent *agent,
                           qemuAgentEvent event)
 {
-    virObjectLock(agent);
+    VIR_LOCK_GUARD lock = virObjectLockGuard(agent);
 
     VIR_DEBUG("agent=%p event=%d await_event=%d", agent, event, agent->await_event);
     if (agent->await_event == event) {
@@ -1138,8 +1134,6 @@ void qemuAgentNotifyEvent(qemuAgent *agent,
             virCondSignal(&agent->notify);
         }
     }
-
-    virObjectUnlock(agent);
 }
 
 VIR_ENUM_DECL(qemuAgentShutdownMode);
@@ -1769,9 +1763,9 @@ qemuAgentGetDiskAddress(virJSONValue *json)
     GET_DISK_ADDR(pci, &addr->pci_controller.function, "function");
 
     if ((ccw = virJSONValueObjectGet(json, "ccw-address"))) {
-        g_autofree virDomainDeviceCCWAddress *ccw_addr = NULL;
+        g_autofree virCCWDeviceAddress *ccw_addr = NULL;
 
-        ccw_addr = g_new0(virDomainDeviceCCWAddress, 1);
+        ccw_addr = g_new0(virCCWDeviceAddress, 1);
 
         GET_DISK_ADDR(ccw, &ccw_addr->cssid, "cssid");
         if (ccw_addr->cssid == 0)  /* Guest CSSID 0 is 0xfe on host */
