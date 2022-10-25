@@ -29,18 +29,11 @@
 #include "datatypes.h"
 #include "driver.h"
 #include "viraccessapicheck.h"
-#include "viralloc.h"
-#include "virbuffer.h"
 #include "virchrdev.h"
-#include "vircommand.h"
 #include "virerror.h"
-#include "virfile.h"
 #include "virlog.h"
-#include "virnetdevtap.h"
 #include "virobject.h"
-#include "virstring.h"
 #include "virtypedparam.h"
-#include "viruri.h"
 #include "virutil.h"
 #include "viruuid.h"
 #include "virnuma.h"
@@ -106,9 +99,7 @@ static int chConnectGetVersion(virConnectPtr conn,
     if (virConnectGetVersionEnsureACL(conn) < 0)
         return -1;
 
-    chDriverLock(driver);
     *version = driver->version;
-    chDriverUnlock(driver);
     return 0;
 }
 
@@ -226,22 +217,22 @@ chDomainCreateXML(virConnectPtr conn,
                                    NULL)))
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virCHProcessStart(driver, vm, VIR_DOMAIN_RUNNING_BOOTED) < 0)
-        goto cleanup;
+        goto endjob;
 
     dom = virGetDomain(conn, vm->def->name, vm->def->uuid, vm->def->id);
 
-    virCHDomainObjEndJob(vm);
+ endjob:
+    virDomainObjEndJob(vm);
 
  cleanup:
     if (vm && !dom) {
-        virDomainObjListRemove(driver->domains, vm);
+        virCHDomainRemoveInactive(driver, vm);
     }
     virDomainObjEndAPI(&vm);
-    chDriverUnlock(driver);
     return dom;
 }
 
@@ -260,12 +251,12 @@ chDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
     if (virDomainCreateWithFlagsEnsureACL(dom->conn, vm->def) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     ret = virCHProcessStart(driver, vm, VIR_DOMAIN_RUNNING_BOOTED);
 
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -344,10 +335,9 @@ chDomainUndefineFlags(virDomainPtr dom,
         goto cleanup;
     }
 
-    if (virDomainObjIsActive(vm)) {
-        vm->persistent = 0;
-    } else {
-        virDomainObjListRemove(driver->domains, vm);
+    vm->persistent = 0;
+    if (!virDomainObjIsActive(vm)) {
+        virCHDomainRemoveInactive(driver, vm);
     }
 
     ret = 0;
@@ -365,11 +355,9 @@ chDomainUndefine(virDomainPtr dom)
 
 static int chDomainIsActive(virDomainPtr dom)
 {
-    virCHDriver *driver = dom->conn->privateData;
     virDomainObj *vm;
     int ret = -1;
 
-    chDriverLock(driver);
     if (!(vm = virCHDomainObjFromDomain(dom)))
         goto cleanup;
 
@@ -380,7 +368,6 @@ static int chDomainIsActive(virDomainPtr dom)
 
  cleanup:
     virDomainObjEndAPI(&vm);
-    chDriverUnlock(driver);
     return ret;
 }
 
@@ -403,7 +390,7 @@ chDomainShutdownFlags(virDomainPtr dom,
     if (virDomainShutdownFlagsEnsureACL(dom->conn, vm->def, flags) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjCheckActive(vm) < 0)
@@ -427,7 +414,7 @@ chDomainShutdownFlags(virDomainPtr dom,
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -459,7 +446,7 @@ chDomainReboot(virDomainPtr dom, unsigned int flags)
     if (virDomainRebootEnsureACL(dom->conn, vm->def, flags) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjCheckActive(vm) < 0)
@@ -486,7 +473,7 @@ chDomainReboot(virDomainPtr dom, unsigned int flags)
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -508,7 +495,7 @@ chDomainSuspend(virDomainPtr dom)
     if (virDomainSuspendEnsureACL(dom->conn, vm->def) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjCheckActive(vm) < 0)
@@ -531,7 +518,7 @@ chDomainSuspend(virDomainPtr dom)
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -553,7 +540,7 @@ chDomainResume(virDomainPtr dom)
     if (virDomainResumeEnsureACL(dom->conn, vm->def) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjCheckActive(vm) < 0)
@@ -576,7 +563,7 @@ chDomainResume(virDomainPtr dom)
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -607,18 +594,20 @@ chDomainDestroyFlags(virDomainPtr dom, unsigned int flags)
     if (virDomainDestroyFlagsEnsureACL(dom->conn, vm->def) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_DESTROY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_DESTROY) < 0)
         goto cleanup;
 
     if (virDomainObjCheckActive(vm) < 0)
         goto endjob;
 
-    ret = virCHProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_DESTROYED);
+    if (virCHProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_DESTROYED) < 0)
+        goto endjob;
+
+    virCHDomainRemoveInactive(driver, vm);
+    ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
-    if (!vm->persistent)
-        virDomainObjListRemove(driver->domains, vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -638,9 +627,7 @@ static virDomainPtr chDomainLookupByID(virConnectPtr conn,
     virDomainObj *vm;
     virDomainPtr dom = NULL;
 
-    chDriverLock(driver);
     vm = virDomainObjListFindByID(driver->domains, id);
-    chDriverUnlock(driver);
 
     if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN,
@@ -665,9 +652,7 @@ static virDomainPtr chDomainLookupByName(virConnectPtr conn,
     virDomainObj *vm;
     virDomainPtr dom = NULL;
 
-    chDriverLock(driver);
     vm = virDomainObjListFindByName(driver->domains, name);
-    chDriverUnlock(driver);
 
     if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN,
@@ -692,9 +677,7 @@ static virDomainPtr chDomainLookupByUUID(virConnectPtr conn,
     virDomainObj *vm;
     virDomainPtr dom = NULL;
 
-    chDriverLock(driver);
     vm = virDomainObjListFindByUUID(driver->domains, uuid);
-    chDriverUnlock(driver);
 
     if (!vm) {
         char uuidstr[VIR_UUID_STRING_BUFLEN];
@@ -871,14 +854,14 @@ static int chStateCleanup(void)
     virObjectUnref(ch_driver->caps);
     virObjectUnref(ch_driver->config);
     virMutexDestroy(&ch_driver->lock);
-    g_free(ch_driver);
-    ch_driver = NULL;
+    g_clear_pointer(&ch_driver, g_free);
 
     return 0;
 }
 
 static int chStateInitialize(bool privileged,
                              const char *root,
+                             bool monolithic G_GNUC_UNUSED,
                              virStateInhibitCallback callback G_GNUC_UNUSED,
                              void *opaque G_GNUC_UNUSED)
 {
@@ -930,27 +913,35 @@ static int
 chConnectSupportsFeature(virConnectPtr conn,
                          int feature)
 {
+    int supported;
+
     if (virConnectSupportsFeatureEnsureACL(conn) < 0)
         return -1;
 
+    if (virDriverFeatureIsGlobal(feature, &supported))
+        return supported;
+
     switch ((virDrvFeature) feature) {
+        case VIR_DRV_FEATURE_REMOTE:
+        case VIR_DRV_FEATURE_PROGRAM_KEEPALIVE:
+        case VIR_DRV_FEATURE_REMOTE_CLOSE_CALLBACK:
+        case VIR_DRV_FEATURE_REMOTE_EVENT_CALLBACK:
         case VIR_DRV_FEATURE_TYPED_PARAM_STRING:
-            return 1;
+        case VIR_DRV_FEATURE_NETWORK_UPDATE_HAS_CORRECT_ORDER:
+        case VIR_DRV_FEATURE_FD_PASSING:
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Global feature %d should have already been handled"),
+                           feature);
+            return -1;
         case VIR_DRV_FEATURE_MIGRATION_V2:
         case VIR_DRV_FEATURE_MIGRATION_V3:
         case VIR_DRV_FEATURE_MIGRATION_P2P:
         case VIR_DRV_FEATURE_MIGRATE_CHANGE_PROTECTION:
-        case VIR_DRV_FEATURE_FD_PASSING:
         case VIR_DRV_FEATURE_XML_MIGRATABLE:
         case VIR_DRV_FEATURE_MIGRATION_OFFLINE:
         case VIR_DRV_FEATURE_MIGRATION_PARAMS:
         case VIR_DRV_FEATURE_MIGRATION_DIRECT:
         case VIR_DRV_FEATURE_MIGRATION_V1:
-        case VIR_DRV_FEATURE_PROGRAM_KEEPALIVE:
-        case VIR_DRV_FEATURE_REMOTE:
-        case VIR_DRV_FEATURE_REMOTE_CLOSE_CALLBACK:
-        case VIR_DRV_FEATURE_REMOTE_EVENT_CALLBACK:
-        case VIR_DRV_FEATURE_NETWORK_UPDATE_HAS_CORRECT_ORDER:
         default:
             return 0;
     }
@@ -1085,6 +1076,7 @@ chDomainHelperGetVcpus(virDomainObj *vm,
             vcpuinfo->number = i;
             vcpuinfo->state = VIR_VCPU_RUNNING;
             if (virProcessGetStatInfo(&vcpuinfo->cpuTime,
+                                      NULL, NULL,
                                       &vcpuinfo->cpu, NULL,
                                       vm->pid, vcpupid) < 0) {
                 virReportSystemError(errno, "%s",
@@ -1227,7 +1219,7 @@ chDomainPinVcpuFlags(virDomainPtr dom,
     if (virDomainPinVcpuFlagsEnsureACL(dom->conn, vm->def, flags) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjGetDefs(vm, flags, &def, &persistentDef) < 0)
@@ -1263,7 +1255,7 @@ chDomainPinVcpuFlags(virDomainPtr dom,
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -1364,7 +1356,7 @@ chDomainPinEmulator(virDomainPtr dom,
     if (virDomainPinEmulatorEnsureACL(dom->conn, vm->def, flags) < 0)
         goto cleanup;
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjGetDefs(vm, flags, &def, &persistentDef) < 0)
@@ -1401,8 +1393,7 @@ chDomainPinEmulator(virDomainPtr dom,
         if (virProcessSetAffinity(vm->pid, pcpumap, false) < 0)
             goto endjob;
 
-        virBitmapFree(def->cputune.emulatorpin);
-        def->cputune.emulatorpin = NULL;
+        g_clear_pointer(&def->cputune.emulatorpin, virBitmapFree);
 
         if (!(def->cputune.emulatorpin = virBitmapNewCopy(pcpumap)))
             goto endjob;
@@ -1428,7 +1419,7 @@ chDomainPinEmulator(virDomainPtr dom,
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -1526,7 +1517,7 @@ chDomainSetNumaParamsLive(virDomainObj *vm,
     size_t i = 0;
 
     if (virDomainNumatuneGetMode(vm->def->numa, -1, &mode) == 0 &&
-        mode != VIR_DOMAIN_NUMATUNE_MEM_STRICT) {
+        mode != VIR_DOMAIN_NUMATUNE_MEM_RESTRICTIVE) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("change of nodeset for running domain requires strict numa mode"));
         return -1;
@@ -1636,7 +1627,7 @@ chDomainSetNumaParameters(virDomainPtr dom,
         }
     }
 
-    if (virCHDomainObjBeginJob(vm, CH_JOB_MODIFY) < 0)
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         goto cleanup;
 
     if (virDomainObjGetDefs(vm, flags, &def, &persistentDef) < 0)
@@ -1690,7 +1681,7 @@ chDomainSetNumaParameters(virDomainPtr dom,
     ret = 0;
 
  endjob:
-    virCHDomainObjEndJob(vm);
+    virDomainObjEndJob(vm);
 
  cleanup:
     virDomainObjEndAPI(&vm);

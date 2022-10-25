@@ -28,20 +28,17 @@
 #include "internal.h"
 #include "virlog.h"
 #include "virerror.h"
-#include "datatypes.h"
 #include "virconf.h"
 #include "virfile.h"
 #include "viridentity.h"
 #include "virstring.h"
 #include "viralloc.h"
 #include "viruuid.h"
-#include "vircommand.h"
 #include "virsocketaddr.h"
 #include "libxl_api_wrapper.h"
 #include "libxl_domain.h"
 #include "libxl_conf.h"
 #include "libxl_utils.h"
-#include "virstoragefile.h"
 #include "virsecret.h"
 #include "cpu/cpu.h"
 #include "xen_common.h"
@@ -391,6 +388,7 @@ libxlMakeDomBuildInfo(virDomainDef *def,
                        virDomainClockOffsetTypeToString(clock.offset));
         return -1;
 
+    case VIR_DOMAIN_CLOCK_OFFSET_ABSOLUTE:
     case VIR_DOMAIN_CLOCK_OFFSET_LAST:
     default:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
@@ -1066,7 +1064,7 @@ libxlMakeDisk(virDomainDiskDef *l_disk, libxl_device_disk *x_disk)
 {
     const char *driver = virDomainDiskGetDriver(l_disk);
     int format = virDomainDiskGetFormat(l_disk);
-    int actual_type = virStorageSourceGetActualType(l_disk->src);
+    virStorageType actual_type = virStorageSourceGetActualType(l_disk->src);
 
     if (actual_type == VIR_STORAGE_TYPE_NETWORK) {
         if (STRNEQ_NULLABLE(driver, "qemu")) {
@@ -1242,6 +1240,10 @@ libxlUpdateDiskDef(virDomainDiskDef *l_disk, libxl_device_disk *x_disk)
         driver = "phy";
         break;
     case LIBXL_DISK_BACKEND_UNKNOWN:
+#ifdef LIBXL_HAVE_DEVICE_DISK_SPECIFICATION
+    case LIBXL_DISK_BACKEND_STANDALONE:
+#endif
+    default:
         break;
     }
     if (driver)
@@ -1393,6 +1395,8 @@ libxlMakeNic(virDomainDef *def,
         case VIR_DOMAIN_NET_TYPE_DIRECT:
         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
         case VIR_DOMAIN_NET_TYPE_VDPA:
+        case VIR_DOMAIN_NET_TYPE_NULL:
+        case VIR_DOMAIN_NET_TYPE_VDS:
         case VIR_DOMAIN_NET_TYPE_LAST:
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                     _("unsupported interface type %s"),
@@ -1537,6 +1541,7 @@ libxlMakeVfb(virPortAllocatorRange *graphicsports,
         case VIR_DOMAIN_GRAPHICS_TYPE_DESKTOP:
         case VIR_DOMAIN_GRAPHICS_TYPE_SPICE:
         case VIR_DOMAIN_GRAPHICS_TYPE_EGL_HEADLESS:
+        case VIR_DOMAIN_GRAPHICS_TYPE_DBUS:
         case VIR_DOMAIN_GRAPHICS_TYPE_LAST:
             break;
     }
@@ -1645,14 +1650,14 @@ libxlMakeBuildInfoVfb(virPortAllocatorRange *graphicsports,
 
         switch (l_vfb->data.spice.mousemode) {
             /* client mouse mode is default in xl.cfg */
-        case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_DEFAULT:
-        case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_CLIENT:
+        case VIR_DOMAIN_MOUSE_MODE_DEFAULT:
+        case VIR_DOMAIN_MOUSE_MODE_CLIENT:
             libxl_defbool_set(&b_info->u.hvm.spice.agent_mouse, true);
             break;
-        case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_SERVER:
+        case VIR_DOMAIN_MOUSE_MODE_SERVER:
             libxl_defbool_set(&b_info->u.hvm.spice.agent_mouse, false);
             break;
-        case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_LAST:
+        case VIR_DOMAIN_MOUSE_MODE_LAST:
             break;
         }
 
@@ -1775,10 +1780,9 @@ libxlDriverConfigInit(libxlDriverConfig *cfg)
     uint64_t free_mem;
 
     if (g_mkdir_with_parents(cfg->logDir, 0777) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("failed to create log dir '%s': %s"),
-                       cfg->logDir,
-                       g_strerror(errno));
+        virReportSystemError(errno,
+                             _("failed to create log dir '%s'"),
+                             cfg->logDir);
         return -1;
     }
 
@@ -1815,12 +1819,8 @@ libxlDriverConfigInit(libxlDriverConfig *cfg)
 libxlDriverConfig *
 libxlDriverConfigGet(libxlDriverPrivate *driver)
 {
-    libxlDriverConfig *cfg;
-
-    libxlDriverLock(driver);
-    cfg = virObjectRef(driver->config);
-    libxlDriverUnlock(driver);
-    return cfg;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&driver->lock);
+    return virObjectRef(driver->config);
 }
 
 int libxlDriverConfigLoadFile(libxlDriverConfig *cfg,
@@ -2486,5 +2486,5 @@ libxlCreateXMLConf(libxlDriverPrivate *driver)
     return virDomainXMLOptionNew(&libxlDomainDefParserConfig,
                                  &libxlDomainXMLPrivateDataCallbacks,
                                  &libxlDriverDomainXMLNamespace,
-                                 NULL, NULL);
+                                 NULL, NULL, NULL);
 }

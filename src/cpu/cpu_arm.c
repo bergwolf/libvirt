@@ -35,7 +35,6 @@
 #include "cpu_arm.h"
 #include "cpu_map.h"
 #include "virlog.h"
-#include "virstring.h"
 #include "virxml.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
@@ -715,6 +714,7 @@ struct cpuArchDriver cpuDriverArm = {
 #endif
     .decode = NULL,
     .encode = NULL,
+    .getVendorForModel = NULL,
     .dataCopyNew = virCPUarmDataCopyNew,
     .dataFree = virCPUarmDataFree,
     .baseline = virCPUarmBaseline,

@@ -38,10 +38,8 @@
 #include "viruuid.h"
 #include "viralloc.h"
 #include "virerror.h"
-#include "datatypes.h"
 #include "nwfilter_params.h"
 #include "nwfilter_conf.h"
-#include "domain_conf.h"
 #include "virfile.h"
 #include "virstring.h"
 
@@ -149,33 +147,6 @@ static const struct int_map chain_priorities[] = {
     INTMAP_ENTRY(NWFILTER_RARP_FILTER_PRI, "rarp"),
     INTMAP_ENTRY_LAST,
 };
-
-
-/*
- * only one filter update allowed
- */
-static virRWLock updateLock;
-static bool initialized;
-
-void
-virNWFilterReadLockFilterUpdates(void)
-{
-    virRWLockRead(&updateLock);
-}
-
-
-void
-virNWFilterWriteLockFilterUpdates(void)
-{
-    virRWLockWrite(&updateLock);
-}
-
-
-void
-virNWFilterUnlockFilterUpdates(void)
-{
-    virRWLockUnlock(&updateLock);
-}
 
 
 /*
@@ -1134,8 +1105,8 @@ static const virXMLAttr2Struct vlanAttributes[] = {
     }
 };
 
-/* STP is documented by IEEE 802.1D; for a synopsis,
- * see http://www.javvin.com/protocolSTP.html */
+/* STP is documented by IEEE 802.1D; for a synopsis, see
+ * https://web.archive.org/web/20130530200728/http://www.javvin.com/protocolSTP.html */
 static const virXMLAttr2Struct stpAttributes[] = {
     /* spanning tree uses a special destination MAC address */
     {
@@ -2514,8 +2485,7 @@ virNWFilterRuleParse(xmlNodePtr node)
     return ret;
 
  err_exit:
-    virNWFilterRuleDefFree(ret);
-    ret = NULL;
+    g_clear_pointer(&ret, virNWFilterRuleDefFree);
     goto cleanup;
 }
 
@@ -2716,55 +2686,19 @@ virNWFilterDefParseXML(xmlXPathContextPtr ctxt)
 
 
 virNWFilterDef *
-virNWFilterDefParseNode(xmlDocPtr xml,
-                        xmlNodePtr root)
-{
-    g_autoptr(xmlXPathContext) ctxt = NULL;
-
-    if (STRNEQ((const char *)root->name, "filter")) {
-        virReportError(VIR_ERR_XML_ERROR,
-                       "%s",
-                       _("unknown root element for nw filter"));
-        return NULL;
-    }
-
-    if (!(ctxt = virXMLXPathContextNew(xml)))
-        return NULL;
-
-    ctxt->node = root;
-    return virNWFilterDefParseXML(ctxt);
-}
-
-
-static virNWFilterDef *
 virNWFilterDefParse(const char *xmlStr,
                     const char *filename,
                     unsigned int flags)
 {
-    virNWFilterDef *def = NULL;
     g_autoptr(xmlDoc) xml = NULL;
+    g_autoptr(xmlXPathContext) ctxt = NULL;
+    bool validate = flags & VIR_NWFILTER_DEFINE_VALIDATE;
 
-    if ((xml = virXMLParse(filename, xmlStr, _("(nwfilter_definition)"), "nwfilter.rng",
-                           flags & VIR_NWFILTER_DEFINE_VALIDATE))) {
-        def = virNWFilterDefParseNode(xml, xmlDocGetRootElement(xml));
-    }
+    if (!(xml = virXMLParse(filename, xmlStr, _("(nwfilter_definition)"),
+                            "filter", &ctxt, "nwfilter.rng", validate)))
+        return NULL;
 
-    return def;
-}
-
-
-virNWFilterDef *
-virNWFilterDefParseString(const char *xmlStr,
-                          unsigned int flags)
-{
-    return virNWFilterDefParse(xmlStr, NULL, flags);
-}
-
-
-virNWFilterDef *
-virNWFilterDefParseFile(const char *filename)
-{
-    return virNWFilterDefParse(NULL, filename, 0);
+    return virNWFilterDefParseXML(ctxt);
 }
 
 
@@ -3060,6 +2994,7 @@ virNWFilterDefFormat(const virNWFilterDef *def)
     return virBufferContentAndReset(&buf);
 }
 
+static bool initialized;
 static virNWFilterTriggerRebuildCallback rebuildCallback;
 static void *rebuildOpaque;
 
@@ -3075,9 +3010,6 @@ virNWFilterConfLayerInit(virNWFilterTriggerRebuildCallback cb,
 
     initialized = true;
 
-    if (virRWLockInit(&updateLock) < 0)
-        return -1;
-
     return 0;
 }
 
@@ -3087,8 +3019,6 @@ virNWFilterConfLayerShutdown(void)
 {
     if (!initialized)
         return;
-
-    virRWLockDestroy(&updateLock);
 
     initialized = false;
     rebuildCallback = NULL;

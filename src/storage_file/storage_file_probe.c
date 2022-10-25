@@ -296,7 +296,7 @@ static struct FileTypeInfo const fileTypeInfo[] = {
     [VIR_STORAGE_FILE_VHD] = { 0, NULL, LV_LITTLE_ENDIAN,
                                -1, 0, {0}, 0, 0, 0, NULL, NULL, NULL, NULL },
     [VIR_STORAGE_FILE_PLOOP] = { 0, "WithouFreSpacExt", LV_LITTLE_ENDIAN,
-                                 -2, 0, {0}, PLOOP_IMAGE_SIZE_OFFSET, 0,
+                                 -2, 0, {0}, PLOOP_IMAGE_SIZE_OFFSET, 8,
                                  PLOOP_SIZE_MULTIPLIER, NULL, NULL, NULL, NULL },
 
     /* All formats with a backing store probe below here */
@@ -969,8 +969,7 @@ virStorageFileProbeGetMetadata(virStorageSource *meta,
             return -1;
     }
 
-    virBitmapFree(meta->features);
-    meta->features = NULL;
+    g_clear_pointer(&meta->features, virBitmapFree);
     if (fileTypeInfo[meta->format].getFeatures != NULL &&
         fileTypeInfo[meta->format].getFeatures(&meta->features, meta->format, buf, len) < 0)
         return -1;

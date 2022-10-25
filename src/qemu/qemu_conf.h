@@ -25,21 +25,14 @@
 
 #include "virebtables.h"
 #include "internal.h"
-#include "capabilities.h"
-#include "network_conf.h"
 #include "domain_conf.h"
 #include "checkpoint_conf.h"
 #include "snapshot_conf.h"
 #include "domain_event.h"
 #include "virthread.h"
 #include "security/security_manager.h"
-#include "virpci.h"
-#include "virusb.h"
-#include "virscsi.h"
 #include "cpu_conf.h"
-#include "driver.h"
 #include "virportallocator.h"
-#include "vircommand.h"
 #include "virthreadpool.h"
 #include "locking/lock_manager.h"
 #include "qemu_capabilities.h"
@@ -50,6 +43,17 @@
 #include "virfirmware.h"
 
 #define QEMU_DRIVER_NAME "QEMU"
+
+typedef enum {
+    QEMU_SCHED_CORE_NONE = 0,
+    QEMU_SCHED_CORE_VCPUS,
+    QEMU_SCHED_CORE_EMULATOR,
+    QEMU_SCHED_CORE_FULL,
+
+    QEMU_SCHED_CORE_LAST
+} virQEMUSchedCore;
+
+VIR_ENUM_DECL(virQEMUSchedCore);
 
 typedef struct _virQEMUDriver virQEMUDriver;
 
@@ -223,6 +227,8 @@ struct _virQEMUDriverConfig {
     char **capabilityfilters;
 
     char *deprecationBehavior;
+
+    virQEMUSchedCore schedCore;
 };
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virQEMUDriverConfig, virObjectUnref);
@@ -251,6 +257,7 @@ struct _virQEMUDriver {
     /* Immutable values */
     bool privileged;
     char *embeddedRoot;
+    bool hostFips; /* FIPS mode is enabled on the host */
 
     /* Immutable pointers. Caller must provide locking */
     virStateInhibitCallback inhibitCallback;
@@ -365,3 +372,6 @@ int qemuGetMemoryBackingPath(virQEMUDriver *driver,
                              const virDomainDef *def,
                              const char *alias,
                              char **memPath);
+
+int qemuHugepageMakeBasedir(virQEMUDriver *driver,
+                            virHugeTLBFS *hugepage);

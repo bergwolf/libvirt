@@ -31,7 +31,6 @@
 #include "virerror.h"
 #include "datatypes.h"
 #include "test_driver.h"
-#include "virbuffer.h"
 #include "viruuid.h"
 #include "capabilities.h"
 #include "configmake.h"
@@ -56,7 +55,6 @@
 #include "virlog.h"
 #include "virfile.h"
 #include "virtypedparam.h"
-#include "virrandom.h"
 #include "virstring.h"
 #include "cpu/cpu.h"
 #include "virauth.h"
@@ -462,7 +460,7 @@ testDriverNew(void)
     if (!(ret = virObjectLockableNew(testDriverClass)))
         return NULL;
 
-    if (!(ret->xmlopt = virDomainXMLOptionNew(&config, &privatecb, &ns, NULL, NULL)) ||
+    if (!(ret->xmlopt = virDomainXMLOptionNew(&config, &privatecb, &ns, NULL, NULL, NULL)) ||
         !(ret->eventState = virObjectEventStateNew()) ||
         !(ret->ifaces = virInterfaceObjListNew()) ||
         !(ret->domains = virDomainObjListNew()) ||
@@ -843,32 +841,34 @@ testDomainObjCheckTaint(virDomainObj *obj)
 }
 
 static xmlNodePtr
-testParseXMLDocFromFile(xmlNodePtr node, const char *file, const char *type)
+testParseXMLDocFromFile(xmlNodePtr node,
+                        const char *file)
 {
-    xmlNodePtr ret = NULL;
     g_autoptr(xmlDoc) doc = NULL;
-    g_autofree char *absFile = NULL;
     g_autofree char *relFile = NULL;
 
     if ((relFile = virXMLPropString(node, "file"))) {
-        absFile = testBuildFilename(file, relFile);
+        g_autofree char *absFile = testBuildFilename(file, relFile);
+        xmlNodePtr newnode = NULL;
 
-        if (!(doc = virXMLParse(absFile, NULL, type, NULL, false)))
+        if (!(doc = virXMLParse(absFile, NULL, NULL, (const char *) node->name,
+                                NULL, NULL, false)))
             return NULL;
 
-        ret = xmlCopyNode(xmlDocGetRootElement(doc), 1);
-        if (!ret) {
+        if (!(newnode = xmlCopyNode(xmlDocGetRootElement(doc), 1))) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                            _("Failed to copy XML node"));
             return NULL;
         }
-        xmlReplaceNode(node, ret);
+
+        /* place 'newnode' in place of 'node' in the original XML document object */
+        xmlReplaceNode(node, newnode);
+        /* free the original node */
         xmlFreeNode(node);
-    } else {
-        ret = node;
+        return newnode;
     }
 
-    return ret;
+    return node;
 }
 
 static int
@@ -961,27 +961,23 @@ testParseDomainSnapshots(testDriver *privconn,
                          const char *file,
                          xmlXPathContextPtr ctxt)
 {
+    VIR_XPATH_NODE_AUTORESTORE(ctxt)
     size_t i;
     testDomainNamespaceDef *nsdata = domobj->def->namespaceData;
     xmlNodePtr *nodes = nsdata->snap_nodes;
-    bool cur;
 
     for (i = 0; i < nsdata->num_snap_nodes; i++) {
         virDomainMomentObj *snap;
         g_autoptr(virDomainSnapshotDef) def = NULL;
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file,
-                                                  "domainsnapshot");
-        if (!node)
+        unsigned int parseFlags = VIR_DOMAIN_SNAPSHOT_PARSE_INTERNAL |
+                                  VIR_DOMAIN_SNAPSHOT_PARSE_REDEFINE;
+        bool cur;
+
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             return -1;
 
-        def = virDomainSnapshotDefParseNode(ctxt->doc, node,
-                                            privconn->xmlopt,
-                                            NULL,
-                                            &cur,
-                                            VIR_DOMAIN_SNAPSHOT_PARSE_DISKS |
-                                            VIR_DOMAIN_SNAPSHOT_PARSE_INTERNAL |
-                                            VIR_DOMAIN_SNAPSHOT_PARSE_REDEFINE);
-        if (!def)
+        if (!(def = virDomainSnapshotDefParse(ctxt, privconn->xmlopt, NULL,
+                                              &cur, parseFlags)))
             return -1;
 
         if (!(snap = virDomainSnapshotAssignDef(domobj->snapshots, &def)))
@@ -1023,14 +1019,14 @@ testParseDomains(testDriver *privconn,
         return -1;
 
     for (i = 0; i < num; i++) {
+        VIR_XPATH_NODE_AUTORESTORE(ctxt)
         g_autoptr(virDomainDef) def = NULL;
         testDomainNamespaceDef *nsdata;
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file, "domain");
-        if (!node)
+
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             goto error;
 
-        def = virDomainDefParseNode(ctxt->doc, node,
-                                    privconn->xmlopt, NULL,
+        def = virDomainDefParseNode(ctxt, privconn->xmlopt, NULL,
                                     VIR_DOMAIN_DEF_PARSE_INACTIVE);
         if (!def)
             goto error;
@@ -1078,6 +1074,7 @@ testParseNetworks(testDriver *privconn,
                   const char *file,
                   xmlXPathContextPtr ctxt)
 {
+    VIR_XPATH_NODE_AUTORESTORE(ctxt)
     int num;
     size_t i;
     virNetworkObj *obj;
@@ -1089,12 +1086,11 @@ testParseNetworks(testDriver *privconn,
 
     for (i = 0; i < num; i++) {
         g_autoptr(virNetworkDef) def = NULL;
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file, "network");
-        if (!node)
+
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             return -1;
 
-        def = virNetworkDefParseNode(ctxt->doc, node, NULL);
-        if (!def)
+        if (!(def = virNetworkDefParseXML(ctxt, NULL)))
             return -1;
 
         if (!(obj = virNetworkObjAssignDef(privconn->networks, def, 0)))
@@ -1114,6 +1110,7 @@ testParseInterfaces(testDriver *privconn,
                     const char *file,
                     xmlXPathContextPtr ctxt)
 {
+    VIR_XPATH_NODE_AUTORESTORE(ctxt)
     int num;
     size_t i;
     virInterfaceObj *obj;
@@ -1125,13 +1122,11 @@ testParseInterfaces(testDriver *privconn,
 
     for (i = 0; i < num; i++) {
         g_autoptr(virInterfaceDef) def = NULL;
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file,
-                                                   "interface");
-        if (!node)
+
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             return -1;
 
-        def = virInterfaceDefParseNode(ctxt->doc, node);
-        if (!def)
+        if (!(def = virInterfaceDefParseXML(ctxt, VIR_INTERFACE_TYPE_LAST)))
             return -1;
 
         if (!(obj = virInterfaceObjListAssignDef(privconn->ifaces, &def)))
@@ -1148,30 +1143,24 @@ testParseInterfaces(testDriver *privconn,
 static int
 testOpenVolumesForPool(const char *file,
                        xmlXPathContextPtr ctxt,
-                       virStoragePoolObj *obj,
-                       int objidx)
+                       virStoragePoolObj *obj)
 {
+    VIR_XPATH_NODE_AUTORESTORE(ctxt)
     virStoragePoolDef *def = virStoragePoolObjGetDef(obj);
     size_t i;
     int num;
-    g_autofree char *vol_xpath = NULL;
     g_autofree xmlNodePtr *nodes = NULL;
     g_autoptr(virStorageVolDef) volDef = NULL;
 
-    /* Find storage volumes */
-    vol_xpath = g_strdup_printf("/node/pool[%d]/volume", objidx);
-
-    num = virXPathNodeSet(vol_xpath, ctxt, &nodes);
+    num = virXPathNodeSet("./volume", ctxt, &nodes);
     if (num < 0)
         return -1;
 
     for (i = 0; i < num; i++) {
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file,
-                                                   "volume");
-        if (!node)
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             return -1;
 
-        if (!(volDef = virStorageVolDefParseNode(def, ctxt->doc, node, 0)))
+        if (!(volDef = virStorageVolDefParseXML(def, ctxt, 0)))
             return -1;
 
         if (!volDef->target.path) {
@@ -1199,6 +1188,7 @@ testParseStorage(testDriver *privconn,
                  const char *file,
                  xmlXPathContextPtr ctxt)
 {
+    VIR_XPATH_NODE_AUTORESTORE(ctxt)
     int num;
     size_t i;
     virStoragePoolObj *obj;
@@ -1210,13 +1200,11 @@ testParseStorage(testDriver *privconn,
 
     for (i = 0; i < num; i++) {
         virStoragePoolDef *def;
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file,
-                                                   "pool");
-        if (!node)
+
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             return -1;
 
-        def = virStoragePoolDefParseNode(ctxt->doc, node);
-        if (!def)
+        if (!(def = virStoragePoolDefParseXML(ctxt)))
             return -1;
 
         if (!(obj = virStoragePoolObjListAdd(privconn->pools, &def, 0))) {
@@ -1231,7 +1219,7 @@ testParseStorage(testDriver *privconn,
         virStoragePoolObjSetActive(obj, true);
 
         /* Find storage volumes */
-        if (testOpenVolumesForPool(file, ctxt, obj, i+1) < 0) {
+        if (testOpenVolumesForPool(file, ctxt, obj) < 0) {
             virStoragePoolObjEndAPI(&obj);
             return -1;
         }
@@ -1248,6 +1236,7 @@ testParseNodedevs(testDriver *privconn,
                   const char *file,
                   xmlXPathContextPtr ctxt)
 {
+    VIR_XPATH_NODE_AUTORESTORE(ctxt)
     int num;
     size_t i;
     virNodeDeviceObj *obj;
@@ -1259,13 +1248,11 @@ testParseNodedevs(testDriver *privconn,
 
     for (i = 0; i < num; i++) {
         virNodeDeviceDef *def;
-        xmlNodePtr node = testParseXMLDocFromFile(nodes[i], file,
-                                                  "nodedev");
-        if (!node)
+
+        if (!(ctxt->node = testParseXMLDocFromFile(nodes[i], file)))
             return -1;
 
-        def = virNodeDeviceDefParseNode(ctxt->doc, node, 0, NULL);
-        if (!def)
+        if (!(def = virNodeDeviceDefParseXML(ctxt, 0, NULL)))
             return -1;
 
         if (!(obj = virNodeDeviceObjListAssignDef(privconn->devs, def))) {
@@ -1319,12 +1306,6 @@ testOpenParse(testDriver *privconn,
               const char *file,
               xmlXPathContextPtr ctxt)
 {
-    if (!virXMLNodeNameEqual(ctxt->node, "node")) {
-        virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("Root element is not 'node'"));
-        return -1;
-    }
-
     if (testParseNodeInfo(&privconn->nodeInfo, ctxt) < 0)
         return -1;
     if (testParseDomains(privconn, file, ctxt) < 0)
@@ -1361,7 +1342,7 @@ testOpenFromFile(virConnectPtr conn, const char *file)
     if (!(privconn->caps = testBuildCapabilities(conn)))
         goto error;
 
-    if (!(doc = virXMLParseFileCtxt(file, &ctxt)))
+    if (!(doc = virXMLParse(file, NULL, NULL, "node", &ctxt, NULL, false)))
         goto error;
 
     privconn->numCells = 0;
@@ -1386,16 +1367,14 @@ testOpenFromFile(virConnectPtr conn, const char *file)
 static int
 testOpenDefault(virConnectPtr conn)
 {
-    int ret = VIR_DRV_OPEN_ERROR;
     testDriver *privconn = NULL;
     g_autoptr(xmlDoc) doc = NULL;
     g_autoptr(xmlXPathContext) ctxt = NULL;
     size_t i;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&defaultLock);
 
-    virMutexLock(&defaultLock);
     if (defaultPrivconn) {
         conn->privateData = virObjectRef(defaultPrivconn);
-        virMutexUnlock(&defaultLock);
         return VIR_DRV_OPEN_SUCCESS;
     }
 
@@ -1426,23 +1405,20 @@ testOpenDefault(virConnectPtr conn)
     if (!(privconn->caps = testBuildCapabilities(conn)))
         goto error;
 
-    if (!(doc = virXMLParseStringCtxt(defaultConnXML,
-                                      _("(test driver)"), &ctxt)))
+    if (!(doc = virXMLParse(NULL, defaultConnXML, _("(test driver)"),
+                            "node", &ctxt, NULL, false)))
         goto error;
 
     if (testOpenParse(privconn, NULL, ctxt) < 0)
         goto error;
 
     defaultPrivconn = privconn;
-    ret = VIR_DRV_OPEN_SUCCESS;
- cleanup:
-    virMutexUnlock(&defaultLock);
-    return ret;
+    return VIR_DRV_OPEN_SUCCESS;
 
  error:
     virObjectUnref(privconn);
     conn->privateData = NULL;
-    goto cleanup;
+    return VIR_DRV_OPEN_ERROR;
 }
 
 static int
@@ -1500,12 +1476,12 @@ testConnectAuthenticate(virConnectPtr conn,
 static void
 testDriverCloseInternal(testDriver *driver)
 {
-    virMutexLock(&defaultLock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&defaultLock);
+
     testDriverDisposed = false;
     virObjectUnref(driver);
     if (testDriverDisposed && driver == defaultPrivconn)
         defaultPrivconn = NULL;
-    virMutexUnlock(&defaultLock);
 }
 
 
@@ -1537,8 +1513,7 @@ testConnectOpen(virConnectPtr conn,
 
     /* Fake authentication. */
     if (testConnectAuthenticate(conn, auth) < 0) {
-        testDriverCloseInternal(conn->privateData);
-        conn->privateData = NULL;
+        g_clear_pointer(&conn->privateData, testDriverCloseInternal);
         return VIR_DRV_OPEN_ERROR;
     }
 
@@ -1549,8 +1524,7 @@ testConnectOpen(virConnectPtr conn,
 static int
 testConnectClose(virConnectPtr conn)
 {
-    testDriverCloseInternal(conn->privateData);
-    conn->privateData = NULL;
+    g_clear_pointer(&conn->privateData, testDriverCloseInternal);
     return 0;
 }
 
@@ -1669,6 +1643,11 @@ static int
 testConnectSupportsFeature(virConnectPtr conn G_GNUC_UNUSED,
                            int feature)
 {
+    int supported;
+
+    if (virDriverFeatureIsGlobal(feature, &supported))
+        return supported;
+
     switch ((virDrvFeature) feature) {
     case VIR_DRV_FEATURE_TYPED_PARAM_STRING:
     case VIR_DRV_FEATURE_NETWORK_UPDATE_HAS_CORRECT_ORDER:
@@ -5566,7 +5545,7 @@ testNetworkCreateXMLFlags(virConnectPtr conn, const char *xml,
                           unsigned int flags)
 {
     testDriver *privconn = conn->privateData;
-    virNetworkDef *newDef;
+    g_autoptr(virNetworkDef) newDef = NULL;
     virNetworkObj *obj = NULL;
     virNetworkDef *def;
     virNetworkPtr net = NULL;
@@ -5574,8 +5553,8 @@ testNetworkCreateXMLFlags(virConnectPtr conn, const char *xml,
 
     virCheckFlags(VIR_NETWORK_CREATE_VALIDATE, NULL);
 
-    if (!(newDef = virNetworkDefParseString(xml, NULL,
-                                            !!(flags & VIR_NETWORK_CREATE_VALIDATE))))
+    if (!(newDef = virNetworkDefParse(xml, NULL, NULL,
+                                      !!(flags & VIR_NETWORK_CREATE_VALIDATE))))
         goto cleanup;
 
     if (!(obj = virNetworkObjAssignDef(privconn->networks, newDef,
@@ -5593,7 +5572,6 @@ testNetworkCreateXMLFlags(virConnectPtr conn, const char *xml,
     net = virGetNetwork(conn, def->name, def->uuid);
 
  cleanup:
-    virNetworkDefFree(newDef);
     virObjectEventStateQueue(privconn->eventState, event);
     virNetworkObjEndAPI(&obj);
     return net;
@@ -5613,7 +5591,7 @@ testNetworkDefineXMLFlags(virConnectPtr conn,
                           unsigned int flags)
 {
     testDriver *privconn = conn->privateData;
-    virNetworkDef *newDef;
+    g_autoptr(virNetworkDef) newDef = NULL;
     virNetworkObj *obj = NULL;
     virNetworkDef *def;
     virNetworkPtr net = NULL;
@@ -5621,8 +5599,8 @@ testNetworkDefineXMLFlags(virConnectPtr conn,
 
     virCheckFlags(VIR_NETWORK_DEFINE_VALIDATE, NULL);
 
-    if (!(newDef = virNetworkDefParseString(xml, NULL,
-                                            !!(flags & VIR_NETWORK_DEFINE_VALIDATE))))
+    if (!(newDef = virNetworkDefParse(xml, NULL, NULL,
+                                      !!(flags & VIR_NETWORK_DEFINE_VALIDATE))))
         goto cleanup;
 
     if (!(obj = virNetworkObjAssignDef(privconn->networks, newDef, 0)))
@@ -5637,7 +5615,6 @@ testNetworkDefineXMLFlags(virConnectPtr conn,
     net = virGetNetwork(conn, def->name, def->uuid);
 
  cleanup:
-    virNetworkDefFree(newDef);
     virObjectEventStateQueue(privconn->eventState, event);
     virNetworkObjEndAPI(&obj);
     return net;
@@ -6645,7 +6622,7 @@ testStoragePoolCreateXML(virConnectPtr conn,
     virCheckFlags(0, NULL);
 
     virObjectLock(privconn);
-    if (!(newDef = virStoragePoolDefParseString(xml, 0)))
+    if (!(newDef = virStoragePoolDefParse(xml, NULL, 0)))
         goto cleanup;
 
     if (!(obj = virStoragePoolObjListAdd(privconn->pools, &newDef,
@@ -6707,7 +6684,7 @@ testStoragePoolDefineXML(virConnectPtr conn,
     virCheckFlags(VIR_STORAGE_POOL_DEFINE_VALIDATE, NULL);
 
     virObjectLock(privconn);
-    if (!(newDef = virStoragePoolDefParseString(xml, flags)))
+    if (!(newDef = virStoragePoolDefParse(xml, NULL, flags)))
         goto cleanup;
 
     newDef->capacity = defaultPoolCap;
@@ -7212,7 +7189,7 @@ testStorageVolCreateXML(virStoragePoolPtr pool,
         return NULL;
     def = virStoragePoolObjGetDef(obj);
 
-    privvol = virStorageVolDefParseString(def, xmldesc, 0);
+    privvol = virStorageVolDefParse(def, xmldesc, NULL, 0);
     if (privvol == NULL)
         goto cleanup;
 
@@ -7271,7 +7248,7 @@ testStorageVolCreateXMLFrom(virStoragePoolPtr pool,
         return NULL;
     def = virStoragePoolObjGetDef(obj);
 
-    privvol = virStorageVolDefParseString(def, xmldesc, 0);
+    privvol = virStorageVolDefParse(def, xmldesc, NULL, 0);
     if (privvol == NULL)
         goto cleanup;
 
@@ -7652,8 +7629,7 @@ testNodeDeviceMockCreateVport(testDriver *driver,
     if (!xml)
         goto cleanup;
 
-    if (!(def = virNodeDeviceDefParseString(xml, EXISTING_DEVICE, NULL, NULL,
-                                            NULL)))
+    if (!(def = virNodeDeviceDefParse(xml, NULL, EXISTING_DEVICE, NULL, NULL, NULL)))
         goto cleanup;
 
     VIR_FREE(def->name);
@@ -7715,8 +7691,7 @@ testNodeDeviceCreateXML(virConnectPtr conn,
 
     virCheckFlags(0, NULL);
 
-    if (!(def = virNodeDeviceDefParseString(xmlDesc, CREATE_DEVICE, NULL,
-                                            NULL, NULL)))
+    if (!(def = virNodeDeviceDefParse(xmlDesc, NULL, CREATE_DEVICE, NULL, NULL, NULL)))
         goto cleanup;
 
     /* We run this simply for validation - it essentially validates that
@@ -8713,6 +8688,23 @@ testDomainSnapshotAlignDisks(virDomainObj *vm,
                              unsigned int flags)
 {
     virDomainSnapshotLocation align_location = VIR_DOMAIN_SNAPSHOT_LOCATION_INTERNAL;
+    size_t i;
+
+    for (i = 0; i < def->ndisks; i++) {
+        switch (def->disks[i].snapshot) {
+        case VIR_DOMAIN_SNAPSHOT_LOCATION_DEFAULT:
+        case VIR_DOMAIN_SNAPSHOT_LOCATION_NO:
+        case VIR_DOMAIN_SNAPSHOT_LOCATION_INTERNAL:
+        case VIR_DOMAIN_SNAPSHOT_LOCATION_EXTERNAL:
+        case VIR_DOMAIN_SNAPSHOT_LOCATION_LAST:
+            break;
+
+        case VIR_DOMAIN_SNAPSHOT_LOCATION_MANUAL:
+            virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                           _("'manual' snapshot mode is not supported by the test driver"));
+            return -1;
+        }
+    }
 
     if (flags & VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY) {
         align_location = VIR_DOMAIN_SNAPSHOT_LOCATION_EXTERNAL;
@@ -8720,14 +8712,14 @@ testDomainSnapshotAlignDisks(virDomainObj *vm,
             def->state = VIR_DOMAIN_SNAPSHOT_DISK_SNAPSHOT;
         else
             def->state = VIR_DOMAIN_SNAPSHOT_SHUTOFF;
-        def->memory = VIR_DOMAIN_SNAPSHOT_LOCATION_NONE;
+        def->memory = VIR_DOMAIN_SNAPSHOT_LOCATION_NO;
     } else if (def->memory == VIR_DOMAIN_SNAPSHOT_LOCATION_EXTERNAL) {
         def->state = virDomainObjGetState(vm, NULL);
         align_location = VIR_DOMAIN_SNAPSHOT_LOCATION_EXTERNAL;
     } else {
         def->state = virDomainObjGetState(vm, NULL);
         def->memory = def->state == VIR_DOMAIN_SNAPSHOT_SHUTOFF ?
-                      VIR_DOMAIN_SNAPSHOT_LOCATION_NONE :
+                      VIR_DOMAIN_SNAPSHOT_LOCATION_NO :
                       VIR_DOMAIN_SNAPSHOT_LOCATION_INTERNAL;
     }
 
@@ -8774,7 +8766,7 @@ testDomainSnapshotCreateXML(virDomainPtr domain,
     virObjectEvent *event = NULL;
     bool update_current = true;
     bool redefine = flags & VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE;
-    unsigned int parse_flags = VIR_DOMAIN_SNAPSHOT_PARSE_DISKS;
+    unsigned int parse_flags = 0;
     g_autoptr(virDomainSnapshotDef) def = NULL;
 
     /*

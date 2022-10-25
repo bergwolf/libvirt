@@ -28,8 +28,6 @@
 
 #include "virerror.h"
 #include "virlog.h"
-#include "viralloc.h"
-#include "virqemu.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -259,7 +257,7 @@ qemuSaveImageCreate(virQEMUDriver *driver,
                     virQEMUSaveData *data,
                     virCommand *compressor,
                     unsigned int flags,
-                    qemuDomainAsyncJob asyncJob)
+                    virDomainAsyncJob asyncJob)
 {
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     bool needUnlink = false;
@@ -577,7 +575,8 @@ qemuSaveImageStartVM(virConnectPtr conn,
                      virQEMUSaveData *data,
                      const char *path,
                      bool start_paused,
-                     qemuDomainAsyncJob asyncJob)
+                     bool reset_nvram,
+                     virDomainAsyncJob asyncJob)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     int ret = -1;
@@ -590,6 +589,11 @@ qemuSaveImageStartVM(virConnectPtr conn,
     virQEMUSaveHeader *header = &data->header;
     g_autoptr(qemuDomainSaveCookie) cookie = NULL;
     int rc = 0;
+    unsigned int start_flags = VIR_QEMU_PROCESS_START_PAUSED |
+        VIR_QEMU_PROCESS_START_GEN_VMID;
+
+    if (reset_nvram)
+        start_flags |= VIR_QEMU_PROCESS_START_RESET_NVRAM;
 
     if (virSaveCookieParseString(data->cookie, (virObject **)&cookie,
                                  virDomainXMLOptionGetSaveCookie(driver->xmlopt)) < 0)
@@ -628,8 +632,7 @@ qemuSaveImageStartVM(virConnectPtr conn,
     if (qemuProcessStart(conn, driver, vm, cookie ? cookie->cpu : NULL,
                          asyncJob, "stdio", *fd, path, NULL,
                          VIR_NETDEV_VPORT_PROFILE_OP_RESTORE,
-                         VIR_QEMU_PROCESS_START_PAUSED |
-                         VIR_QEMU_PROCESS_START_GEN_VMID) == 0)
+                         start_flags) == 0)
         started = true;
 
     if (intermediatefd != -1) {
@@ -669,6 +672,8 @@ qemuSaveImageStartVM(virConnectPtr conn,
                                      VIR_DOMAIN_EVENT_STARTED_RESTORED);
     virObjectEventStateQueue(driver->domainEventState, event);
 
+    if (qemuProcessRefreshState(driver, vm, asyncJob) < 0)
+        goto cleanup;
 
     /* If it was running before, resume it now unless caller requested pause. */
     if (header->was_running && !start_paused) {

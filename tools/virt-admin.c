@@ -32,7 +32,6 @@
 #include "virstring.h"
 #include "virthread.h"
 #include "virgettext.h"
-#include "virtime.h"
 #include "virt-admin-completer.h"
 #include "vsh-table.h"
 #include "virenum.h"
@@ -1072,6 +1071,45 @@ static const vshCmdInfo info_daemon_log_outputs[] = {
     {.name = NULL}
 };
 
+static const vshCmdOptDef opts_daemon_timeout[] = {
+    {.name = "timeout",
+     .type = VSH_OT_INT,
+     .help = N_("number of seconds the daemon will run without any active connection"),
+     .flags = VSH_OFLAG_REQ | VSH_OFLAG_REQ_OPT
+    },
+    {.name = NULL}
+};
+
+static bool
+cmdDaemonTimeout(vshControl *ctl, const vshCmd *cmd)
+{
+    vshAdmControl *priv = ctl->privData;
+    unsigned int timeout = 0;
+
+    if (vshCommandOptUInt(ctl, cmd, "timeout", &timeout) < 0)
+        return false;
+
+    if (virAdmConnectSetDaemonTimeout(priv->conn, timeout, 0) < 0)
+        return false;
+
+    return true;
+}
+
+
+/* --------------------------
+ * Command daemon-timeout
+ * --------------------------
+ */
+static const vshCmdInfo info_daemon_timeout[] = {
+    {.name = "help",
+     .data = N_("set the auto shutdown timeout of the daemon")
+    },
+    {.name = "desc",
+     .data = N_("set the auto shutdown timeout of the daemon")
+    },
+    {.name = NULL}
+};
+
 static const vshCmdOptDef opts_daemon_log_outputs[] = {
     {.name = "outputs",
      .type = VSH_OT_STRING,
@@ -1189,13 +1227,13 @@ vshAdmDeinit(vshControl *ctl)
     virResetLastError();
 
     if (ctl->eventLoopStarted) {
-        int timer;
+        int timer = -1;
 
-        virMutexLock(&ctl->lock);
-        ctl->quit = true;
-        /* HACK: Add a dummy timeout to break event loop */
-        timer = virEventAddTimeout(0, vshAdmDeinitTimer, NULL, NULL);
-        virMutexUnlock(&ctl->lock);
+        VIR_WITH_MUTEX_LOCK_GUARD(&ctl->lock) {
+            ctl->quit = true;
+            /* HACK: Add a dummy timeout to break event loop */
+            timer = virEventAddTimeout(0, vshAdmDeinitTimer, NULL, NULL);
+        }
 
         virThreadJoin(&ctl->eventLoop);
 
@@ -1497,6 +1535,12 @@ static const vshCmdDef managementCmds[] = {
      .handler = cmdDaemonLogOutputs,
      .opts = opts_daemon_log_outputs,
      .info = info_daemon_log_outputs,
+     .flags = 0
+    },
+    {.name = "daemon-timeout",
+     .handler = cmdDaemonTimeout,
+     .opts = opts_daemon_timeout,
+     .info = info_daemon_timeout,
      .flags = 0
     },
     {.name = NULL}

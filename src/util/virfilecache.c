@@ -24,7 +24,6 @@
 
 #include "internal.h"
 
-#include "viralloc.h"
 #include "virbuffer.h"
 #include "vircrypto.h"
 #include "virerror.h"
@@ -33,7 +32,6 @@
 #include "virhash.h"
 #include "virlog.h"
 #include "virobject.h"
-#include "virstring.h"
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -209,8 +207,7 @@ virFileCacheNewData(virFileCache *cache,
             return NULL;
 
         if (virFileCacheSave(cache, name, data) < 0) {
-            virObjectUnref(data);
-            data = NULL;
+            g_clear_pointer(&data, virObjectUnref);
         }
     }
 
@@ -242,7 +239,7 @@ virFileCacheNew(const char *dir,
     if (!(cache = virObjectNew(virFileCacheClass)))
         return NULL;
 
-    cache->table = virHashNew(virObjectFreeHashData);
+    cache->table = virHashNew(virObjectUnref);
 
     cache->dir = g_strdup(dir);
 
@@ -273,8 +270,7 @@ virFileCacheValidate(virFileCache *cache,
         if (*data) {
             VIR_DEBUG("Caching data '%p' for '%s'", *data, name);
             if (virHashAddEntry(cache->table, name, *data) < 0) {
-                virObjectUnref(*data);
-                *data = NULL;
+                g_clear_pointer(data, virObjectUnref);
             }
         }
     }

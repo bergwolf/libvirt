@@ -32,11 +32,9 @@
 #include "viralloc.h"
 #include "virerror.h"
 #include "virfile.h"
-#include "virhash.h"
 #include "virlog.h"
 #include "virobject.h"
 #include "virstoragefile.h"
-#include "virstring.h"
 #include "virutil.h"
 
 #define VIR_FROM_THIS VIR_FROM_STORAGE
@@ -420,8 +418,7 @@ virStorageSourceNewFromBackingAbsolute(const char *path,
          * also used in other places. For backing store detection the
          * authentication data would be invalid anyways, so we clear it */
         if (def->auth) {
-            virStorageAuthDefFree(def->auth);
-            def->auth = NULL;
+            g_clear_pointer(&def->auth, virStorageAuthDefFree);
         }
     }
 
@@ -808,7 +805,7 @@ static int
 virStorageSourceGetBackendForSupportCheck(const virStorageSource *src,
                                           virStorageFileBackend **backend)
 {
-    int actualType;
+    virStorageType actualType;
 
 
     if (!src) {
@@ -945,7 +942,7 @@ int
 virStorageSourceInitAs(virStorageSource *src,
                        uid_t uid, gid_t gid)
 {
-    int actualType = virStorageSourceGetActualType(src);
+    virStorageType actualType = virStorageSourceGetActualType(src);
     virStorageDriverData *drv = g_new0(virStorageDriverData, 1);
 
     src->drv = drv;

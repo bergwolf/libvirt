@@ -22,10 +22,7 @@
 
 #include "internal.h"
 #include "datatypes.h"
-#include "domain_conf.h"
-#include "domain_event.h"
 #include "virlog.h"
-#include "virstring.h"
 #include "storage_conf.h"
 #include "virutil.h"
 
@@ -426,7 +423,7 @@ vboxStorageVolCreateXML(virStoragePoolPtr pool,
     memset(&poolDef, 0, sizeof(poolDef));
     poolDef.type = VIR_STORAGE_POOL_DIR;
 
-    if ((def = virStorageVolDefParseString(&poolDef, xml, 0)) == NULL)
+    if ((def = virStorageVolDefParse(&poolDef, xml, NULL, 0)) == NULL)
         goto cleanup;
 
     if (!def->name ||
