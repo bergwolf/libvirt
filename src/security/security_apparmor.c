@@ -26,7 +26,7 @@
 #include <fcntl.h>
 #include <sys/apparmor.h>
 #include <unistd.h>
-#include <wait.h>
+#include <sys/wait.h>
 
 #include "internal.h"
 
@@ -1021,6 +1021,8 @@ AppArmorSetChardevLabel(virSecurityManager *mgr,
     case VIR_DOMAIN_CHR_TYPE_TCP:
     case VIR_DOMAIN_CHR_TYPE_SPICEVMC:
     case VIR_DOMAIN_CHR_TYPE_NMDM:
+    case VIR_DOMAIN_CHR_TYPE_QEMU_VDAGENT:
+    case VIR_DOMAIN_CHR_TYPE_DBUS:
     case VIR_DOMAIN_CHR_TYPE_LAST:
         ret = 0;
         break;
@@ -1083,6 +1085,8 @@ AppArmorSetNetdevLabel(virSecurityManager *mgr,
     case VIR_DOMAIN_CHR_TYPE_TCP:
     case VIR_DOMAIN_CHR_TYPE_SPICEVMC:
     case VIR_DOMAIN_CHR_TYPE_NMDM:
+    case VIR_DOMAIN_CHR_TYPE_QEMU_VDAGENT:
+    case VIR_DOMAIN_CHR_TYPE_DBUS:
     case VIR_DOMAIN_CHR_TYPE_LAST:
         ret = 0;
         break;

@@ -380,6 +380,10 @@ static const vshCmdOptDef opts_vol_create[] = {
      .type = VSH_OT_BOOL,
      .help = N_("preallocate metadata (for qcow2 instead of full allocation)")
     },
+    {.name = "validate",
+     .type = VSH_OT_BOOL,
+     .help = N_("validate the XML against the schema")
+    },
     {.name = NULL}
 };
 
@@ -394,6 +398,9 @@ cmdVolCreate(vshControl *ctl, const vshCmd *cmd)
 
     if (vshCommandOptBool(cmd, "prealloc-metadata"))
         flags |= VIR_STORAGE_VOL_CREATE_PREALLOC_METADATA;
+
+    if (vshCommandOptBool(cmd, "validate"))
+        flags |= VIR_STORAGE_VOL_CREATE_VALIDATE;
 
     if (!(pool = virshCommandOptPool(ctl, cmd, "pool", NULL)))
         return false;
@@ -446,6 +453,10 @@ static const vshCmdOptDef opts_vol_create_from[] = {
      .type = VSH_OT_BOOL,
      .help = N_("use btrfs COW lightweight copy")
     },
+    {.name = "validate",
+     .type = VSH_OT_BOOL,
+     .help = N_("validate the XML against the schema")
+    },
     {.name = NULL}
 };
 
@@ -467,6 +478,9 @@ cmdVolCreateFrom(vshControl *ctl, const vshCmd *cmd)
 
     if (vshCommandOptBool(cmd, "reflink"))
         flags |= VIR_STORAGE_VOL_CREATE_REFLINK;
+
+    if (vshCommandOptBool(cmd, "validate"))
+        flags |= VIR_STORAGE_VOL_CREATE_VALIDATE;
 
     if (vshCommandOptStringReq(ctl, cmd, "file", &from) < 0)
         return false;
@@ -902,12 +916,12 @@ static const vshCmdOptDef opts_vol_wipe[] = {
     VIRSH_COMMON_OPT_POOL_OPTIONAL,
     {.name = "algorithm",
      .type = VSH_OT_STRING,
+     .completer = virshStorageVolWipeAlgorithmCompleter,
      .help = N_("perform selected wiping algorithm")
     },
     {.name = NULL}
 };
 
-VIR_ENUM_DECL(virshStorageVolWipeAlgorithm);
 VIR_ENUM_IMPL(virshStorageVolWipeAlgorithm,
               VIR_STORAGE_VOL_WIPE_ALG_LAST,
               "zero", "nnsa", "dod", "bsi", "gutmann", "schneier",
@@ -1159,6 +1173,16 @@ static const vshCmdInfo info_vol_dumpxml[] = {
 static const vshCmdOptDef opts_vol_dumpxml[] = {
     VIRSH_COMMON_OPT_VOL_FULL,
     VIRSH_COMMON_OPT_POOL_OPTIONAL,
+    {.name = "xpath",
+     .type = VSH_OT_STRING,
+     .flags = VSH_OFLAG_REQ_OPT,
+     .completer = virshCompleteEmpty,
+     .help = N_("xpath expression to filter the XML document")
+    },
+    {.name = "wrap",
+     .type = VSH_OT_BOOL,
+     .help = N_("wrap xpath results in an common root element"),
+    },
     {.name = NULL}
 };
 
@@ -1166,21 +1190,20 @@ static bool
 cmdVolDumpXML(vshControl *ctl, const vshCmd *cmd)
 {
     g_autoptr(virshStorageVol) vol = NULL;
-    bool ret = true;
-    char *dump;
+    bool wrap = vshCommandOptBool(cmd, "wrap");
+    const char *xpath = NULL;
+    g_autofree char *xml = NULL;
 
     if (!(vol = virshCommandOptVol(ctl, cmd, "vol", "pool", NULL)))
         return false;
 
-    dump = virStorageVolGetXMLDesc(vol, 0);
-    if (dump != NULL) {
-        vshPrint(ctl, "%s", dump);
-        VIR_FREE(dump);
-    } else {
-        ret = false;
-    }
+    if (vshCommandOptStringQuiet(ctl, cmd, "xpath", &xpath) < 0)
+        return false;
 
-    return ret;
+    if (!(xml = virStorageVolGetXMLDesc(vol, 0)))
+        return false;
+
+    return virshDumpXML(ctl, xml, "volume", xpath, wrap);
 }
 
 static int
@@ -1298,8 +1321,7 @@ virshStorageVolListCollect(vshControl *ctl,
     VIR_FREE(names);
 
     if (!success) {
-        virshStorageVolListFree(list);
-        list = NULL;
+        g_clear_pointer(&list, virshStorageVolListFree);
     }
 
     return list;

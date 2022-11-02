@@ -21,16 +21,13 @@
 #include <config.h>
 
 #include "virlog.h"
-#include "viralloc.h"
 #include "virxml.h"
 #include "cpu.h"
-#include "cpu_map.h"
 #include "cpu_x86.h"
 #include "cpu_ppc64.h"
 #include "cpu_s390.h"
 #include "cpu_arm.h"
 #include "capabilities.h"
-#include "virstring.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_CPU
@@ -923,6 +920,31 @@ virCPUGetModels(virArch arch, char ***models)
     }
 
     return driver->getModels(models);
+}
+
+
+/** virCPUGetVendorForModel:
+ *
+ * @arch: CPU architecture
+ * @model: CPU model to be checked
+ *
+ * Returns @model's vendor or NULL if the vendor is unknown.
+ */
+const char *
+virCPUGetVendorForModel(virArch arch,
+                        const char *model)
+{
+    struct cpuArchDriver *driver;
+
+    VIR_DEBUG("arch=%s", virArchToString(arch));
+
+    if (!(driver = cpuGetSubDriver(arch)))
+        return NULL;
+
+    if (!driver->getVendorForModel)
+        return NULL;
+
+    return driver->getVendorForModel(model);
 }
 
 

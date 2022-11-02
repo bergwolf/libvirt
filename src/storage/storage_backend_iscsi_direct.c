@@ -27,14 +27,12 @@
 #include "virsecret.h"
 #include "storage_backend_iscsi_direct.h"
 #include "storage_util.h"
-#include "viralloc.h"
 #include "virerror.h"
 #include "viridentity.h"
 #include "virlog.h"
 #include "virobject.h"
 #include "virstring.h"
 #include "virtime.h"
-#include "viruuid.h"
 #include "virsecureerase.h"
 
 #define VIR_FROM_THIS VIR_FROM_STORAGE
@@ -272,8 +270,7 @@ virISCSIDirectGetVolumeCapacity(struct iscsi_context *iscsi,
     if (inq->device_type == SCSI_INQUIRY_PERIPHERAL_DEVICE_TYPE_DIRECT_ACCESS) {
         struct scsi_readcapacity16 *rc16 = NULL;
 
-        scsi_free_scsi_task(task);
-        task = NULL;
+        g_clear_pointer(&task, scsi_free_scsi_task);
 
         if (!(task = iscsi_readcapacity16_sync(iscsi, lun)) ||
             task->status != SCSI_STATUS_GOOD) {

@@ -22,14 +22,11 @@
 #include "qemu_extdevice.h"
 #include "qemu_security.h"
 #include "qemu_slirp.h"
-#include "viralloc.h"
 #include "virenum.h"
 #include "virerror.h"
 #include "virjson.h"
 #include "virlog.h"
 #include "virpidfile.h"
-#include "virstring.h"
-#include "virtime.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
@@ -156,7 +153,7 @@ qemuSlirpCreatePidFilename(virQEMUDriverConfig *cfg,
 }
 
 
-int
+static int
 qemuSlirpOpen(qemuSlirp *slirp,
               virQEMUDriver *driver,
               virDomainDef *def)
@@ -185,15 +182,6 @@ qemuSlirpOpen(qemuSlirp *slirp,
     VIR_FORCE_CLOSE(pair[0]);
     VIR_FORCE_CLOSE(pair[1]);
     return -1;
-}
-
-
-int
-qemuSlirpGetFD(qemuSlirp *slirp)
-{
-    int fd = slirp->fd[0];
-    slirp->fd[0] = -1;
-    return fd;
 }
 
 
@@ -245,12 +233,14 @@ qemuSlirpSetupCgroup(qemuSlirp *slirp,
 
 
 int
-qemuSlirpStart(qemuSlirp *slirp,
-               virDomainObj *vm,
-               virQEMUDriver *driver,
+qemuSlirpStart(virDomainObj *vm,
                virDomainNetDef *net,
                bool incoming)
 {
+    qemuDomainObjPrivate *priv = vm->privateData;
+    virQEMUDriver *driver = priv->driver;
+    qemuDomainNetworkPrivate *netpriv = QEMU_DOMAIN_NETWORK_PRIVATE(net);
+    qemuSlirp *slirp = netpriv->slirp;
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     g_autoptr(virCommand) cmd = NULL;
     g_autofree char *pidfile = NULL;
@@ -261,6 +251,10 @@ qemuSlirpStart(qemuSlirp *slirp,
     int cmdret = 0;
     VIR_AUTOCLOSE errfd = -1;
     bool killDBusDaemon = false;
+    g_autofree char *fdname = g_strdup_printf("slirpfd-%s", net->info.alias);
+
+    if (!slirp)
+        return 0;
 
     if (incoming &&
         !qemuSlirpHasFeature(slirp, QEMU_SLIRP_FEATURE_MIGRATE)) {
@@ -268,11 +262,13 @@ qemuSlirpStart(qemuSlirp *slirp,
                        _("The slirp-helper doesn't support migration"));
     }
 
+    if (qemuSlirpOpen(slirp, driver, vm->def) < 0)
+        return -1;
+
     if (!(pidfile = qemuSlirpCreatePidFilename(cfg, vm->def, net->info.alias)))
         return -1;
 
-    if (!(cmd = virCommandNew(cfg->slirpHelperName)))
-        return -1;
+    cmd = virCommandNew(cfg->slirpHelperName);
 
     virCommandClearCaps(cmd);
     virCommandSetPidFile(cmd, pidfile);
@@ -351,6 +347,8 @@ qemuSlirpStart(qemuSlirp *slirp,
     }
 
     slirp->pid = pid;
+
+    netpriv->slirpfd = qemuFDPassDirectNew(fdname, &slirp->fd[0]);
 
     return 0;
 

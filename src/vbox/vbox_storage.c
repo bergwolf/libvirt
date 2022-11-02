@@ -22,10 +22,7 @@
 
 #include "internal.h"
 #include "datatypes.h"
-#include "domain_conf.h"
-#include "domain_event.h"
 #include "virlog.h"
-#include "virstring.h"
 #include "storage_conf.h"
 #include "virutil.h"
 
@@ -412,11 +409,15 @@ vboxStorageVolCreateXML(virStoragePoolPtr pool,
     virStorageVolPtr ret = NULL;
     g_autoptr(virStorageVolDef) def = NULL;
     g_autofree char *homedir = NULL;
+    unsigned int parseFlags = 0;
 
     if (!data->vboxObj)
         return ret;
 
-    virCheckFlags(0, NULL);
+    virCheckFlags(VIR_STORAGE_VOL_CREATE_VALIDATE, NULL);
+
+    if (flags & VIR_STORAGE_VOL_CREATE_VALIDATE)
+        parseFlags |= VIR_VOL_XML_PARSE_VALIDATE;
 
     /* since there is currently one default pool now
      * and virStorageVolDefFormat() just checks it type
@@ -426,7 +427,7 @@ vboxStorageVolCreateXML(virStoragePoolPtr pool,
     memset(&poolDef, 0, sizeof(poolDef));
     poolDef.type = VIR_STORAGE_POOL_DIR;
 
-    if ((def = virStorageVolDefParseString(&poolDef, xml, 0)) == NULL)
+    if ((def = virStorageVolDefParse(&poolDef, xml, NULL, parseFlags)) == NULL)
         goto cleanup;
 
     if (!def->name ||

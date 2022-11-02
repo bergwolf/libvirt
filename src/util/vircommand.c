@@ -148,6 +148,13 @@ struct _virCommand {
 #endif
     int mask;
 
+    /* schedCore values:
+     *  0: no core scheduling
+     * >0: copy scheduling group from PID
+     * -1: create new scheduling group
+     */
+    pid_t schedCore;
+
     virCommandSendBuffer *sendBuffers;
     size_t numSendBuffers;
 };
@@ -434,6 +441,22 @@ virCommandHandshakeChild(virCommand *cmd)
 static int
 virExecCommon(virCommand *cmd, gid_t *groups, int ngroups)
 {
+    /* Do this before dropping capabilities. */
+    if (cmd->schedCore == -1 &&
+        virProcessSchedCoreCreate() < 0) {
+        virReportSystemError(errno, "%s",
+                             _("Unable to set SCHED_CORE"));
+        return -1;
+    }
+
+    if (cmd->schedCore > 0 &&
+        virProcessSchedCoreShareFrom(cmd->schedCore) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to run among %llu"),
+                             (unsigned long long) cmd->schedCore);
+        return -1;
+    }
+
     if (cmd->uid != (uid_t)-1 || cmd->gid != (gid_t)-1 ||
         cmd->capabilities || (cmd->flags & VIR_EXEC_CLEAR_CAPS)) {
         VIR_DEBUG("Setting child uid:gid to %d:%d with caps %llx",
@@ -1021,43 +1044,6 @@ virCommandNewVAList(const char *binary, va_list list)
         VIR_FORCE_CLOSE(fd)
 
 /**
- * virCommandPassFDIndex:
- * @cmd: the command to modify
- * @fd: fd to reassign to the child
- * @flags: extra flags; binary-OR of virCommandPassFDFlags
- * @idx: pointer to fill with the index of the FD in the transfer set
- *
- * Transfer the specified file descriptor to the child, instead
- * of closing it on exec. @fd must not be one of the three
- * standard streams.
- *
- * If the flag VIR_COMMAND_PASS_FD_CLOSE_PARENT is set then fd will
- * be closed in the parent no later than Run/RunAsync/Free. The parent
- * should cease using the @fd when this call completes
- */
-void
-virCommandPassFDIndex(virCommand *cmd, int fd, unsigned int flags, size_t *idx)
-{
-    if (!cmd) {
-        VIR_COMMAND_MAYBE_CLOSE_FD(fd, flags);
-        return;
-    }
-
-    if (fd <= STDERR_FILENO) {
-        VIR_DEBUG("invalid fd %d", fd);
-        VIR_COMMAND_MAYBE_CLOSE_FD(fd, flags);
-        if (!cmd->has_error)
-            cmd->has_error = -1;
-        return;
-    }
-
-    virCommandFDSet(cmd, fd, flags);
-
-    if (idx)
-        *idx = cmd->npassfd - 1;
-}
-
-/**
  * virCommandPassFD:
  * @cmd: the command to modify
  * @fd: fd to reassign to the child
@@ -1074,34 +1060,20 @@ virCommandPassFDIndex(virCommand *cmd, int fd, unsigned int flags, size_t *idx)
 void
 virCommandPassFD(virCommand *cmd, int fd, unsigned int flags)
 {
-    virCommandPassFDIndex(cmd, fd, flags, NULL);
-}
-
-/*
- * virCommandPassFDGetFDIndex:
- * @cmd: pointer to virCommand
- * @fd: FD to get index of
- *
- * Determine the index of the FD in the transfer set.
- *
- * Returns index >= 0 if @set contains @fd,
- * -1 otherwise.
- */
-int
-virCommandPassFDGetFDIndex(virCommand *cmd, int fd)
-{
-    size_t i = 0;
-
-    if (virCommandHasError(cmd))
-        return -1;
-
-    while (i < cmd->npassfd) {
-        if (cmd->passfd[i].fd == fd)
-            return i;
-        i++;
+    if (!cmd) {
+        VIR_COMMAND_MAYBE_CLOSE_FD(fd, flags);
+        return;
     }
 
-    return -1;
+    if (fd <= STDERR_FILENO) {
+        VIR_DEBUG("invalid fd %d", fd);
+        VIR_COMMAND_MAYBE_CLOSE_FD(fd, flags);
+        if (!cmd->has_error)
+            cmd->has_error = -1;
+        return;
+    }
+
+    virCommandFDSet(cmd, fd, flags);
 }
 
 /**
@@ -1468,6 +1440,8 @@ virCommandAddEnvPassCommon(virCommand *cmd)
 
     virCommandAddEnvPass(cmd, "LD_PRELOAD");
     virCommandAddEnvPass(cmd, "LD_LIBRARY_PATH");
+    virCommandAddEnvPass(cmd, "DYLD_INSERT_LIBRARIES");
+    virCommandAddEnvPass(cmd, "DYLD_FORCE_FLAT_NAMESPACE");
     virCommandAddEnvPass(cmd, "PATH");
     virCommandAddEnvPass(cmd, "HOME");
     virCommandAddEnvPass(cmd, "USER");
@@ -1794,7 +1768,7 @@ virCommandSendBuffersHandlePoll(virCommand *cmd,
     if (i == virCommandGetNumSendBuffers(cmd))
         return 0;
 
-    done = write(fds->fd,
+    done = write(fds->fd, /* sc_avoid_write */
                  cmd->sendBuffers[i].buffer + cmd->sendBuffers[i].offset,
                  cmd->sendBuffers[i].buflen - cmd->sendBuffers[i].offset);
     if (done < 0) {
@@ -2306,7 +2280,7 @@ virCommandProcessIO(virCommand *cmd)
                 fds[i].fd == cmd->inpipe) {
                 int done;
 
-                done = write(cmd->inpipe, cmd->inbuf + inoff,
+                done = write(cmd->inpipe, cmd->inbuf + inoff, /* sc_avoid_write */
                              inlen - inoff);
                 if (done < 0) {
                     if (errno == EPIPE) {
@@ -3437,3 +3411,43 @@ virCommandRunNul(virCommand *cmd G_GNUC_UNUSED,
     return -1;
 }
 #endif /* WIN32 */
+
+/**
+ * virCommandSetRunAlone:
+ *
+ * Create new trusted group when running the command. In other words, the
+ * process won't be scheduled to run on a core among with processes from
+ * another, untrusted group.
+ */
+void
+virCommandSetRunAlone(virCommand *cmd)
+{
+    if (virCommandHasError(cmd))
+        return;
+
+    cmd->schedCore = -1;
+}
+
+/**
+ * virCommandSetRunAmong:
+ * @pid: pid from a trusted group
+ *
+ * When spawning the command place it into the trusted group of @pid so that
+ * these two processes can run on Hyper Threads of a single core at the same
+ * time.
+ */
+void
+virCommandSetRunAmong(virCommand *cmd,
+                      pid_t pid)
+{
+    if (virCommandHasError(cmd))
+        return;
+
+    if (pid <= 0) {
+        VIR_DEBUG("invalid pid value: %lld", (long long) pid);
+        cmd->has_error = -1;
+        return;
+    }
+
+    cmd->schedCore = pid;
+}

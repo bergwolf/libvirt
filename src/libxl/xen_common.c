@@ -1677,6 +1677,8 @@ xenFormatNet(virConnectPtr conn,
     case VIR_DOMAIN_NET_TYPE_UDP:
     case VIR_DOMAIN_NET_TYPE_USER:
     case VIR_DOMAIN_NET_TYPE_VDPA:
+    case VIR_DOMAIN_NET_TYPE_NULL:
+    case VIR_DOMAIN_NET_TYPE_VDS:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("Unsupported net type '%s'"),
                        virDomainNetTypeToString(net->type));
         return -1;
@@ -2100,9 +2102,13 @@ xenFormatHypervisorFeatures(virConf *conf, virDomainDef *def)
                 if (xenConfigSetString(conf, "tsc_mode", "always_emulate") < 0)
                     return -1;
                 break;
-            default:
+            case VIR_DOMAIN_TIMER_MODE_NONE:
+            case VIR_DOMAIN_TIMER_MODE_AUTO:
+            case VIR_DOMAIN_TIMER_MODE_SMPSAFE:
                 if (xenConfigSetString(conf, "tsc_mode", "default") < 0)
                     return -1;
+            case VIR_DOMAIN_TIMER_MODE_LAST:
+                break;
             }
             break;
 

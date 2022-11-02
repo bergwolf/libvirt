@@ -23,11 +23,7 @@
 
 #include "viralloc.h"
 #include "virerror.h"
-#include "virstring.h"
-#include "nwfilter_params.h"
 #include "virnwfilterbindingobj.h"
-#include "viruuid.h"
-#include "virfile.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_NWFILTER
@@ -134,8 +130,7 @@ virNWFilterBindingObjEndAPI(virNWFilterBindingObj **obj)
         return;
 
     virObjectUnlock(*obj);
-    virObjectUnref(*obj);
-    *obj = NULL;
+    g_clear_pointer(obj, virObjectUnref);
 }
 
 
@@ -207,12 +202,17 @@ virNWFilterBindingObjDelete(const virNWFilterBindingObj *obj,
 }
 
 
-static virNWFilterBindingObj *
-virNWFilterBindingObjParseXML(xmlDocPtr doc,
-                              xmlXPathContextPtr ctxt)
+virNWFilterBindingObj *
+virNWFilterBindingObjParse(const char *filename)
 {
-    virNWFilterBindingObj *ret;
+    g_autoptr(virNWFilterBindingObj) ret = NULL;
+    g_autoptr(xmlDoc) xml = NULL;
+    g_autoptr(xmlXPathContext) ctxt = NULL;
     xmlNodePtr node;
+
+    if (!(xml = virXMLParse(filename, NULL, _("(nwfilterbinding_status)"),
+                            "filterbindingstatus", &ctxt, NULL, false)))
+        return NULL;
 
     if (!(ret = virNWFilterBindingObjNew()))
         return NULL;
@@ -220,60 +220,15 @@ virNWFilterBindingObjParseXML(xmlDocPtr doc,
     if (!(node = virXPathNode("./filterbinding", ctxt))) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("filter binding status missing content"));
-        goto cleanup;
-    }
-
-    if (!(ret->def = virNWFilterBindingDefParseNode(doc, node)))
-        goto cleanup;
-
-    return ret;
-
- cleanup:
-    virObjectUnref(ret);
-    return NULL;
-}
-
-
-static virNWFilterBindingObj *
-virNWFilterBindingObjParseNode(xmlDocPtr doc,
-                               xmlNodePtr root)
-{
-    g_autoptr(xmlXPathContext) ctxt = NULL;
-
-    if (STRNEQ((const char *)root->name, "filterbindingstatus")) {
-        virReportError(VIR_ERR_XML_ERROR,
-                       _("unknown root element '%s' for filter binding"),
-                       root->name);
         return NULL;
     }
 
-    if (!(ctxt = virXMLXPathContextNew(doc)))
+    ctxt->node = node;
+
+    if (!(ret->def = virNWFilterBindingDefParseXML(ctxt)))
         return NULL;
 
-    ctxt->node = root;
-    return virNWFilterBindingObjParseXML(doc, ctxt);
-}
-
-
-static virNWFilterBindingObj *
-virNWFilterBindingObjParse(const char *xmlStr,
-                           const char *filename)
-{
-    virNWFilterBindingObj *obj = NULL;
-    g_autoptr(xmlDoc) xml = NULL;
-
-    if ((xml = virXMLParse(filename, xmlStr, _("(nwfilterbinding_status)"), NULL, false))) {
-        obj = virNWFilterBindingObjParseNode(xml, xmlDocGetRootElement(xml));
-    }
-
-    return obj;
-}
-
-
-virNWFilterBindingObj *
-virNWFilterBindingObjParseFile(const char *filename)
-{
-    return virNWFilterBindingObjParse(NULL, filename);
+    return g_steal_pointer(&ret);
 }
 
 

@@ -47,9 +47,7 @@
 #include "virerror.h"
 #include "viralloc.h"
 #include "internal.h"
-#include "secret_conf.h"
 #include "virsecret.h"
-#include "vircrypto.h"
 #include "viruuid.h"
 #include "virstoragefile.h"
 #include "storage_file_probe.h"
@@ -59,7 +57,6 @@
 #include "virlog.h"
 #include "virfile.h"
 #include "viridentity.h"
-#include "virjson.h"
 #include "virqemu.h"
 #include "virstring.h"
 #include "virxml.h"
@@ -3593,8 +3590,7 @@ virStorageBackendRefreshLocal(virStoragePoolObj *pool)
             if (err == -2) {
                 /* Silently ignore non-regular files,
                  * eg 'lost+found', dangling symbolic link */
-                virStorageVolDefFree(vol);
-                vol = NULL;
+                g_clear_pointer(&vol, virStorageVolDefFree);
                 continue;
             }
             return -1;
@@ -4205,8 +4201,8 @@ virStorageBackendFileSystemMountCmd(const char *cmdstr,
     virCommand *cmd = NULL;
     g_autofree char *nfsVers = NULL;
 
-    if (def->type == VIR_STORAGE_POOL_NETFS && def->source.protocolVer > 0)
-        nfsVers = g_strdup_printf("nfsvers=%u", def->source.protocolVer);
+    if (def->type == VIR_STORAGE_POOL_NETFS && def->source.protocolVer)
+        nfsVers = g_strdup_printf("nfsvers=%s", def->source.protocolVer);
 
     cmd = virCommandNew(cmdstr);
     if (netauto)

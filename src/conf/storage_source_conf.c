@@ -827,6 +827,7 @@ virStorageSourceCopy(const virStorageSource *src,
     def->compat = g_strdup(src->compat);
     def->tlsAlias = g_strdup(src->tlsAlias);
     def->tlsCertdir = g_strdup(src->tlsCertdir);
+    def->tlsHostname = g_strdup(src->tlsHostname);
     def->query = g_strdup(src->query);
 
     if (src->sliceStorage)
@@ -1003,7 +1004,7 @@ virStorageSourcePoolDefFree(virStorageSourcePoolDef *def)
  * and virDomainDiskTranslateSourcePool was called on @def the actual type
  * of the storage volume is returned rather than VIR_STORAGE_TYPE_VOLUME.
  */
-int
+virStorageType
 virStorageSourceGetActualType(const virStorageSource *def)
 {
     if (def->type == VIR_STORAGE_TYPE_VOLUME &&
@@ -1097,8 +1098,7 @@ virStorageSourceBackingStoreClear(virStorageSource *def)
     VIR_FREE(def->backingStoreRaw);
 
     /* recursively free backing chain */
-    virObjectUnref(def->backingStore);
-    def->backingStore = NULL;
+    g_clear_pointer(&def->backingStore, virObjectUnref);
 }
 
 
@@ -1138,6 +1138,7 @@ virStorageSourceClear(virStorageSource *def)
 
     VIR_FREE(def->tlsAlias);
     VIR_FREE(def->tlsCertdir);
+    VIR_FREE(def->tlsHostname);
 
     VIR_FREE(def->ssh_user);
 

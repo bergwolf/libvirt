@@ -23,12 +23,8 @@
 #include "testutils.h"
 #include "virnettlshelpers.h"
 #include "virutil.h"
-#include "virerror.h"
-#include "viralloc.h"
 #include "virlog.h"
 #include "virfile.h"
-#include "vircommand.h"
-#include "virsocket.h"
 
 #if !defined WIN32 && WITH_LIBTASN1_H && LIBGNUTLS_VERSION_NUMBER >= 0x020600
 
@@ -54,7 +50,7 @@ static ssize_t testWrite(const char *buf, size_t len, void *opaque)
 {
     int *fd = opaque;
 
-    return write(*fd, buf, len);
+    return write(*fd, buf, len); /* sc_avoid_write */
 }
 
 static ssize_t testRead(char *buf, size_t len, void *opaque)

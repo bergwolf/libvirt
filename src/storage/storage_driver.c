@@ -45,8 +45,6 @@
 #include "virfdstream.h"
 #include "virpidfile.h"
 #include "configmake.h"
-#include "virsecret.h"
-#include "virstring.h"
 #include "viraccessapicheck.h"
 #include "storage_util.h"
 #include "virutil.h"
@@ -64,16 +62,6 @@ struct _virStorageVolStreamInfo {
     char *pool_name;
     char *vol_path;
 };
-
-static void storageDriverLock(void)
-{
-    virMutexLock(&driver->lock);
-}
-static void storageDriverUnlock(void)
-{
-    virMutexUnlock(&driver->lock);
-}
-
 
 static void
 storagePoolRefreshFailCleanup(virStorageBackend *backend,
@@ -254,6 +242,7 @@ storageDriverAutostart(void)
 static int
 storageStateInitialize(bool privileged,
                        const char *root,
+                       bool monolithic G_GNUC_UNUSED,
                        virStateInhibitCallback callback G_GNUC_UNUSED,
                        void *opaque G_GNUC_UNUSED)
 {
@@ -274,7 +263,6 @@ storageStateInitialize(bool privileged,
         VIR_FREE(driver);
         return VIR_DRV_STATE_INIT_ERROR;
     }
-    storageDriverLock();
 
     if (!(driver->pools = virStoragePoolObjListNew()))
         goto error;
@@ -330,12 +318,9 @@ storageStateInitialize(bool privileged,
     if (!(driver->caps = virStorageBackendGetCapabilities()))
         goto error;
 
-    storageDriverUnlock();
-
     return VIR_DRV_STATE_INIT_COMPLETE;
 
  error:
-    storageDriverUnlock();
     storageStateCleanup();
     return VIR_DRV_STATE_INIT_ERROR;
 }
@@ -352,14 +337,13 @@ storageStateReload(void)
     if (!driver)
         return -1;
 
-    storageDriverLock();
-    virStoragePoolObjLoadAllState(driver->pools,
-                                  driver->stateDir);
-    virStoragePoolObjLoadAllConfigs(driver->pools,
-                                    driver->configDir,
-                                    driver->autostartDir);
-    storageDriverAutostart();
-    storageDriverUnlock();
+    VIR_WITH_MUTEX_LOCK_GUARD(&driver->lock) {
+        virStoragePoolObjLoadAllState(driver->pools, driver->stateDir);
+        virStoragePoolObjLoadAllConfigs(driver->pools,
+                                        driver->configDir,
+                                        driver->autostartDir);
+        storageDriverAutostart();
+    }
 
     return 0;
 }
@@ -376,8 +360,6 @@ storageStateCleanup(void)
     if (!driver)
         return -1;
 
-    storageDriverLock();
-
     virObjectUnref(driver->caps);
     virObjectUnref(driver->storageEventState);
 
@@ -391,7 +373,6 @@ storageStateCleanup(void)
     VIR_FREE(driver->configDir);
     VIR_FREE(driver->autostartDir);
     VIR_FREE(driver->stateDir);
-    storageDriverUnlock();
     virMutexDestroy(&driver->lock);
     VIR_FREE(driver);
 
@@ -740,7 +721,7 @@ storagePoolCreateXML(virConnectPtr conn,
     VIR_EXCLUSIVE_FLAGS_RET(VIR_STORAGE_POOL_BUILD_OVERWRITE,
                             VIR_STORAGE_POOL_BUILD_NO_OVERWRITE, NULL);
 
-    if (!(newDef = virStoragePoolDefParseString(xml, 0)))
+    if (!(newDef = virStoragePoolDefParse(xml, NULL, 0)))
         goto cleanup;
 
     if (virStoragePoolCreateXMLEnsureACL(conn, newDef) < 0)
@@ -820,7 +801,7 @@ storagePoolDefineXML(virConnectPtr conn,
 
     virCheckFlags(VIR_STORAGE_POOL_DEFINE_VALIDATE, NULL);
 
-    if (!(newDef = virStoragePoolDefParseString(xml, flags)))
+    if (!(newDef = virStoragePoolDefParse(xml, NULL, flags)))
         goto cleanup;
 
     if (virXMLCheckIllegalChars("name", newDef->name, "\n") < 0)
@@ -1896,8 +1877,13 @@ storageVolCreateXML(virStoragePoolPtr pool,
     virStorageBackend *backend;
     virStorageVolPtr vol = NULL, newvol = NULL;
     g_autoptr(virStorageVolDef) voldef = NULL;
+    unsigned int parseFlags = VIR_VOL_XML_PARSE_OPT_CAPACITY;
 
-    virCheckFlags(VIR_STORAGE_VOL_CREATE_PREALLOC_METADATA, NULL);
+    virCheckFlags(VIR_STORAGE_VOL_CREATE_PREALLOC_METADATA |
+                  VIR_STORAGE_VOL_CREATE_VALIDATE, NULL);
+
+    if (flags & VIR_STORAGE_VOL_CREATE_VALIDATE)
+        parseFlags |= VIR_VOL_XML_PARSE_VALIDATE;
 
     if (!(obj = virStoragePoolObjFromStoragePool(pool)))
         return NULL;
@@ -1912,8 +1898,7 @@ storageVolCreateXML(virStoragePoolPtr pool,
     if ((backend = virStorageBackendForType(def->type)) == NULL)
         goto cleanup;
 
-    voldef = virStorageVolDefParseString(def, xmldesc,
-                                         VIR_VOL_XML_PARSE_OPT_CAPACITY);
+    voldef = virStorageVolDefParse(def, xmldesc, NULL, parseFlags);
     if (voldef == NULL)
         goto cleanup;
 
@@ -2032,10 +2017,15 @@ storageVolCreateXMLFrom(virStoragePoolPtr pool,
     virStorageVolPtr vol = NULL;
     int buildret;
     g_autoptr(virStorageVolDef) voldef = NULL;
+    unsigned int parseFlags = VIR_VOL_XML_PARSE_NO_CAPACITY;
 
     virCheckFlags(VIR_STORAGE_VOL_CREATE_PREALLOC_METADATA |
-                  VIR_STORAGE_VOL_CREATE_REFLINK,
+                  VIR_STORAGE_VOL_CREATE_REFLINK |
+                  VIR_STORAGE_VOL_CREATE_VALIDATE,
                   NULL);
+
+    if (flags & VIR_STORAGE_VOL_CREATE_VALIDATE)
+        parseFlags |= VIR_VOL_XML_PARSE_VALIDATE;
 
     obj = virStoragePoolObjFindByUUID(driver->pools, pool->uuid);
     if (obj && STRNEQ(pool->name, volsrc->pool)) {
@@ -2086,8 +2076,7 @@ storageVolCreateXMLFrom(virStoragePoolPtr pool,
         goto cleanup;
     }
 
-    voldef = virStorageVolDefParseString(def, xmldesc,
-                                         VIR_VOL_XML_PARSE_NO_CAPACITY);
+    voldef = virStorageVolDefParse(def, xmldesc, NULL, parseFlags);
     if (voldef == NULL)
         goto cleanup;
 
