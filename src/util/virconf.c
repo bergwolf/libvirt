@@ -32,7 +32,6 @@
 #include "virlog.h"
 #include "viralloc.h"
 #include "virfile.h"
-#include "virstring.h"
 #include "configmake.h"
 
 #define VIR_FROM_THIS VIR_FROM_CONF
@@ -919,8 +918,7 @@ int virConfGetValueStringList(virConf *conf,
     if (!cval)
         return 0;
 
-    g_strfreev(*values);
-    *values = NULL;
+    g_clear_pointer(values, g_strfreev);
 
     switch (cval->type) {
     case VIR_CONF_LIST:

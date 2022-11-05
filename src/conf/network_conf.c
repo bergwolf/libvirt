@@ -26,7 +26,6 @@
 #include <fcntl.h>
 
 #include "virerror.h"
-#include "datatypes.h"
 #include "network_conf.h"
 #include "netdev_vport_profile_conf.h"
 #include "netdev_bandwidth_conf.h"
@@ -35,7 +34,6 @@
 #include "virxml.h"
 #include "viruuid.h"
 #include "virbuffer.h"
-#include "virfile.h"
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NETWORK
@@ -118,9 +116,8 @@ virPortGroupDefClear(virPortGroupDef *def)
 {
     VIR_FREE(def->name);
     VIR_FREE(def->virtPortProfile);
-    virNetDevBandwidthFree(def->bandwidth);
+    g_clear_pointer(&def->bandwidth, virNetDevBandwidthFree);
     virNetDevVlanClear(&def->vlan);
-    def->bandwidth = NULL;
 }
 
 
@@ -318,7 +315,7 @@ virNetworkDefCopy(virNetworkDef *def,
     if (!(xml = virNetworkDefFormat(def, xmlopt, flags)))
        return NULL;
 
-    return virNetworkDefParseString(xml, xmlopt, false);
+    return virNetworkDefParse(xml, NULL, xmlopt, false);
 }
 
 
@@ -1060,8 +1057,6 @@ virNetworkIPDefParseXML(const char *networkName,
     xmlNodePtr dhcp;
     g_autofree char *address = NULL;
     g_autofree char *netmask = NULL;
-    unsigned long prefix = 0;
-    int prefixRc;
     int ret = -1;
 
     ctxt->node = node;
@@ -1092,17 +1087,8 @@ virNetworkIPDefParseXML(const char *networkName,
         goto cleanup;
     }
 
-    prefixRc = virXPathULong("string(./@prefix)", ctxt, &prefix);
-    if (prefixRc == -2) {
-        virReportError(VIR_ERR_XML_ERROR,
-                       _("Invalid ULong value specified for prefix in definition of network '%s'"),
-                       networkName);
+    if (virXMLPropUInt(node, "prefix", 10, VIR_XML_PROP_NONE, &def->prefix) < 0)
         goto cleanup;
-    }
-    if (prefixRc < 0)
-        def->prefix = 0;
-    else
-        def->prefix = prefix;
 
     if (virXMLPropTristateBool(node, "localPtr",
                                VIR_XML_PROP_NONE,
@@ -1134,8 +1120,8 @@ virNetworkIPDefParseXML(const char *networkName,
             }
         } else if (def->prefix > 32) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("Invalid IPv4 prefix '%lu' in network '%s'"),
-                           prefix, networkName);
+                           _("Invalid IPv4 prefix '%u' in network '%s'"),
+                           def->prefix, networkName);
             goto cleanup;
         }
     } else if (STREQ(def->family, "ipv6")) {
@@ -1153,8 +1139,8 @@ virNetworkIPDefParseXML(const char *networkName,
         }
         if (def->prefix > 128) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("Invalid IPv6 prefix '%lu' in network '%s'"),
-                           prefix, networkName);
+                           _("Invalid IPv6 prefix '%u' in network '%s'"),
+                           def->prefix, networkName);
             goto cleanup;
         }
     } else {
@@ -1827,9 +1813,7 @@ virNetworkDefParseXML(xmlXPathContextPtr ctxt,
         for (i = 0; i < nRoutes; i++) {
             virNetDevIPRoute *route = NULL;
 
-            if (!(route = virNetDevIPRouteParseXML(def->name,
-                                                   routeNodes[i],
-                                                   ctxt)))
+            if (!(route = virNetDevIPRouteParseXML(def->name, routeNodes[i])))
                 return NULL;
             def->routes[i] = route;
             def->nroutes++;
@@ -2028,61 +2012,23 @@ virNetworkDefParseXML(xmlXPathContextPtr ctxt,
 }
 
 
-static virNetworkDef *
+virNetworkDef *
 virNetworkDefParse(const char *xmlStr,
                    const char *filename,
                    virNetworkXMLOption *xmlopt,
                    bool validate)
 {
     g_autoptr(xmlDoc) xml = NULL;
-    virNetworkDef *def = NULL;
+    g_autoptr(xmlXPathContext) ctxt = NULL;
     int keepBlanksDefault = xmlKeepBlanksDefault(0);
 
-    if ((xml = virXMLParse(filename, xmlStr, _("(network_definition)"),
-                           "network.rng", validate)))
-        def = virNetworkDefParseNode(xml, xmlDocGetRootElement(xml), xmlopt);
-
+    xml = virXMLParse(filename, xmlStr, _("(network_definition)"),
+                      "network", &ctxt, "network.rng", validate);
     xmlKeepBlanksDefault(keepBlanksDefault);
-    return def;
-}
 
-
-virNetworkDef *
-virNetworkDefParseString(const char *xmlStr,
-                         virNetworkXMLOption *xmlopt,
-                         bool validate)
-{
-    return virNetworkDefParse(xmlStr, NULL, xmlopt, validate);
-}
-
-
-virNetworkDef *
-virNetworkDefParseFile(const char *filename,
-                       virNetworkXMLOption *xmlopt)
-{
-    return virNetworkDefParse(NULL, filename, xmlopt, false);
-}
-
-
-virNetworkDef *
-virNetworkDefParseNode(xmlDocPtr xml,
-                       xmlNodePtr root,
-                       virNetworkXMLOption *xmlopt)
-{
-    g_autoptr(xmlXPathContext) ctxt = NULL;
-
-    if (!virXMLNodeNameEqual(root, "network")) {
-        virReportError(VIR_ERR_XML_ERROR,
-                       _("unexpected root element <%s>, "
-                         "expecting <network>"),
-                       root->name);
-        return NULL;
-    }
-
-    if (!(ctxt = virXMLXPathContextNew(xml)))
+    if (!xml)
         return NULL;
 
-    ctxt->node = root;
     return virNetworkDefParseXML(ctxt, xmlopt);
 }
 

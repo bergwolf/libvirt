@@ -26,7 +26,6 @@
 #include <selinux/label.h>
 
 #include "security_driver.h"
-#include "security_selinux.h"
 #include "security_util.h"
 #include "virerror.h"
 #include "viralloc.h"
@@ -36,7 +35,6 @@
 #include "virusb.h"
 #include "virscsi.h"
 #include "virscsivhost.h"
-#include "virstoragefile.h"
 #include "virfile.h"
 #include "virhash.h"
 #include "virrandom.h"
@@ -687,8 +685,7 @@ virSecuritySELinuxLXCInitialize(virSecurityManager *mgr)
     return 0;
 
  error:
-    selabel_close(data->label_handle);
-    data->label_handle = NULL;
+    g_clear_pointer(&data->label_handle, selabel_close);
     VIR_FREE(data->domain_context);
     VIR_FREE(data->file_context);
     VIR_FREE(data->content_context);
@@ -758,8 +755,7 @@ virSecuritySELinuxQEMUInitialize(virSecurityManager *mgr)
     return 0;
 
  error:
-    selabel_close(data->label_handle);
-    data->label_handle = NULL;
+    g_clear_pointer(&data->label_handle, selabel_close);
     VIR_FREE(data->domain_context);
     VIR_FREE(data->alt_domain_context);
     VIR_FREE(data->file_context);
@@ -1822,7 +1818,11 @@ virSecuritySELinuxSetImageLabelInternal(virSecurityManager *mgr,
     const char *path = src->path;
     int ret;
 
-    if (!src->path || !virStorageSourceIsLocalStorage(src))
+    /* Special case NVMe. Per virStorageSourceIsLocalStorage() it's
+     * considered not local, but we still want the code below to set
+     * label on VFIO group. */
+    if (src->type != VIR_STORAGE_TYPE_NVME &&
+        (!src->path || !virStorageSourceIsLocalStorage(src)))
         return 0;
 
     secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_SELINUX_NAME);
@@ -2545,7 +2545,12 @@ virSecuritySELinuxSetChardevLabel(virSecurityManager *mgr,
         break;
 
     case VIR_DOMAIN_CHR_TYPE_UNIX:
-        if (!dev_source->data.nix.listen) {
+        if (!dev_source->data.nix.listen ||
+            (dev_source->data.nix.path &&
+             virFileExists(dev_source->data.nix.path))) {
+            /* Also label mode='bind' sockets if they exist,
+             * e.g. because they were created by libvirt
+             * and passed via FD */
             if (virSecuritySELinuxSetFilecon(mgr,
                                              dev_source->data.nix.path,
                                              imagelabel,
@@ -2622,7 +2627,7 @@ virSecuritySELinuxRestoreChardevLabel(virSecurityManager *mgr,
     case VIR_DOMAIN_CHR_TYPE_UNIX:
         if (!dev_source->data.nix.listen) {
             if (virSecuritySELinuxRestoreFileLabel(mgr,
-                                                   dev_source->data.file.path,
+                                                   dev_source->data.nix.path,
                                                    true) < 0)
                 goto done;
         }
@@ -2807,9 +2812,11 @@ virSecuritySELinuxRestoreAllLabel(virSecurityManager *mgr,
             rc = -1;
     }
 
-    if (def->os.loader && def->os.loader->nvram &&
-        virSecuritySELinuxRestoreFileLabel(mgr, def->os.loader->nvram, true) < 0)
-        rc = -1;
+    if (def->os.loader && def->os.loader->nvram) {
+        if (virSecuritySELinuxRestoreImageLabelInt(mgr, def, def->os.loader->nvram,
+                                                   migrated) < 0)
+            rc = -1;
+    }
 
     if (def->os.kernel &&
         virSecuritySELinuxRestoreFileLabel(mgr, def->os.kernel, true) < 0)
@@ -3211,13 +3218,12 @@ virSecuritySELinuxSetAllLabel(virSecurityManager *mgr,
             return -1;
     }
 
-    /* This is different than kernel or initrd. The nvram store
-     * is really a disk, qemu can read and write to it. */
-    if (def->os.loader && def->os.loader->nvram &&
-        secdef && secdef->imagelabel &&
-        virSecuritySELinuxSetFilecon(mgr, def->os.loader->nvram,
-                                     secdef->imagelabel, true) < 0)
-        return -1;
+    if (def->os.loader && def->os.loader->nvram) {
+        if (virSecuritySELinuxSetImageLabel(mgr, def, def->os.loader->nvram,
+                                            VIR_SECURITY_DOMAIN_IMAGE_LABEL_BACKING_CHAIN |
+                                            VIR_SECURITY_DOMAIN_IMAGE_PARENT_CHAIN_TOP) < 0)
+            return -1;
+    }
 
     if (def->os.kernel &&
         virSecuritySELinuxSetFilecon(mgr, def->os.kernel,

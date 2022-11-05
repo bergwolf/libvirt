@@ -166,6 +166,7 @@ VIR_ENUM_IMPL(virshDomainRunningReason,
               N_("event wakeup"),
               N_("crashed"),
               N_("post-copy"),
+              N_("post-copy failed"),
 );
 
 VIR_ENUM_DECL(virshDomainBlockedReason);
@@ -1740,8 +1741,7 @@ virshDomainListCollect(vshControl *ctl, unsigned int flags)
 
  remove_entry:
         /* the domain has to be removed as it failed one of the filters */
-        virshDomainFree(list->domains[i]);
-        list->domains[i] = NULL;
+        g_clear_pointer(&list->domains[i], virshDomainFree);
         deleted++;
     }
 
@@ -1762,8 +1762,7 @@ virshDomainListCollect(vshControl *ctl, unsigned int flags)
         VIR_FREE(names[i]);
 
     if (!success) {
-        virshDomainListFree(list);
-        list = NULL;
+        g_clear_pointer(&list, virshDomainListFree);
     }
 
     VIR_FREE(names);
@@ -2066,6 +2065,10 @@ static const vshCmdOptDef opts_domstats[] = {
      .type = VSH_OT_BOOL,
      .help = N_("report domain dirty rate information"),
     },
+    {.name = "vm",
+     .type = VSH_OT_BOOL,
+     .help = N_("report hypervisor-specific statistics"),
+    },
     {.name = "list-active",
      .type = VSH_OT_BOOL,
      .help = N_("list only active domains"),
@@ -2186,6 +2189,9 @@ cmdDomstats(vshControl *ctl, const vshCmd *cmd)
 
     if (vshCommandOptBool(cmd, "dirtyrate"))
         stats |= VIR_DOMAIN_STATS_DIRTYRATE;
+
+    if (vshCommandOptBool(cmd, "vm"))
+        stats |= VIR_DOMAIN_STATS_VM;
 
     if (vshCommandOptBool(cmd, "list-active"))
         flags |= VIR_CONNECT_GET_ALL_DOMAINS_STATS_ACTIVE;

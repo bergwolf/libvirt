@@ -25,7 +25,6 @@
 
 # define LIBVIRT_VIRCGROUPPRIV_H_ALLOW
 # include "vircgrouppriv.h"
-# include "virstring.h"
 # include "virerror.h"
 # include "virlog.h"
 # include "virfile.h"
@@ -1020,7 +1019,9 @@ mymain(void)
     DETECT_MOUNTS("cgroups1");
     DETECT_MOUNTS("cgroups2");
     DETECT_MOUNTS("cgroups3");
+    fakerootdir = initFakeFS(NULL, "all-in-one");
     DETECT_MOUNTS("all-in-one");
+    cleanupFakeFS(fakerootdir);
     DETECT_MOUNTS_FAIL("no-cgroups");
     DETECT_MOUNTS("kubevirt");
     fakerootdir = initFakeFS("unified", NULL);

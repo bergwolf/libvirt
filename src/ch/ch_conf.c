@@ -21,7 +21,6 @@
 #include <config.h>
 
 #include "configmake.h"
-#include "viralloc.h"
 #include "vircommand.h"
 #include "virlog.h"
 #include "virobject.h"
@@ -87,21 +86,21 @@ virCaps *virCHDriverCapsInit(void)
 virCaps *virCHDriverGetCapabilities(virCHDriver *driver,
                                       bool refresh)
 {
-    virCaps *ret;
-    if (refresh) {
-        virCaps *caps = NULL;
-        if ((caps = virCHDriverCapsInit()) == NULL)
-            return NULL;
+    virCaps *ret = NULL;
+    virCaps *caps = NULL;
 
-        chDriverLock(driver);
-        virObjectUnref(driver->caps);
-        driver->caps = caps;
-    } else {
-        chDriverLock(driver);
+    if (refresh && !(caps = virCHDriverCapsInit()))
+        return NULL;
+
+    VIR_WITH_MUTEX_LOCK_GUARD(&driver->lock) {
+        if (refresh) {
+            virObjectUnref(driver->caps);
+            driver->caps = caps;
+        }
+
+        ret = virObjectRef(driver->caps);
     }
 
-    ret = virObjectRef(driver->caps);
-    chDriverUnlock(driver);
     return ret;
 }
 
@@ -111,7 +110,7 @@ chDomainXMLConfInit(virCHDriver *driver)
     virCHDriverDomainDefParserConfig.priv = driver;
     return virDomainXMLOptionNew(&virCHDriverDomainDefParserConfig,
                                  &virCHDriverPrivateDataCallbacks,
-                                 NULL, NULL, NULL);
+                                 NULL, NULL, NULL, NULL);
 }
 
 virCHDriverConfig *
@@ -158,11 +157,8 @@ virCHDriverConfigNew(bool privileged)
 
 virCHDriverConfig *virCHDriverGetConfig(virCHDriver *driver)
 {
-    virCHDriverConfig *cfg;
-    chDriverLock(driver);
-    cfg = virObjectRef(driver->config);
-    chDriverUnlock(driver);
-    return cfg;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&driver->lock);
+    return virObjectRef(driver->config);
 }
 
 static void

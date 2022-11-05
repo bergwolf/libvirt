@@ -916,4 +916,15 @@ LIBVIRT_8.0.0 {
         virDomainSetLaunchSecurityState;
 } LIBVIRT_7.8.0;
 
+LIBVIRT_8.4.0 {
+    global:
+        virDomainSaveParams;
+        virDomainRestoreParams;
+} LIBVIRT_8.0.0;
+
+LIBVIRT_8.5.0 {
+    global:
+        virDomainAbortJobFlags;
+} LIBVIRT_8.4.0;
+
 # .... define new API here using predicted next version number ....

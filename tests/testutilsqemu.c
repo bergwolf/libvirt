@@ -6,19 +6,23 @@
 # include "testutils.h"
 # include "viralloc.h"
 # include "cpu_conf.h"
-# include "qemu/qemu_driver.h"
 # include "qemu/qemu_domain.h"
 # define LIBVIRT_QEMU_CAPSPRIV_H_ALLOW
 # include "qemu/qemu_capspriv.h"
 # include "virstring.h"
 # include "virfilecache.h"
+# include "virtpm.h"
+
+# include <sys/types.h>
+# include <fcntl.h>
 
 # define VIR_FROM_THIS VIR_FROM_QEMU
 
-virCPUDef *cpuDefault;
-virCPUDef *cpuHaswell;
-virCPUDef *cpuPower8;
-virCPUDef *cpuPower9;
+static virCPUDef *cpuDefault;
+static virCPUDef *cpuHaswell;
+static virCPUDef *cpuPower8;
+static virCPUDef *cpuPower9;
+static virCPUDef *cpuPower10;
 
 
 static const char *qemu_emulators[VIR_ARCH_LAST] = {
@@ -132,6 +136,40 @@ virFindFileInPath(const char *file)
      * an error in such a case
      */
     return NULL;
+}
+
+
+/* Enough to tell capabilities code that swtpm is usable */
+bool virTPMHasSwtpm(void)
+{
+    return true;
+}
+
+
+
+bool
+virTPMSwtpmSetupCapsGet(virTPMSwtpmSetupFeature cap)
+{
+    const char *tpmver = getenv(TEST_TPM_ENV_VAR);
+
+    switch (cap) {
+    case VIR_TPM_SWTPM_SETUP_FEATURE_TPM_1_2:
+        if (!tpmver || (tpmver && strstr(tpmver, TPM_VER_1_2)))
+            return true;
+        break;
+    case VIR_TPM_SWTPM_SETUP_FEATURE_TPM_2_0:
+        if (!tpmver || (tpmver && strstr(tpmver, TPM_VER_2_0)))
+            return true;
+        break;
+    case VIR_TPM_SWTPM_SETUP_FEATURE_CMDARG_PWDFILE_FD:
+    case VIR_TPM_SWTPM_SETUP_FEATURE_CMDARG_CREATE_CONFIG_FILES:
+    case VIR_TPM_SWTPM_SETUP_FEATURE_TPM12_NOT_NEED_ROOT:
+    case VIR_TPM_SWTPM_SETUP_FEATURE_CMDARG_RECONFIGURE_PCR_BANKS:
+    case VIR_TPM_SWTPM_SETUP_FEATURE_LAST:
+        break;
+    }
+
+    return false;
 }
 
 
@@ -297,6 +335,21 @@ testQemuCapsInitMacOS(void)
 }
 
 
+virCPUDef *
+qemuTestGetCPUDef(qemuTestCPUDef d)
+{
+    switch (d) {
+    case QEMU_CPU_DEF_DEFAULT: return cpuDefault;
+    case QEMU_CPU_DEF_HASWELL: return cpuHaswell;
+    case QEMU_CPU_DEF_POWER8: return cpuPower8;
+    case QEMU_CPU_DEF_POWER9: return cpuPower9;
+    case QEMU_CPU_DEF_POWER10: return cpuPower10;
+    }
+
+    return NULL;
+}
+
+
 void
 qemuTestSetHostArch(virQEMUDriver *driver,
                     virArch arch)
@@ -304,7 +357,7 @@ qemuTestSetHostArch(virQEMUDriver *driver,
     if (arch == VIR_ARCH_NONE)
         arch = VIR_ARCH_X86_64;
 
-    virTestHostArch = arch;
+    virTestSetHostArch(arch);
     driver->hostarch = virArchFromHost();
     driver->caps->host.arch = virArchFromHost();
     qemuTestSetHostCPU(driver, arch, NULL);
@@ -374,6 +427,7 @@ void qemuTestDriverFree(virQEMUDriver *driver)
     virCPUDefFree(cpuHaswell);
     virCPUDefFree(cpuPower8);
     virCPUDefFree(cpuPower9);
+    virCPUDefFree(cpuPower10);
 }
 
 
@@ -564,7 +618,8 @@ int qemuTestDriverInit(virQEMUDriver *driver)
     if (!(cpuDefault = virCPUDefCopy(&cpuDefaultData)) ||
         !(cpuHaswell = virCPUDefCopy(&cpuHaswellData)) ||
         !(cpuPower8 = virCPUDefCopy(&cpuPower8Data)) ||
-        !(cpuPower9 = virCPUDefCopy(&cpuPower9Data)))
+        !(cpuPower9 = virCPUDefCopy(&cpuPower9Data)) ||
+        !(cpuPower10 = virCPUDefCopy(&cpuPower10Data)))
         return -1;
 
     if (virMutexInit(&driver->lock) < 0)
@@ -869,6 +924,10 @@ testQemuInfoSetArgs(struct testQemuInfo *info,
             info->args.capsver = va_arg(argptr, char *);
             break;
 
+        case ARG_CAPS_HOST_CPU_MODEL:
+            info->args.capsHostCPUModel = va_arg(argptr, int);
+            break;
+
         case ARG_HOST_OS:
             info->args.hostOS = va_arg(argptr, int);
             break;
@@ -978,4 +1037,105 @@ testQemuInfoClear(struct testQemuInfo *info)
     VIR_FREE(info->errfile);
     virObjectUnref(info->qemuCaps);
     g_clear_pointer(&info->args.fakeCaps, virObjectUnref);
+}
+
+
+/**
+ * testQemuPrepareHostBackendChardevOne:
+ * @dev: device definition object
+ * @chardev: chardev source object
+ * @opaque: Caller is expected to pass pointer to virDomainObj or NULL
+ *
+ * This helper sets up a chardev source backend for FD passing with fake
+ * file descriptros. It's expected to be used as  callback for
+ * 'qemuDomainDeviceBackendChardevForeach', thus the VM object is passed via
+ * @opaque. Callers may pass NULL if the test scope is limited.
+ */
+int
+testQemuPrepareHostBackendChardevOne(virDomainDeviceDef *dev,
+                                     virDomainChrSourceDef *chardev,
+                                     void *opaque)
+{
+    virDomainObj *vm = opaque;
+    qemuDomainObjPrivate *priv = NULL;
+    qemuDomainChrSourcePrivate *charpriv = QEMU_DOMAIN_CHR_SOURCE_PRIVATE(chardev);
+    int fakesourcefd = -1;
+    const char *devalias = NULL;
+
+    if (vm)
+        priv = vm->privateData;
+
+    if (dev) {
+        virDomainDeviceInfo *info = virDomainDeviceGetInfo(dev);
+        devalias = info->alias;
+
+        /* vhost-user disk doesn't use FD passing */
+        if (dev->type == VIR_DOMAIN_DEVICE_DISK)
+            return 0;
+
+        if (dev->type == VIR_DOMAIN_DEVICE_NET) {
+            /* due to a historical bug in qemu we don't use FD passtrhough for
+             * vhost-sockets for network devices */
+            return 0;
+        }
+
+        /* TPMs FD passing setup is special and handled separately */
+        if (dev->type == VIR_DOMAIN_DEVICE_TPM)
+            return 0;
+    } else {
+        devalias = "monitor";
+    }
+
+    switch ((virDomainChrType) chardev->type) {
+    case VIR_DOMAIN_CHR_TYPE_NULL:
+    case VIR_DOMAIN_CHR_TYPE_VC:
+    case VIR_DOMAIN_CHR_TYPE_PTY:
+    case VIR_DOMAIN_CHR_TYPE_DEV:
+    case VIR_DOMAIN_CHR_TYPE_PIPE:
+    case VIR_DOMAIN_CHR_TYPE_STDIO:
+    case VIR_DOMAIN_CHR_TYPE_UDP:
+    case VIR_DOMAIN_CHR_TYPE_TCP:
+    case VIR_DOMAIN_CHR_TYPE_SPICEVMC:
+    case VIR_DOMAIN_CHR_TYPE_SPICEPORT:
+    case VIR_DOMAIN_CHR_TYPE_QEMU_VDAGENT:
+    case VIR_DOMAIN_CHR_TYPE_DBUS:
+        break;
+
+    case VIR_DOMAIN_CHR_TYPE_FILE:
+        fakesourcefd = 1750;
+
+        if (fcntl(fakesourcefd, F_GETFD) != -1)
+            abort();
+
+        charpriv->sourcefd = qemuFDPassNew(devalias, priv);
+        qemuFDPassAddFD(charpriv->sourcefd, &fakesourcefd, "-source");
+        break;
+
+    case VIR_DOMAIN_CHR_TYPE_UNIX:
+        if (chardev->data.nix.listen) {
+            g_autofree char *name = g_strdup_printf("%s-source", devalias);
+            fakesourcefd = 1729;
+
+            charpriv->directfd = qemuFDPassDirectNew(name, &fakesourcefd);
+        }
+
+        break;
+
+    case VIR_DOMAIN_CHR_TYPE_NMDM:
+    case VIR_DOMAIN_CHR_TYPE_LAST:
+        break;
+    }
+
+    if (chardev->logfile) {
+        int fd = 1751;
+
+        if (fcntl(fd, F_GETFD) != -1)
+            abort();
+
+        charpriv->logfd = qemuFDPassNew(devalias, priv);
+
+        qemuFDPassAddFD(charpriv->logfd, &fd, "-log");
+    }
+
+    return 0;
 }

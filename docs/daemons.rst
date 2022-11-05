@@ -100,7 +100,7 @@ optionally, one or two TCP sockets:
   with full read-write privileges. A connection to this socket gives the
   client privileges that are equivalent to having a root shell. Access control
   can be enforced either through validation of `x509 certificates
-  <tlscerts.html>`__, and/or by enabling an `authentication mechanism
+  <kbase/tlscerts.html>`__, and/or by enabling an `authentication mechanism
   <auth.html>`__.
 
 NB, some distros will use ``/run`` instead of ``/var/run``.
@@ -208,13 +208,6 @@ controlled via the system unit files
   independently controlled via the ``ListenStream`` parameter in any of the
   ``libvirtd.socket``, ``libvirtd-ro.socket`` and ``libvirtd-admin.socket`` unit
   files.
-
-Systemd releases prior to version 227 lacked support for passing the activation
-socket unit names into the service. When using these old versions, the
-``tcp_port``, ``tls_port`` and ``unix_sock_dir`` settings in ``libvirtd.conf``
-must be changed in lock-step with the equivalent settings in the unit files to
-ensure that ``libvirtd`` can identify the sockets.
-
 
 Modular driver daemons
 ======================
@@ -353,13 +346,6 @@ controlled via the system unit files:
   independently controlled via the ``ListenStream`` parameter in any of the
   ``virt${DRIVER}d.socket``, ``virt${DRIVER}d-ro.socket`` and
   ``virt${DRIVER}d-admin.socket`` unit files.
-
-Systemd releases prior to version 227 lacked support for passing the activation
-socket unit names into the service. When using these old versions, the
-``unix_sock_dir`` setting in ``virt${DRIVER}d.conf`` must be changed in
-lock-step with the equivalent setting in the unit files to ensure that
-``virt${DRIVER}d`` can identify the sockets.
-
 
 Switching to modular daemons
 ----------------------------
@@ -639,12 +625,6 @@ controlled via the system unit files:
   independently controlled via the ``ListenStream`` parameter in any of the
   ``virtlogd.socket`` and ``virtlogd-admin.socket`` unit files.
 
-Systemd releases prior to version 227 lacked support for passing the activation
-socket unit names into the service. When using these old versions, the
-``unix_sock_dir`` setting in ``virtlogd.conf`` must be changed in
-lock-step with the equivalent setting in the unit files to ensure that
-``virtlogd`` can identify the sockets.
-
 Locking daemon
 ==============
 
@@ -732,12 +712,6 @@ controlled via the system unit files:
 * ``unix_sock_dir`` - directory in which all UNIX sockets are created
   independently controlled via the ``ListenStream`` parameter in any of the
   ``virtlockd.socket`` and ``virtlockd-admin.socket`` unit files.
-
-Systemd releases prior to version 227 lacked support for passing the activation
-socket unit names into the service. When using these old versions, the
-``unix_sock_dir`` setting in ``virtlockd.conf`` must be changed in
-lock-step with the equivalent setting in the unit files to ensure that
-``virtlockd`` can identify the sockets.
 
 Changing command line options for daemons
 =========================================

@@ -29,13 +29,9 @@
 #include "testutils.h"
 #include "internal.h"
 #include "viralloc.h"
-#include "virthread.h"
 #include "virerror.h"
 #include "virbuffer.h"
 #include "virlog.h"
-#include "vircommand.h"
-#include "virrandom.h"
-#include "virprocess.h"
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
@@ -55,7 +51,7 @@ static size_t testCounter;
 static virBitmap *testBitmap;
 static virBitmap *failedTests;
 
-virArch virTestHostArch = VIR_ARCH_X86_64;
+static virArch virTestHostArch = VIR_ARCH_X86_64;
 
 virArch
 virArchFromHost(void)
@@ -63,6 +59,11 @@ virArchFromHost(void)
     return virTestHostArch;
 }
 
+void
+virTestSetHostArch(virArch arch)
+{
+    virTestHostArch = arch;
+}
 
 static int virTestUseTerminalColors(void)
 {
@@ -988,7 +989,7 @@ static virDomainDefParserConfig virTestGenericDomainDefParserConfig = {
 virDomainXMLOption *virTestGenericDomainXMLConfInit(void)
 {
     return virDomainXMLOptionNew(&virTestGenericDomainDefParserConfig,
-                                 NULL, NULL, NULL, NULL);
+                                 NULL, NULL, NULL, NULL, NULL);
 }
 
 

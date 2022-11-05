@@ -22,7 +22,6 @@
 #include "domain_capabilities.h"
 #include "virfilewrapper.h"
 #include "configmake.h"
-#include "virtpm.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_NONE
@@ -128,12 +127,6 @@ fillQemuCaps(virDomainCaps *domCaps,
     return 0;
 }
 
-
-/* Enough to tell capabilities code that swtpm is usable */
-bool virTPMHasSwtpm(void)
-{
-    return true;
-}
 
 #endif /* WITH_QEMU */
 
@@ -259,6 +252,7 @@ doTestQemuInternal(const char *version,
     g_autofree char *name = NULL;
     g_autofree char *capsName = NULL;
     g_autofree char *emulator = NULL;
+    int rc;
 
     name = g_strdup_printf("qemu_%s%s%s%s.%s",
                            version,
@@ -281,7 +275,21 @@ doTestQemuInternal(const char *version,
     };
     VIR_WARNINGS_RESET
 
-    if (virTestRun(name, test_virDomainCapsFormat, &data) < 0)
+    if (STRPREFIX(version, "3.") ||
+        STRPREFIX(version, "4.") ||
+        STRPREFIX(version, "5.")) {
+        g_setenv(TEST_TPM_ENV_VAR, TPM_VER_1_2, true);
+    } else if (STRPREFIX(version, "6.")) {
+        g_setenv(TEST_TPM_ENV_VAR, TPM_VER_1_2 TPM_VER_2_0, true);
+    } else {
+        g_setenv(TEST_TPM_ENV_VAR, TPM_VER_2_0, true);
+    }
+
+    rc = virTestRun(name, test_virDomainCapsFormat, &data);
+
+    g_unsetenv(TEST_TPM_ENV_VAR);
+
+    if (rc < 0)
         return -1;
 
     return 0;

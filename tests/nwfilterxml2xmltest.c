@@ -7,12 +7,7 @@
 
 #include "internal.h"
 #include "testutils.h"
-#include "virxml.h"
-#include "virthread.h"
-#include "nwfilter_params.h"
 #include "nwfilter_conf.h"
-#include "testutilsqemu.h"
-#include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
@@ -26,7 +21,7 @@ testCompareXMLToXMLFiles(const char *inxml, const char *outxml,
 
     virResetLastError();
 
-    if (!(dev = virNWFilterDefParseFile(inxml))) {
+    if (!(dev = virNWFilterDefParse(NULL, inxml, 0))) {
         if (expect_error) {
             virResetLastError();
             goto done;

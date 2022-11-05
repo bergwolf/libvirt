@@ -26,7 +26,6 @@
 #include "virerror.h"
 #include "virfile.h"
 #include "datatypes.h"
-#include "domain_conf.h"
 #include "interface_driver.h"
 #include "interface_conf.h"
 #include "viralloc.h"
@@ -1111,6 +1110,7 @@ udevStateCleanup(void);
 static int
 udevStateInitialize(bool privileged,
                     const char *root,
+                    bool monolithic G_GNUC_UNUSED,
                     virStateInhibitCallback callback G_GNUC_UNUSED,
                     void *opaque G_GNUC_UNUSED)
 {

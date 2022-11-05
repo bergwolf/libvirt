@@ -27,11 +27,9 @@
 #include "libvirt_internal.h"
 #include "virdomainobjlist.h"
 #include "domain_event.h"
-#include "capabilities.h"
 #include "configmake.h"
 #include "virportallocator.h"
 #include "virobject.h"
-#include "virchrdev.h"
 #include "virhostdev.h"
 #include "locking/lock_manager.h"
 #include "virfirmware.h"
@@ -219,15 +217,3 @@ libxlBuildDomainConfig(virPortAllocatorRange *graphicsports,
                        virDomainDef *def,
                        libxlDriverConfig *cfg,
                        libxl_domain_config *d_config);
-
-static inline void
-libxlDriverLock(libxlDriverPrivate *driver)
-{
-    virMutexLock(&driver->lock);
-}
-
-static inline void
-libxlDriverUnlock(libxlDriverPrivate *driver)
-{
-    virMutexUnlock(&driver->lock);
-}

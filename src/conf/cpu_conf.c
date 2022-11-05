@@ -26,8 +26,6 @@
 #include "virbuffer.h"
 #include "virfile.h"
 #include "cpu_conf.h"
-#include "domain_conf.h"
-#include "virstring.h"
 #include "virlog.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
@@ -84,6 +82,12 @@ VIR_ENUM_IMPL(virCPUCacheMode,
               "disable",
 );
 
+VIR_ENUM_IMPL(virCPUMaxPhysAddrMode,
+              VIR_CPU_MAX_PHYS_ADDR_MODE_LAST,
+              "emulate",
+              "passthrough",
+);
+
 
 virCPUDef *virCPUDefNew(void)
 {
@@ -129,6 +133,7 @@ virCPUDefFree(virCPUDef *def)
     if (g_atomic_int_dec_and_test(&def->refs)) {
         virCPUDefFreeModel(def);
         g_free(def->cache);
+        g_free(def->addr);
         g_free(def->tsc);
         g_free(def);
     }
@@ -245,10 +250,18 @@ virCPUDefCopyWithoutModel(const virCPUDef *cpu)
     copy->threads = cpu->threads;
     copy->arch = cpu->arch;
     copy->migratable = cpu->migratable;
+    copy->sigFamily = cpu->sigFamily;
+    copy->sigModel = cpu->sigModel;
+    copy->sigStepping = cpu->sigStepping;
 
     if (cpu->cache) {
         copy->cache = g_new0(virCPUCacheDef, 1);
         *copy->cache = *cpu->cache;
+    }
+
+    if (cpu->addr) {
+        copy->addr = g_new0(virCPUMaxPhysAddrDef, 1);
+        *copy->addr = *cpu->addr;
     }
 
     if (cpu->tsc) {
@@ -299,6 +312,34 @@ virCPUDefParseXMLString(const char *xml,
 }
 
 
+static int
+virCPUDefParseXMLCache(virCPUDef *def,
+                       xmlNodePtr node)
+{
+    int rc;
+
+    def->cache = g_new0(virCPUCacheDef, 1);
+
+    if ((rc = virXMLPropInt(node, "level", 10, VIR_XML_PROP_NONNEGATIVE,
+                            &def->cache->level, -1)) < 0)
+        return -1;
+
+    if (rc == 1) {
+        if (def->cache->level < 1 || def->cache->level > 3) {
+            virReportError(VIR_ERR_XML_ERROR, "%s",
+                           _("invalid CPU cache level, must be in range [1,3]"));
+            return -1;
+        }
+    }
+
+    if (virXMLPropEnum(node, "mode", virCPUCacheModeTypeFromString,
+                       VIR_XML_PROP_REQUIRED, &def->cache->mode) < 0)
+        return -1;
+
+    return 0;
+}
+
+
 /*
  * Parses CPU definition XML from a node pointed to by @xpath. If @xpath is
  * NULL, the current node of @ctxt is used (i.e., it is a shortcut to ".").
@@ -321,6 +362,9 @@ virCPUDefParseXML(xmlXPathContextPtr ctxt,
     g_autoptr(virCPUDef) def = NULL;
     g_autofree xmlNodePtr *nodes = NULL;
     xmlNodePtr topology = NULL;
+    xmlNodePtr maxphysaddrNode = NULL;
+    g_autofree xmlNodePtr *cacheNodes = NULL;
+    ssize_t ncacheNodes = 0;
     VIR_XPATH_NODE_AUTORESTORE(ctxt)
     int n;
     int rv;
@@ -345,7 +389,7 @@ virCPUDefParseXML(xmlXPathContextPtr ctxt,
         g_autofree char *schemafile = NULL;
 
         if (!(schemafile = virFileFindResource("cpu.rng",
-                                               abs_top_srcdir "/docs/schemas",
+                                               abs_top_srcdir "/src/conf/schemas",
                                                PKGDATADIR "/schemas")))
             return -1;
 
@@ -421,6 +465,7 @@ virCPUDefParseXML(xmlXPathContextPtr ctxt,
     if (def->type == VIR_CPU_TYPE_HOST) {
         g_autofree char *arch = virXPathString("string(./arch[1])", ctxt);
         xmlNodePtr counter_node = NULL;
+        xmlNodePtr signature_node = NULL;
 
         if (!arch) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
@@ -441,7 +486,27 @@ virCPUDefParseXML(xmlXPathContextPtr ctxt,
             return -1;
         }
 
-        if ((counter_node = virXPathNode("./counter[@name='tsc'])", ctxt))) {
+        if ((signature_node = virXPathNode("./signature[1]", ctxt))) {
+            if (virXMLPropUInt(signature_node, "family", 10,
+                               VIR_XML_PROP_REQUIRED | VIR_XML_PROP_NONZERO,
+                               &def->sigFamily) < 0) {
+                return -1;
+            }
+
+            if (virXMLPropUInt(signature_node, "model", 10,
+                               VIR_XML_PROP_REQUIRED,
+                               &def->sigModel) < 0) {
+                return -1;
+            }
+
+            if (virXMLPropUInt(signature_node, "stepping", 10,
+                               VIR_XML_PROP_REQUIRED,
+                               &def->sigStepping) < 0) {
+                return -1;
+            }
+        }
+
+        if ((counter_node = virXPathNode("./counter[@name='tsc']", ctxt))) {
             tsc = g_new0(virHostCPUTscInfo, 1);
 
             if (virXMLPropULongLong(counter_node, "frequency", 10,
@@ -591,35 +656,30 @@ virCPUDefParseXML(xmlXPathContextPtr ctxt,
         def->features[i].policy = policy;
     }
 
-    if (virXPathInt("count(./cache)", ctxt, &n) < 0) {
-        return -1;
-    } else if (n > 1) {
-        virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("at most one CPU cache element may be specified"));
-        return -1;
-    } else if (n == 1) {
-        int level = -1;
-        g_autofree char *strmode = NULL;
-        int mode;
-
-        if (virXPathBoolean("boolean(./cache[1]/@level)", ctxt) == 1 &&
-            (virXPathInt("string(./cache[1]/@level)", ctxt, &level) < 0 ||
-             level < 1 || level > 3)) {
+    if ((ncacheNodes = virXPathNodeSet("./cache", ctxt, &cacheNodes)) > 0) {
+        if (ncacheNodes > 1) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("invalid CPU cache level, must be in range [1,3]"));
+                           _("at most one CPU cache element may be specified"));
             return -1;
         }
 
-        if (!(strmode = virXPathString("string(./cache[1]/@mode)", ctxt)) ||
-            (mode = virCPUCacheModeTypeFromString(strmode)) < 0) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("missing or invalid CPU cache mode"));
+        if (virCPUDefParseXMLCache(def, cacheNodes[0]) < 0)
             return -1;
-        }
+    }
 
-        def->cache = g_new0(virCPUCacheDef, 1);
-        def->cache->level = level;
-        def->cache->mode = mode;
+    if ((maxphysaddrNode = virXPathNode("./maxphysaddr[1]", ctxt))) {
+        def->addr = g_new0(virCPUMaxPhysAddrDef, 1);
+
+        if (virXMLPropEnum(maxphysaddrNode, "mode",
+                           virCPUMaxPhysAddrModeTypeFromString,
+                           VIR_XML_PROP_REQUIRED,
+                           &def->addr->mode) < 0)
+            return -1;
+
+        if (virXMLPropInt(maxphysaddrNode, "bits", 10,
+                          VIR_XML_PROP_NONNEGATIVE,
+                          &def->addr->bits, -1) < 0)
+            return -1;
     }
 
     *cpu = g_steal_pointer(&def);
@@ -753,6 +813,14 @@ virCPUDefFormatBuf(virBuffer *buf,
         virBufferAsprintf(buf, "<microcode version='%u'/>\n",
                           def->microcodeVersion);
 
+    if (def->type == VIR_CPU_TYPE_HOST && def->sigFamily) {
+        virBufferAddLit(buf, "<signature");
+        virBufferAsprintf(buf, " family='%u'", def->sigFamily);
+        virBufferAsprintf(buf, " model='%u'", def->sigModel);
+        virBufferAsprintf(buf, " stepping='%u'", def->sigStepping);
+        virBufferAddLit(buf, "/>\n");
+    }
+
     if (def->type == VIR_CPU_TYPE_HOST && def->tsc) {
         virBufferAddLit(buf, "<counter name='tsc'");
         virBufferAsprintf(buf, " frequency='%llu'", def->tsc->frequency);
@@ -778,6 +846,15 @@ virCPUDefFormatBuf(virBuffer *buf,
             virBufferAsprintf(buf, "level='%d' ", def->cache->level);
         virBufferAsprintf(buf, "mode='%s'",
                           virCPUCacheModeTypeToString(def->cache->mode));
+        virBufferAddLit(buf, "/>\n");
+    }
+
+    if (def->addr) {
+        virBufferAddLit(buf, "<maxphysaddr ");
+        virBufferAsprintf(buf, "mode='%s'",
+                          virCPUMaxPhysAddrModeTypeToString(def->addr->mode));
+        if (def->addr->bits != -1)
+            virBufferAsprintf(buf, " bits='%d'", def->addr->bits);
         virBufferAddLit(buf, "/>\n");
     }
 
@@ -1040,6 +1117,15 @@ virCPUDefIsEqual(virCPUDef *src,
     if (src->threads != dst->threads) {
         MISMATCH(_("Target CPU threads %d does not match source %d"),
                  dst->threads, src->threads);
+        return false;
+    }
+
+    if ((src->addr && !dst->addr) ||
+        (!src->addr && dst->addr) ||
+        (src->addr && dst->addr &&
+         (src->addr->mode != dst->addr->mode ||
+          src->addr->bits != dst->addr->bits))) {
+        MISMATCH("%s", _("Target CPU maxphysaddr does not match source"));
         return false;
     }
 

@@ -19,7 +19,6 @@
 
 #pragma once
 
-#include "domain_conf.h"
 #include "qemu/qemu_conf.h"
 #include "qemu/qemu_monitor.h"
 #include "qemu/qemu_agent.h"
@@ -90,14 +89,13 @@ qemuMonitorTestAddItemExpect(qemuMonitorTest *test,
                              const char *response);
 
 #define qemuMonitorTestNewSimple(xmlopt) \
-    qemuMonitorTestNew(xmlopt, NULL, NULL, NULL, NULL)
+    qemuMonitorTestNew(xmlopt, NULL, NULL, NULL)
 #define qemuMonitorTestNewSchema(xmlopt, schema) \
-    qemuMonitorTestNew(xmlopt, NULL, NULL, NULL, schema)
+    qemuMonitorTestNew(xmlopt, NULL, NULL, schema)
 
 qemuMonitorTest *
 qemuMonitorTestNew(virDomainXMLOption *xmlopt,
                    virDomainObj *vm,
-                   virQEMUDriver *driver,
                    const char *greeting,
                    GHashTable *schema);
 

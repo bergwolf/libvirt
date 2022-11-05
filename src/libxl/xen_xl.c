@@ -27,9 +27,9 @@
 #include "virerror.h"
 #include "virlog.h"
 #include "domain_conf.h"
+#include "domain_postparse.h"
 #include "viralloc.h"
 #include "virstring.h"
-#include "storage_source.h"
 #include "storage_source_backingstore.h"
 #include "xen_xl.h"
 #include "libxl_capabilities.h"
@@ -361,11 +361,9 @@ xenParseXLSpice(virConf *conf, virDomainDef *def)
                                  &val, 0) < 0)
                 goto cleanup;
             if (val) {
-                graphics->data.spice.mousemode =
-                    VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_CLIENT;
+                graphics->data.spice.mousemode = VIR_DOMAIN_MOUSE_MODE_CLIENT;
             } else {
-                graphics->data.spice.mousemode =
-                    VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_SERVER;
+                graphics->data.spice.mousemode = VIR_DOMAIN_MOUSE_MODE_SERVER;
             }
 
             if (xenConfigGetBool(conf, "spice_clipboard_sharing", &val, 0) < 0)
@@ -717,6 +715,9 @@ xenParseXLDisk(virConf *conf, virDomainDef *def)
                     virDomainDiskSetDriver(disk, "phy");
                     virDomainDiskSetType(disk, VIR_STORAGE_TYPE_BLOCK);
                     break;
+#ifdef LIBXL_HAVE_DEVICE_DISK_SPECIFICATION
+                case LIBXL_DISK_BACKEND_STANDALONE:
+#endif
                 default:
                     virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                                    _("disk backend not supported: %s"),
@@ -1491,14 +1492,14 @@ xenFormatXLDiskSrcNet(virStorageSource *src)
 static int
 xenFormatXLDiskSrc(virStorageSource *src, char **srcstr)
 {
-    int actualType = virStorageSourceGetActualType(src);
+    virStorageType actualType = virStorageSourceGetActualType(src);
 
     *srcstr = NULL;
 
     if (virStorageSourceIsEmpty(src))
         return 0;
 
-    switch ((virStorageType)actualType) {
+    switch (actualType) {
     case VIR_STORAGE_TYPE_BLOCK:
     case VIR_STORAGE_TYPE_FILE:
     case VIR_STORAGE_TYPE_DIR:
@@ -1691,11 +1692,11 @@ xenFormatXLSpice(virConf *conf, virDomainDef *def)
 
             if (graphics->data.spice.mousemode) {
                 switch (graphics->data.spice.mousemode) {
-                case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_SERVER:
+                case VIR_DOMAIN_MOUSE_MODE_SERVER:
                     if (xenConfigSetInt(conf, "spiceagent_mouse", 0) < 0)
                         return -1;
                     break;
-                case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_CLIENT:
+                case VIR_DOMAIN_MOUSE_MODE_CLIENT:
                     if (xenConfigSetInt(conf, "spiceagent_mouse", 1) < 0)
                         return -1;
                     /*
@@ -1705,11 +1706,11 @@ xenFormatXLSpice(virConf *conf, virDomainDef *def)
                     if (xenConfigSetInt(conf, "spicevdagent", 1) < 0)
                         return -1;
                     break;
-                case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_DEFAULT:
+                case VIR_DOMAIN_MOUSE_MODE_DEFAULT:
                     break;
-                case VIR_DOMAIN_GRAPHICS_SPICE_MOUSE_MODE_LAST:
+                case VIR_DOMAIN_MOUSE_MODE_LAST:
                 default:
-                    virReportEnumRangeError(virDomainGraphicsSpiceMouseMode,
+                    virReportEnumRangeError(virDomainMouseMode,
                                             graphics->data.spice.mousemode);
                     return -1;
                 }

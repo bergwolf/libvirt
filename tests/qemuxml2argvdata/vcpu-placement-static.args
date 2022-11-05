@@ -6,7 +6,6 @@ LOGNAME=test \
 XDG_DATA_HOME=/tmp/lib/domain--1-dummy2/.local/share \
 XDG_CACHE_HOME=/tmp/lib/domain--1-dummy2/.cache \
 XDG_CONFIG_HOME=/tmp/lib/domain--1-dummy2/.config \
-QEMU_AUDIO_DRV=none \
 /usr/bin/qemu-system-x86_64 \
 -name guest=dummy2,debug-threads=on \
 -S \
@@ -14,7 +13,7 @@ QEMU_AUDIO_DRV=none \
 -machine q35,usb=off,dump-guest-core=off \
 -accel kvm \
 -m 128 \
--realtime mlock=off \
+-overcommit mem-lock=off \
 -smp 2,maxcpus=6,sockets=6,cores=1,threads=1 \
 -object iothread,id=iothread1 \
 -object iothread,id=iothread2 \
@@ -22,10 +21,11 @@ QEMU_AUDIO_DRV=none \
 -display none \
 -no-user-config \
 -nodefaults \
--chardev socket,id=charmonitor,path=/tmp/lib/domain--1-dummy2/monitor.sock,server=on,wait=off \
+-chardev socket,id=charmonitor,fd=1729,server=on,wait=off \
 -mon chardev=charmonitor,id=monitor,mode=control \
 -rtc base=utc \
 -no-shutdown \
 -no-acpi \
 -boot strict=on \
+-audiodev '{"id":"audio1","driver":"none"}' \
 -msg timestamp=on
