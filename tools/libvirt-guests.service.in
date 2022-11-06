@@ -1,10 +1,14 @@
 [Unit]
 Description=Suspend/Resume Running libvirt Guests
-Wants=libvirtd.service
 Requires=virt-guest-shutdown.target
 After=network.target
 After=time-sync.target
-After=libvirtd.service
+After=libvirtd.socket
+After=virtqemud.socket
+After=virtlxcd.socket
+After=virtvboxd.socket
+After=virtvzd.socket
+After=virtxend.socket
 After=virt-guest-shutdown.target
 Documentation=man:libvirt-guests(8)
 Documentation=https://libvirt.org

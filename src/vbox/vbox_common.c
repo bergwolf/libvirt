@@ -143,7 +143,7 @@ vboxDriverObjNew(void)
 
     if (!(driver->caps = vboxCapsInit()) ||
         !(driver->xmlopt = virDomainXMLOptionNew(&vboxDomainDefParserConfig,
-                                                 NULL, NULL, NULL, NULL)))
+                                                 NULL, NULL, NULL, NULL, NULL)))
         goto cleanup;
 
     return driver;
@@ -224,7 +224,7 @@ vboxSdkUninitialize(void)
 static struct _vboxDriver *
 vboxGetDriverConnection(void)
 {
-    virMutexLock(&vbox_driver_lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&vbox_driver_lock);
 
     if (vbox_driver) {
         virObjectRef(vbox_driver);
@@ -234,9 +234,6 @@ vboxGetDriverConnection(void)
         if (!vbox_driver) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                            _("Failed to create vbox driver object."));
-
-            virMutexUnlock(&vbox_driver_lock);
-
             return NULL;
         }
     }
@@ -248,26 +245,20 @@ vboxGetDriverConnection(void)
         virObjectUnref(vbox_driver);
         if (vboxDriverDisposed)
             vbox_driver = NULL;
-
-        virMutexUnlock(&vbox_driver_lock);
-
         return NULL;
     }
 
     vbox_driver->connectionCount++;
-
-    virMutexUnlock(&vbox_driver_lock);
-
     return vbox_driver;
 }
 
 static void
 vboxDestroyDriverConnection(void)
 {
-    virMutexLock(&vbox_driver_lock);
+    VIR_LOCK_GUARD lock = virLockGuardLock(&vbox_driver_lock);
 
     if (!vbox_driver)
-        goto cleanup;
+        return;
 
     vbox_driver->connectionCount--;
 
@@ -277,9 +268,6 @@ vboxDestroyDriverConnection(void)
     virObjectUnref(vbox_driver);
     if (vboxDriverDisposed)
         vbox_driver = NULL;
-
- cleanup:
-    virMutexUnlock(&vbox_driver_lock);
 }
 
 static int openSessionForMachine(struct _vboxDriver *data, const unsigned char *dom_uuid,
@@ -614,11 +602,10 @@ vboxDomainSave(virDomainPtr dom, const char *path G_GNUC_UNUSED)
 static int vboxConnectGetVersion(virConnectPtr conn, unsigned long *version)
 {
     struct _vboxDriver *data = conn->privateData;
-    VIR_DEBUG("%s: in vboxGetVersion", conn->driver->name);
+    VIR_LOCK_GUARD lock = virObjectLockGuard(data);
 
-    virObjectLock(data);
+    VIR_DEBUG("%s: in vboxGetVersion", conn->driver->name);
     *version = data->version;
-    virObjectUnlock(data);
 
     return 0;
 }
@@ -676,16 +663,12 @@ vboxConnectGetMaxVcpus(virConnectPtr conn, const char *type G_GNUC_UNUSED)
 static char *vboxConnectGetCapabilities(virConnectPtr conn)
 {
     struct _vboxDriver *data = conn->privateData;
-    char *ret = NULL;
+    VIR_LOCK_GUARD lock = virObjectLockGuard(data);
 
     if (!data->vboxObj)
-        return ret;
+        return NULL;
 
-    virObjectLock(data);
-    ret = virCapabilitiesFormatXML(data->caps);
-    virObjectUnlock(data);
-
-    return ret;
+    return virCapabilitiesFormatXML(data->caps);
 }
 
 static int vboxConnectListDomains(virConnectPtr conn, int *ids, int nids)
@@ -992,27 +975,28 @@ vboxSetBootDeviceOrder(virDomainDef *def, struct _vboxDriver *data,
     PRUint32 maxBootPosition = 0;
     size_t i = 0;
 
-    VIR_DEBUG("def->os.type             %s", virDomainOSTypeToString(def->os.type));
-    VIR_DEBUG("def->os.arch             %s", virArchToString(def->os.arch));
-    VIR_DEBUG("def->os.machine          %s", def->os.machine);
-    VIR_DEBUG("def->os.nBootDevs        %zu", def->os.nBootDevs);
-    VIR_DEBUG("def->os.bootDevs[0]      %d", def->os.bootDevs[0]);
-    VIR_DEBUG("def->os.bootDevs[1]      %d", def->os.bootDevs[1]);
-    VIR_DEBUG("def->os.bootDevs[2]      %d", def->os.bootDevs[2]);
-    VIR_DEBUG("def->os.bootDevs[3]      %d", def->os.bootDevs[3]);
-    VIR_DEBUG("def->os.init             %s", def->os.init);
-    VIR_DEBUG("def->os.kernel           %s", def->os.kernel);
-    VIR_DEBUG("def->os.initrd           %s", def->os.initrd);
-    VIR_DEBUG("def->os.cmdline          %s", def->os.cmdline);
-    VIR_DEBUG("def->os.root             %s", def->os.root);
+    VIR_DEBUG("def->os.type %s", virDomainOSTypeToString(def->os.type));
+    VIR_DEBUG("def->os.arch %s", virArchToString(def->os.arch));
+    VIR_DEBUG("def->os.machine %s", def->os.machine);
+    VIR_DEBUG("def->os.nBootDevs %zu", def->os.nBootDevs);
+    VIR_DEBUG("def->os.bootDevs[0] %d", def->os.bootDevs[0]);
+    VIR_DEBUG("def->os.bootDevs[1] %d", def->os.bootDevs[1]);
+    VIR_DEBUG("def->os.bootDevs[2] %d", def->os.bootDevs[2]);
+    VIR_DEBUG("def->os.bootDevs[3] %d", def->os.bootDevs[3]);
+    VIR_DEBUG("def->os.init %s", def->os.init);
+    VIR_DEBUG("def->os.kernel %s", def->os.kernel);
+    VIR_DEBUG("def->os.initrd %s", def->os.initrd);
+    VIR_DEBUG("def->os.cmdline %s", def->os.cmdline);
+    VIR_DEBUG("def->os.root %s", def->os.root);
     if (def->os.loader) {
-        VIR_DEBUG("def->os.loader->path     %s", def->os.loader->path);
+        VIR_DEBUG("def->os.loader->path %s", def->os.loader->path);
         VIR_DEBUG("def->os.loader->readonly %d", def->os.loader->readonly);
-        VIR_DEBUG("def->os.loader->type     %d", def->os.loader->type);
-        VIR_DEBUG("def->os.loader->nvram    %s", def->os.loader->nvram);
+        VIR_DEBUG("def->os.loader->type %d", def->os.loader->type);
+        if (def->os.loader->nvram)
+            VIR_DEBUG("def->os.loader->nvram->path %s", def->os.loader->nvram->path);
     }
-    VIR_DEBUG("def->os.bootloader       %s", def->os.bootloader);
-    VIR_DEBUG("def->os.bootloaderArgs   %s", def->os.bootloaderArgs);
+    VIR_DEBUG("def->os.bootloader %s", def->os.bootloader);
+    VIR_DEBUG("def->os.bootloaderArgs %s", def->os.bootloaderArgs);
 
     gVBoxAPI.UIVirtualBox.GetSystemProperties(data->vboxObj, &systemProperties);
     if (systemProperties) {
@@ -2808,7 +2792,6 @@ static int vboxDomainGetInfo(virDomainPtr dom, virDomainInfoPtr info)
             if (systemProperties) {
                 gVBoxAPI.UISystemProperties.GetMaxGuestRAM(systemProperties, &maxMemorySize);
                 VBOX_RELEASE(systemProperties);
-                systemProperties = NULL;
             }
 
             gVBoxAPI.UIMachine.GetCPUCount(machine, &CPUCount);
@@ -4015,7 +3998,6 @@ static char *vboxDomainGetXMLDesc(virDomainPtr dom, unsigned int flags)
         gVBoxAPI.UISystemProperties.GetSerialPortCount(systemProperties, &serialPortCount);
         gVBoxAPI.UISystemProperties.GetParallelPortCount(systemProperties, &parallelPortCount);
         VBOX_RELEASE(systemProperties);
-        systemProperties = NULL;
     }
     /* Currently setting memory and maxMemory as same, cause
      * the notation here seems to be inconsistent while
@@ -4955,8 +4937,7 @@ vboxSnapshotRedefine(virDomainPtr dom,
         tmp = virStringReplace(newSnapshotPtr->storageController,
                                searchResultTab[it],
                                uuidReplacing);
-        g_strfreev(searchResultTab);
-        searchResultTab = NULL;
+        g_clear_pointer(&searchResultTab, g_strfreev);
         VIR_FREE(newSnapshotPtr->storageController);
         if (!tmp)
             goto cleanup;
@@ -5379,8 +5360,7 @@ vboxDomainSnapshotCreateXML(virDomainPtr dom,
     nsresult rc;
     resultCodeUnion result;
     virDomainSnapshotPtr ret = NULL;
-    unsigned int parse_flags = (VIR_DOMAIN_SNAPSHOT_PARSE_DISKS |
-                                VIR_DOMAIN_SNAPSHOT_PARSE_REDEFINE);
+    unsigned int parse_flags = VIR_DOMAIN_SNAPSHOT_PARSE_REDEFINE;
     g_autoptr(virDomainSnapshotDef) def = NULL;
 
     if (!data->vboxObj)
@@ -6798,7 +6778,6 @@ vboxDomainSnapshotDeleteMetadataOnly(virDomainSnapshotPtr snapshot)
     }
     def = virDomainSnapshotDefParseString(defXml,
                                           data->xmlopt, NULL, NULL,
-                                          VIR_DOMAIN_SNAPSHOT_PARSE_DISKS |
                                           VIR_DOMAIN_SNAPSHOT_PARSE_REDEFINE);
     if (!def) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
@@ -7585,13 +7564,13 @@ vboxNodeGetFreePages(virConnectPtr conn,
                      unsigned int flags)
 {
     struct _vboxDriver *driver = conn->privateData;
-    int lastCell;
+    int lastCell = -1;
 
     virCheckFlags(0, -1);
 
-    virObjectLock(driver);
-    lastCell = virCapabilitiesHostNUMAGetMaxNode(driver->caps->host.numa);
-    virObjectUnlock(driver);
+    VIR_WITH_OBJECT_LOCK_GUARD(driver) {
+        lastCell = virCapabilitiesHostNUMAGetMaxNode(driver->caps->host.numa);
+    }
 
     return virHostMemGetFreePages(npages, pages, startCell,
                                   cellCount, lastCell, counts);
@@ -7607,14 +7586,14 @@ vboxNodeAllocPages(virConnectPtr conn G_GNUC_UNUSED,
                    unsigned int flags)
 {
     struct _vboxDriver *driver = conn->privateData;
-    int lastCell;
+    int lastCell = -1;
     bool add = !(flags & VIR_NODE_ALLOC_PAGES_SET);
 
     virCheckFlags(VIR_NODE_ALLOC_PAGES_SET, -1);
 
-    virObjectLock(driver);
-    lastCell = virCapabilitiesHostNUMAGetMaxNode(driver->caps->host.numa);
-    virObjectUnlock(driver);
+    VIR_WITH_OBJECT_LOCK_GUARD(driver) {
+        lastCell = virCapabilitiesHostNUMAGetMaxNode(driver->caps->host.numa);
+    }
 
     return virHostMemAllocPages(npages, pageSizes, pageCounts,
                                 startCell, cellCount, lastCell, add);

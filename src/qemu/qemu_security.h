@@ -21,8 +21,6 @@
 #pragma once
 
 #include "qemu_conf.h"
-#include "domain_conf.h"
-#include "security/security_manager.h"
 
 int qemuSecuritySetAllLabel(virQEMUDriver *driver,
                             virDomainObj *vm,
@@ -86,12 +84,6 @@ int qemuSecuritySetNetdevLabel(virQEMUDriver *driver,
 int qemuSecurityRestoreNetdevLabel(virQEMUDriver *driver,
                                    virDomainObj *vm,
                                    virDomainNetDef *net);
-
-int qemuSecurityStartVhostUserGPU(virQEMUDriver *driver,
-                                  virDomainObj *vm,
-                                  virCommand *cmd,
-                                  int *exitstatus,
-                                  int *cmdret);
 
 int qemuSecurityStartTPMEmulator(virQEMUDriver *driver,
                                  virDomainObj *vm,

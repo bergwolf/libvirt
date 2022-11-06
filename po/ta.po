@@ -12,7 +12,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: libvirt 6.0.0\n"
 "Report-Msgid-Bugs-To: https://libvirt.org/bugs.html\n"
-"POT-Creation-Date: 2022-01-10 08:58+0000\n"
+"POT-Creation-Date: 2022-10-25 07:42+0000\n"
 "PO-Revision-Date: 2015-03-04 01:18+0000\n"
 "Last-Translator: Copied by Zanata <copied-by-zanata@zanata.org>\n"
 "Language-Team: Tamil (http://www.transifex.com/projects/p/libvirt/language/"
@@ -41,7 +41,6 @@ msgstr ""
 "  (ஒரு தொகுதியில் உள்ள கட்டளைகளைப் பற்றிய விவரங்களுக்கு உதவி <group> ஐக் "
 "குறிப்பிடவும்)\n"
 
-#. Print the description only if it's not empty.
 msgid ""
 "\n"
 "  DESCRIPTION\n"
@@ -370,7 +369,6 @@ msgstr ""
 msgid "    Bandwidth limit: %llu bytes/s (%-.3lf %s/s)"
 msgstr ""
 
-#. true if 'arg' works instead of '--opt arg'
 msgid "  NAME\n"
 msgstr "  பெயர்\n"
 
@@ -440,10 +438,6 @@ msgstr ""
 #, c-format
 msgid "%s (out of %d)"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "%s 3d acceleration is not supported"
-msgstr "செயல்பாட்டிற்கு ஆதரவு கிடையாது"
 
 #, c-format
 msgid "%s array element does not contain a string"
@@ -605,16 +599,6 @@ msgstr "இந்த QEMU பைனரியில் %s ஆதரிக்க�
 msgid "%s object has invalid dynamic type"
 msgstr "%s பொருளில் தவறான டயனாமிக் வகை உள்ளது"
 
-#.
-#. * A required property must be != 0 (NULL for pointers, "undefined" == 0 for
-#. * enumeration values).
-#. *
-#. * To be used as part of ESX_VI__TEMPLATE__VALIDATE.
-#.
-#.
-#. * Macros to implement managed objects
-#.
-#. FIXME: This results in O(n^2) runtime in case of missing required, but      * unselected properties.
 #, c-format
 msgid "%s object is missing the required '%s' property"
 msgstr "%s பொருளில் தேவையான '%s' பண்பு இல்லை"
@@ -861,9 +845,9 @@ msgstr ""
 msgid "%s: expected an unsigned integer for '%s' parameter"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "%s: failed to communicate with bridge helper: %s%s"
-msgstr "%s: பதிவு கோப்பினை எழுத முடியவில்லை: %s"
+#, c-format
+msgid "%s: failed to communicate with bridge helper: %s"
+msgstr ""
 
 #, c-format
 msgid "%s: failed to read temporary file: %s"
@@ -981,10 +965,6 @@ msgid "%s: try --help for more details\n"
 msgstr "%s: மேலும் விவரங்களுக்கு --help ஐப் பயன்படுத்தி முயற்சிக்கவும்\n"
 
 #, c-format
-msgid "%s: unable to determine access mode of fd %d"
-msgstr "%s: fd %d இன் அணுகல் பயன்முறையைத் தீர்மானிக்க முடியவில்லை"
-
-#, c-format
 msgid "%s: unexpected URI transport '%s'\n"
 msgstr ""
 
@@ -1039,6 +1019,10 @@ msgstr ""
 #, c-format
 msgid "'%s'"
 msgstr "'%s'"
+
+#, c-format
+msgid "'%s' D-Bus address is not handled"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "'%s' architecture is not supported by CPU driver"
@@ -1121,6 +1105,9 @@ msgstr "--storage மற்றும் --remove-all-storage ஆகிய இர
 msgid "':' not allowed in RBD source volume name '%s'"
 msgstr "RBD மூல தொகுப்பு பெயர் '%s' இல் ':' க்கு அனுமதிக்கப்படாது"
 
+msgid "'<local>' element missing for 'udp' socket interface"
+msgstr ""
+
 msgid "'adapter' name must be specified for scsi hostdev source"
 msgstr ""
 
@@ -1133,9 +1120,6 @@ msgstr ""
 msgid ""
 "'arch' element cannot be used inside 'cpu' element with 'match' attribute'"
 msgstr "'arch' கூறை 'cpu' கூறுக்கு உள்ளாக 'match' பண்புருவுடன் பயன்படுத்த முடியாது"
-
-msgid "'base' and 'baseNode' can't be used together"
-msgstr ""
 
 msgid "'cache' refers to a non-existent NUMA node cache"
 msgstr ""
@@ -1195,15 +1179,18 @@ msgstr "virtio-scsi கன்ட்ரோலர் மட்டுமே 'queues
 msgid "'iothread' is only supported for virtio-scsi controller"
 msgstr "virtio-scsi கன்ட்ரோலர் மட்டுமே 'queues' ஐ ஆதரிக்கும்"
 
-msgid "'jack' audio backend is not supported with this QEMU"
-msgstr ""
-
 msgid "'logical-id' missing in reply of guest-get-vcpus"
 msgstr "guest-get-vcpus இன் பதிலளிப்பில் 'logical-id' இல்லை"
 
 #, fuzzy
 msgid "'login-time' missing in reply of guest-get-users"
 msgstr "guest-get-vcpus இன் பதிலளிப்பில் 'logical-id' இல்லை"
+
+msgid "'manual' memory snapshot mode not supported"
+msgstr ""
+
+msgid "'manual' snapshot mode is not supported by the test driver"
+msgstr ""
 
 msgid "'max_sectors' is only supported by virtio-scsi controller"
 msgstr "virtio-scsi controller மட்டுமே 'max_sectors' ஐ ஆதரிக்கும்"
@@ -1235,15 +1222,15 @@ msgstr "guest-get-vcpus இன் பதிலளிப்பில் 'online' 
 msgid "'netns' namespace source can only be used with sharenet"
 msgstr ""
 
+msgid "'network' attribute is required for listen type 'network'"
+msgstr ""
+
 #, fuzzy
 msgid "'network' attribute is valid only for listen type 'network'"
 msgstr ""
 "<source> 'பிணைய' அளவுரு <interface type='network'/>உடன் குறிப்பிடப்படவில்லை"
 
 msgid "'nfs' host must use TCP protocol"
-msgstr ""
-
-msgid "'nfs' protocol is not supported with this QEMU binary"
 msgstr ""
 
 msgid "'nfs' protocol requires the usage of exactly one host"
@@ -1275,31 +1262,18 @@ msgstr ""
 "'pool' வகை மூலத்திற்கு 'pool' மற்றும் 'volume' ஆகியவை இரண்டும் சேர்த்து குறிப்பிடப்பட "
 "வேண்டும்"
 
-#, c-format
-msgid "'queues' attribute must be positive number: %s"
-msgstr "'queues' பண்புரு ஒரு நேர்க்குறி எண்ணாக இருக்க வேண்டும்: %s"
-
 msgid "'queues' is only supported by virtio-scsi controller"
 msgstr "virtio-scsi கன்ட்ரோலர் மட்டுமே 'queues' ஐ ஆதரிக்கும்"
 
-#, fuzzy
 msgid ""
-"'reconnect' attribute  unsupported 'server' mode for <interface "
+"'reconnect' attribute unsupported 'server' mode for <interface "
 "type='vhostuser'>"
 msgstr ""
-"<interface type='vhostuser'> க்கு <source> 'type' பண்புக்கூறு குறிப்பிடப்படவில்லை"
 
 msgid ""
 "'restrictive' mode is required in memnode element when mode is 'restrictive' "
 "in memory element"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "'rx_queue_size' attribute must be positive number: %s"
-msgstr "'queues' பண்புரு ஒரு நேர்க்குறி எண்ணாக இருக்க வேண்டும்: %s"
-
-msgid "'sgio' is not supported for SCSI generic device yet "
-msgstr "SCSI பொது சாதனத்திற்கு 'sgio' ஆதரிக்கப்படாது"
 
 #, c-format
 msgid "'sibling_id %d' does not refer to a valid cell within NUMA 'cell id %d'"
@@ -1308,13 +1282,6 @@ msgstr ""
 msgid "'socket' attribute is valid only for listen type 'socket'"
 msgstr ""
 
-#, fuzzy
-msgid "'ssh' protocol is not yet supported"
-msgstr "fs வடிவமைப்பு %s ஆதரிக்கப்படாது"
-
-msgid "'startupPolicy' is only valid for 'file' type volume"
-msgstr "'startupPolicy' ஆனது 'file' வகை பிரிவகத்திற்கு மட்டுமே செல்லும்"
-
 msgid "'target' refers to a non-existent NUMA node"
 msgstr ""
 
@@ -1322,13 +1289,15 @@ msgstr ""
 msgid "'tftp' protocol is not supported with this QEMU binary"
 msgstr "இந்த QEMU binary உடன் SATA துணைபுரியவில்லை"
 
+msgid "'tlsHostname' field is not supported by this QEMU"
+msgstr ""
+
+msgid "'tlsHostname' field is supported only with NBD disks"
+msgstr ""
+
 #, fuzzy
 msgid "'trim' algorithm not supported"
 msgstr "வழிமுறை %d ஐ வைப்பிங் செய்ய ஆதரவில்லை"
-
-#, fuzzy, c-format
-msgid "'tx_queue_size' attribute must be positive number: %s"
-msgstr "'queues' பண்புரு ஒரு நேர்க்குறி எண்ணாக இருக்க வேண்டும்: %s"
 
 #, fuzzy
 msgid "'type' missing in reply of guest-get-fsinfo"
@@ -1411,12 +1380,8 @@ msgstr "(interface_definition)"
 msgid "(libxl_migration_cookie)"
 msgstr "(qemu_migration_cookie)"
 
-#. parse and modify the xml from the user
 msgid "(metadata_xml)"
 msgstr "(metadata_xml)"
-
-msgid "(network status)"
-msgstr "(பிணைய நிலை)"
 
 msgid "(network_definition)"
 msgstr "(network_definition)"
@@ -1441,10 +1406,6 @@ msgstr "(nwfilter_definition)"
 #, fuzzy
 msgid "(nwfilterbinding_status)"
 msgstr "(nwfilter_definition)"
-
-#, fuzzy
-msgid "(pool state)"
-msgstr "நிலையில்லை"
 
 msgid "(qemu_migration_cookie)"
 msgstr "(qemu_migration_cookie)"
@@ -1474,7 +1435,6 @@ msgstr ""
 msgid "(volume_definition)"
 msgstr "(volume_definition)"
 
-#. Capacity related information isn't available
 msgid "-"
 msgstr "-"
 
@@ -1560,11 +1520,14 @@ msgstr ""
 msgid "/proc/net/dev: Interface not found"
 msgstr "/proc/net/dev: இடைமுகம் இல்லை"
 
+msgid "3d acceleration is not supported by this QEMU binary"
+msgstr ""
+
+msgid "3d acceleration is supported only with 'virtio' video device"
+msgstr ""
+
 msgid "64-bit PCI hole setting is only for root PCI controllers"
 msgstr "64-பிட் PCI துளை அமைவு ரூட் PCI கன்ட்ரோலர்களுக்கு மட்டுமே"
-
-msgid "64-bit PCI hole size setting is not supported with this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் 64-பிட் PCI துளை அளவு அமைவுக்கு ஆதரவில்லை"
 
 #, c-format
 msgid "<%s>"
@@ -1573,6 +1536,10 @@ msgstr "<%s>"
 #, c-format
 msgid "<%s>..."
 msgstr "<%s>..."
+
+#, c-format
+msgid "<active_pcr_banks/> requires TPM version '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid ""
@@ -1680,9 +1647,6 @@ msgstr "வேறு கால்பேக் கோரப்பட்டது"
 
 #, c-format
 msgid "A domain definition can have no more than one cipher node with name %s"
-msgstr ""
-
-msgid "A field data length violates the resource length boundary."
 msgstr ""
 
 #, fuzzy
@@ -2116,6 +2080,9 @@ msgid ""
 "Both port and URI requested for disk migration while being mutually exclusive"
 msgstr ""
 
+msgid "Both secret and the secret header are required"
+msgstr ""
+
 msgid "Bounded"
 msgstr "பிணைக்கப்பட்டது"
 
@@ -2170,10 +2137,6 @@ msgstr "பணியில்"
 #, fuzzy
 msgid "CA certificate:"
 msgstr "தவறான சான்றிதழ்"
-
-#, fuzzy
-msgid "CCW address type is not supported by this QEMU"
-msgstr "இந்த QEMU பைனரியில் மறுதொடக்க நேரக் கடப்புக்கு ஆதரவில்லை"
 
 #, c-format
 msgid "CHS geometry can not be set for '%s' bus"
@@ -2268,6 +2231,18 @@ msgstr "CPU அலைவரிசை:"
 
 msgid "CPU map:"
 msgstr "CPU மேப்:"
+
+#, c-format
+msgid ""
+"CPU maximum physical address bits number specification cannot be used with "
+"mode='%s'"
+msgstr ""
+
+#, c-format
+msgid ""
+"CPU maximum physical address bits specification is not supported for '%s' "
+"architecture"
+msgstr ""
 
 #, fuzzy, c-format
 msgid ""
@@ -2421,14 +2396,10 @@ msgid ""
 "dirtyrate'."
 msgstr ""
 
-#.
-#. * Macros to implement dynamic dispatched functions
-#.
 #, c-format
 msgid "Call to %s for unexpected type '%s'"
 msgstr "தெரியாத வகை '%s' க்கு %s க்கான அழைப்பு"
 
-#. nothing
 #, c-format
 msgid "Call to %s for unexpected type '%s', expected '%s'"
 msgstr "எதிர்பாராத வகை '%s' க்கு %s க்கான அழைப்பு, எதிர்பார்த்தது '%s'"
@@ -2450,10 +2421,6 @@ msgid "Call to '%s' returned something, expecting an empty result"
 msgstr "'%s'க்கான அழைப்பு ஏதோ ஒன்றை வழங்கியுள்ளது, எதிர்பார்ப்பது ஒரு வெற்று முடிவு"
 
 #, c-format
-msgid "Call to utsname failed: %d"
-msgstr "utsname க்கான அழைப்பு தோல்வியடைந்தது: %d"
-
-#, c-format
 msgid "Calling %s from '%s' failed"
 msgstr "'%s' இலிருந்து %s ஐ அழைத்தல் தோல்வி"
 
@@ -2461,10 +2428,8 @@ msgid "Can only modify disk quota"
 msgstr "வட்டு ஒதுக்கீட்டளவை மட்டுமே மாற்றியமைக்க முடியும்"
 
 #, c-format
-msgid "Can only open VNC or SPICE graphics backends, not %s"
+msgid "Can only open VNC, SPICE or D-Bus p2p graphics backends, not %s"
 msgstr ""
-"VNC அல்லது SPICE கிராஃபிக் பின்புல முறைமைகளையே திறக்க முடியும், %s ஐ திறக்க "
-"முடியாது"
 
 msgid "Can't add USB hub: USB is disabled for this domain"
 msgstr "USB ஹப்பைச் சேர்க்க முடியாது: இந்த டொமைனுக்கு USB முடக்கப்பட்டுள்ளது"
@@ -2692,10 +2657,6 @@ msgstr ""
 msgid "Cannot check address family on this platform"
 msgstr "இந்த இயங்குதளத்தில் macvlan சாதனங்களை உருவாக்க்க முடியாது"
 
-#, c-format
-msgid "Cannot check dnsmasq binary %s"
-msgstr "dnsmasq பைனரியை சோதிக்க முடியவில்லை%s"
-
 #, fuzzy, c-format
 msgid "Cannot chown uniq path: %s"
 msgstr "பாதை '%s'ஐ திறக்க முடியவில்லை"
@@ -2881,10 +2842,6 @@ msgstr "சாதனம் '%s'க்கான புள்ளிவிவரங
 #, fuzzy, c-format
 msgid "Cannot find byte stats for block device '%s'"
 msgstr "சாதனம் '%s'க்கான புள்ளிவிவரங்களைத் தேட முடியவில்லை"
-
-#, fuzzy, c-format
-msgid "Cannot find name for FD %d socket family %d"
-msgstr "நிரல் %d பதிப்பு %d ஐக் கண்டறிய முடியவில்லை"
 
 #, c-format
 msgid "Cannot find program %d version %d"
@@ -3152,13 +3109,6 @@ msgstr ""
 msgid "Cannot parse <address> 'port' attribute"
 msgstr "<address> 'port' பண்புருவைப் பாகுபடுத்த முடியவில்லை"
 
-#, fuzzy
-msgid "Cannot parse <local> 'port' attribute with socket interface"
-msgstr "<source> 'துறை' மதிப்பை சாக்கெட் முகப்புடன் பகுக்க முடியாது"
-
-msgid "Cannot parse <source> 'port' attribute with socket interface"
-msgstr "<source> 'துறை' மதிப்பை சாக்கெட் முகப்புடன் பகுக்க முடியாது"
-
 #, c-format
 msgid "Cannot parse MAC address '%s' in network '%s'"
 msgstr "பிணையம் '%s' இல் உள்ள MAC முகவரி '%s' ஐ பாகுபடுத்த முடியவில்லை"
@@ -3191,10 +3141,6 @@ msgstr "%s இல் பகுப்பைப் பாகுபடுத்த 
 msgid "Cannot parse cbm_mask from resctrl cache info"
 msgstr "பயன்முறை சரத்தைப் பாகுபடுத்த முடியாது"
 
-#, c-format
-msgid "Cannot parse controller index %s"
-msgstr "கட்டுப்படுத்தி அட்டவணை %sஐ பாகுபடுத்த முடியவில்லை"
-
 msgid "Cannot parse mode string"
 msgstr "பயன்முறை சரத்தைப் பாகுபடுத்த முடியாது"
 
@@ -3224,10 +3170,6 @@ msgstr "பயனர் புள்ளிவிவரம் '%s' ஐப் ப�
 
 msgid "Cannot parse uuid attribute of element <address>"
 msgstr ""
-
-#, c-format
-msgid "Cannot parse version string '%s'"
-msgstr "பதிபு சரம் '%s' ஐப் பாகுபடுத்த முடியவில்லை"
 
 #, c-format
 msgid ""
@@ -3330,12 +3272,12 @@ msgstr "சூழல் %s ஐ அமைக்க முடியவில்ல
 msgid "Cannot set interface MAC on '%s'"
 msgstr "'%s' இல் இடைமுக MAC ஐ அமைக்க முடியாது"
 
-#, fuzzy, c-format
-msgid "Cannot set interface MAC to %s on '%s'"
-msgstr "'%s' இல் இடைமுக MAC ஐ அமைக்க முடியாது"
+#, c-format
+msgid "Cannot set interface MAC to %s for ifname %s vf %d"
+msgstr ""
 
 #, fuzzy, c-format
-msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
+msgid "Cannot set interface MAC to %s on '%s'"
 msgstr "'%s' இல் இடைமுக MAC ஐ அமைக்க முடியாது"
 
 #, c-format
@@ -3345,6 +3287,10 @@ msgstr "'%s' இல் இடைமுக MTU ஐ அமைக்க முட�
 #, c-format
 msgid "Cannot set interface flags on '%s'"
 msgstr "'%s' இல் இடைமுக கொடிகளை அமைக்க முடியாது"
+
+#, c-format
+msgid "Cannot set interface vlanid to %d for ifname %s vf %d"
+msgstr ""
 
 msgid "Cannot set memory higher than max memory"
 msgstr "அதிகபட்ச நினைவகத்தை விட அதிக நினைவகத்தை அமைக்க முடியவில்லை"
@@ -3399,19 +3345,6 @@ msgstr "பெயர் இடைவெளி பகிராததை ஏற்
 
 msgid "Cannot unshare uninitialized CURL handle"
 msgstr "துவக்கப்படாத CURL கையாளுதலைப் பகிர்வு நீக்க முடியாது"
-
-msgid "Cannot update the read-only keyword: RO section not initialized."
-msgstr ""
-
-msgid ""
-"Cannot update the read-write keyword: read-write section not initialized."
-msgstr ""
-
-msgid "Cannot update the resource: a NULL keyword pointer has been provided."
-msgstr ""
-
-msgid "Cannot update the resource: a NULL resource pointer has been provided."
-msgstr ""
 
 #, fuzzy, c-format
 msgid "Cannot use direct socket mode for %s transport"
@@ -3623,10 +3556,6 @@ msgstr ""
 #, fuzzy, c-format
 msgid "Checkpoints have inconsistent relations for domain %s"
 msgstr "டொமைன் %s க்கு ஸ்னாப்ஷாட்டுகள் இசைவில்லா தொடர்புகளைக் கொண்டுள்ளன"
-
-#. All bytes up to and including the checksum byte should add up to 0.
-msgid "Checksum validation has failed"
-msgstr ""
 
 #, c-format
 msgid "Child process (%lld) unexpected %s"
@@ -4093,10 +4022,6 @@ msgid "Could not destroy domain: %s"
 msgstr "டொமைனை அழிக்க முடியவில்லை: %s"
 
 #, c-format
-msgid "Could not determine kernel version from string %s"
-msgstr "சரம் %s இலிருந்து கெர்னல் பதிப்பைத் தீர்மானிக்க முடியவில்லை"
-
-#, c-format
 msgid "Could not dlsym %s from '%s': %s"
 msgstr "'%s' இலிருந்து %s ஐ டிஸ்லிம் செய்ய முடியவில்லை: %s"
 
@@ -4243,9 +4168,9 @@ msgstr "'%s” என்ற MAC முகவரி கொண்ட பௌதி�
 msgid "Could not find physical NIC with name '%s'"
 msgstr "'%s' என்ற பெயர் கொண்ட பௌதிக NIC ஐக் கண்டறிய முடியவில்லை"
 
-#, fuzzy, c-format
-msgid "Could not find placement for v1 controller %s at %s"
-msgstr "மாறி '%s' க்கு ஒரு மதிப்பைக் கண்டுபிடிக்க முடியவில்லை"
+#, c-format
+msgid "Could not find placement for v1 controller %s"
+msgstr ""
 
 #, fuzzy
 msgid "Could not find placement for v2 controller"
@@ -4703,9 +4628,6 @@ msgstr "'%s' இல் இருந்து UUID ஐப் பாகுபட�
 msgid "Could not parse VPS ID %s"
 msgstr "VPS ID %s இடை நிறுத்த முடியவில்லை"
 
-msgid "Could not parse a resource field data - VPD has invalid format"
-msgstr ""
-
 #, c-format
 msgid "Could not parse barrier and limit of '%s' from config for container %d"
 msgstr ""
@@ -4770,12 +4692,6 @@ msgid "Could not read 'VE_PRIVATE' from config for container %d"
 msgstr "கட்டமைக்கப்பட்ட கொள்கலன் %dயிலிருந்து 'VE_PRIVATE' ஐ வாசிக்க முடியவில்லை"
 
 msgid "Could not read a device name from the <name> element"
-msgstr ""
-
-msgid "Could not read a part of a resource - VPD has invalid format"
-msgstr ""
-
-msgid "Could not read a resource field header - VPD has invalid format"
 msgstr ""
 
 #, c-format
@@ -4854,7 +4770,6 @@ msgstr ""
 msgid "Could not retrieve default Msvm_DiskDrive object"
 msgstr ""
 
-#. Something went wrong retrieving pool info, cope with it
 msgid "Could not retrieve pool information"
 msgstr "தொகுப்பக தகவலை மீட்டுப்பெற முடியவில்லை"
 
@@ -4954,10 +4869,6 @@ msgid "Could not start 'slirp'. exitstatus: %d"
 msgstr "டொமைனை தொடங்க முடியவில்லை: %s"
 
 #, c-format
-msgid "Could not start 'swtpm'. exitstatus: %d, error: %s"
-msgstr ""
-
-#, c-format
 msgid "Could not start 'vhost-user-gpu'. exitstatus: %d"
 msgstr ""
 
@@ -4988,10 +4899,6 @@ msgstr "டொமைனை தொடங்க முடியவில்லை:
 #, fuzzy
 msgid "Could not translate keycode"
 msgstr "நினைவகத்தை ஒதுக்க முடியவில்லை"
-
-#, c-format
-msgid "Could not update the VPD resource keyword: %s"
-msgstr ""
 
 msgid "Could not verify disk address"
 msgstr "வட்டு முகவரியை சரிபார்க்க முடியவில்லை"
@@ -5120,6 +5027,12 @@ msgstr "நடப்பு:"
 
 #, c-format
 msgid "Custom loader requires explicit %s configuration"
+msgstr ""
+
+msgid "D-Bus audio is not supported with this QEMU"
+msgstr ""
+
+msgid "D-Bus p2p with an address is not supported"
 msgstr ""
 
 msgid "DAC imagelabel couldn't be determined"
@@ -5753,7 +5666,6 @@ msgstr ""
 "டொமைனில் %d வெவ்வேறு இடைமுகங்கள் உள்ளன. --mac ஐப் பயன்படுத்தி எதை பிரிக்க வேண்டும் "
 "என்பதைக் குறிப்பிடவும்"
 
-#. this is the 2nd match, so it's ambiguous
 #, c-format
 msgid ""
 "Domain has multiple interfaces matching MAC address %s. You must use detach-"
@@ -6025,6 +5937,10 @@ msgid "Either 'name' or 'parent' must be specified for the 'scsi_host' adapter"
 msgstr ""
 "'scsi_host' அடாப்ட்டருக்கு 'பெயர்' அல்லது 'தாய் உறுப்பு' இவற்றில் ஏதேனும் ஒன்று "
 "குறிப்பிடப்பட வேண்டும்"
+
+#, c-format
+msgid "Either --%s or --%s must be provided"
+msgstr ""
 
 msgid "Eject the media"
 msgstr "ஊடகத்தை வெளியேற்று"
@@ -6976,26 +6892,19 @@ msgstr "%s ஐ உருவாக்க முடியவில்லை"
 msgid "Failed to create thread for receiving migration data"
 msgstr "உள்வரும் இடப்பெயர்ப்புக்கு சாக்கஎட்டை உருவாக்குவதில் தோல்வியடைந்தது"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 #, fuzzy
 msgid "Failed to create thread to handle daemon restart"
 msgstr "ஒரு டொமைன் ஷட்டவுனைக் கையாள ஒரு தொடரிழையை உருவாக்க முடியவில்லை"
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain death"
 msgstr ""
 
-#.
-#. * Not much we can do on error here except log it.
-#.
 msgid "Failed to create thread to handle domain shutdown"
 msgstr "ஒரு டொமைன் ஷட்டவுனைக் கையாள ஒரு தொடரிழையை உருவாக்க முடியவில்லை"
 
-#. Not much else can be done
+msgid "Failed to create thread to handle firewall reload/restart"
+msgstr ""
+
 #, fuzzy
 msgid "Failed to create thread to handle pool refresh"
 msgstr "ஒரு டொமைன் ஷட்டவுனைக் கையாள ஒரு தொடரிழையை உருவாக்க முடியவில்லை"
@@ -7538,10 +7447,6 @@ msgstr "லாக்கை வினவுவதில் தொல்வி"
 msgid "Failed to kill process %lld"
 msgstr ""
 
-#, c-format
-msgid "Failed to kill process %lld: %s"
-msgstr "செயலாக்கம் %lld ஐ முடிப்பது தோல்வியடைந்தது: %s"
-
 msgid "Failed to list active domains"
 msgstr "செயலிலுள்ள செயற்களங்களை பட்டியலிட முடியவில்லை"
 
@@ -7554,7 +7459,6 @@ msgstr "செயலிலுள்ள பிணையங்களை பட்�
 msgid "Failed to list active pools"
 msgstr "செயலிலுள்ள பூல்களை பட்டியலிட முடியவில்லை"
 
-#. there was an error during the first or second call
 msgid "Failed to list domains"
 msgstr "டொமைன்களைப் பட்டியலிட முடியவில்லை"
 
@@ -7570,28 +7474,22 @@ msgstr "செயலற்ற பிணையங்களை பட்டிய�
 msgid "Failed to list inactive pools"
 msgstr "செயலற்ற பூல்களை பட்டியலிட முடியவில்லை"
 
-#. there was an error during the first or second call
 msgid "Failed to list interfaces"
 msgstr "இடைமுகங்களை பட்டியலிட முடியவில்லை"
 
-#. there was an error during the call
 #, fuzzy
 msgid "Failed to list network filter bindings"
 msgstr "பிணைய வடிப்பிகளைப் பட்டியலிட முடியவில்லை"
 
-#. there was an error during the call
 msgid "Failed to list network filters"
 msgstr "பிணைய வடிப்பிகளைப் பட்டியலிட முடியவில்லை"
 
-#. there was an error during the first or second call
 msgid "Failed to list networks"
 msgstr "பிணையங்களை பட்டியலிட முடியவில்லை"
 
-#. there was an error during the call
 msgid "Failed to list node devices"
 msgstr "முனைச் சாதனங்களை பட்டியலிட முடியவில்லை"
 
-#. there was an error during the call
 msgid "Failed to list node secrets"
 msgstr "கனு இரகசியங்களை பட்டியலிட முடியவில்லை"
 
@@ -7599,7 +7497,6 @@ msgstr "கனு இரகசியங்களை பட்டியலிட 
 msgid "Failed to list persistent guests on $uri"
 msgstr "$uri இல் உள்ள உறுதியான விருந்தினர்களைப் பட்டியலிட முடியவில்லை"
 
-#. there was an error during the first or second call
 msgid "Failed to list pools"
 msgstr "தொகுப்பகங்களைப் பட்டியலிட முடியவில்லை"
 
@@ -7619,7 +7516,6 @@ msgstr "இடைநிலை விருந்தினர்களைப் �
 msgid "Failed to list vcpus for domain '%d' with libxenlight"
 msgstr "டொமைன் '%d' க்கான vcpus ஐ libxenlight கொண்டு பட்டியலிடுவதில் தோல்வி"
 
-#. there was an error during the call
 msgid "Failed to list volumes"
 msgstr "பிரிவகங்களைப் பட்டியலிட முடியவில்லை"
 
@@ -7827,6 +7723,10 @@ msgstr "tty %sஐ திறக்க முடியவில்லை"
 msgid "Failed to parse %s: only com1 and com2 supported."
 msgstr "URI கூறின் மதிப்பை பாகுபடுத்துவதில் தோல்வி %s"
 
+#, c-format
+msgid "Failed to parse CCW address '%s'"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "Failed to parse MAC address from '%s'"
 msgstr "'%s' இலிருந்து uid மற்றும் gid ஐப் பாகுபடுத்தல் தோல்வியடைந்தது"
@@ -7881,6 +7781,9 @@ msgstr "'%s' இல் இருந்து நேர்க்குறி ம�
 #, fuzzy
 msgid "Failed to parse memory"
 msgstr "முனைய எண்ணைப் பாகுபடுத்துவது தோல்வி"
+
+msgid "Failed to parse memory allocation threads"
+msgstr ""
 
 #, fuzzy
 msgid "Failed to parse memory slot count"
@@ -8111,10 +8014,6 @@ msgid "Failed to release lock: %s"
 msgstr "லாக்கை விடுவிப்பதில் தோல்வி"
 
 #, c-format
-msgid "Failed to release port %d"
-msgstr "%d முனையத்தை விடுவிப்பதில் தோல்வி"
-
-#, c-format
 msgid "Failed to remove capability %s: %d"
 msgstr "%s திறப்பாட்டை நீக்க முடியவில்லை: %d"
 
@@ -8207,9 +8106,6 @@ msgstr "டொமைன் '%d' ஐ libxenlight கொண்டு மீண்�
 msgid "Failed to resume domain '%s'"
 msgstr ""
 
-#. Hm, we already know we are in error here.  We don't want to
-#. * overwrite the previous error, though, so we just throw something
-#. * to the logs and hope for the best
 #, c-format
 msgid "Failed to resume guest %s after failure"
 msgstr "விருந்தினர் %sக்கு பிறகு மீண்டும் தொடர முடியவில்லை"
@@ -8836,6 +8732,13 @@ msgstr ""
 msgid "Firmware entry must have either value or 'file' attribute"
 msgstr ""
 
+#, c-format
+msgid "Firmware flash mode value '%s' unexpected"
+msgstr ""
+
+msgid "Firmware flash mode value was malformed"
+msgstr ""
+
 msgid ""
 "First file-based harddisk has no source, cannot deduce datastore and path "
 "for VMX file"
@@ -8843,63 +8746,10 @@ msgstr ""
 "முதல் கோப்பு அடிப்படையிலான வட்டு இயக்கியில் மூலம் இல்லை, தரவகத்தையும் VMX கோப்புக்கான "
 "பாதையையும் பெற முடியவில்லை"
 
-#. Macros to help dealing with flag requirements.
-#. *
-#. * VIR_REQUIRE_FLAG_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @RET: Return value.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_REQUIRE_FLAG_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag that is required by first flag.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Check whether required flag is set.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if required flag is not set.
-#.
 #, c-format
 msgid "Flag '%s' is required by flag '%s'"
 msgstr ""
 
-#. Macros to help dealing with mutually exclusive flags.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_RET:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @RET: Return value.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
-#. *
-#. * VIR_EXCLUSIVE_FLAGS_GOTO:
-#. *
-#. * @FLAG1: First flag to be checked.
-#. * @FLAG2: Second flag to be checked.
-#. * @LABEL: Label to jump to.
-#. *
-#. * Reject mutually exclusive API flags.  The checked flags are compared
-#. * with flags variable.
-#. *
-#. * Returns nothing.  Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, fuzzy, c-format
 msgid "Flags '%s' and '%s' are mutually exclusive"
 msgstr "--%s மற்றும் --%s ஆகிய விருப்பங்கள் ஒன்றுக்கொன்று பிரத்யேகமானவை"
@@ -9154,6 +9004,10 @@ msgstr "டொமைனின் வழங்கி பெயரை அச்ச
 msgid "Gets statistics about one or more (or all) domains"
 msgstr ""
 
+#, c-format
+msgid "Global feature %d should have already been handled"
+msgstr ""
+
 msgid "Got empty feature list from resctrl"
 msgstr ""
 
@@ -9199,10 +9053,6 @@ msgstr ""
 #, fuzzy
 msgid "HTM configuration is not supported by this QEMU binary"
 msgstr "இந்த QEMU பைனரி nvram சாதனத்தை ஆதரிக்காது"
-
-#, fuzzy
-msgid "HTP resizing is not supported by this QEMU binary"
-msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
 
 #, c-format
 msgid "HTTP response code %d for call to '%s'"
@@ -9284,6 +9134,11 @@ msgstr "வழங்கி CPU ஆனது தடுக்கப்பட்ட
 
 msgid "Host SMBIOS information is not available"
 msgstr "வழங்கி SMBIOS தகவல் கிடைக்கவில்லை"
+
+msgid ""
+"Host not compatible with KVM; HW virtualization CPU features not found. Only "
+"emulated CPUs are available; performance will be significantly limited"
+msgstr ""
 
 msgid "Host sysinfo extraction not supported on this platform"
 msgstr "இந்த இயங்குதளத்தில் வழங்கி sysinfo பிரித்தெடுத்தலுக்கு ஆதரவில்லை"
@@ -9422,7 +9277,19 @@ msgid "IOMMU device: '%s' is only supported with ARM Virt machines"
 msgstr ""
 
 #, c-format
+msgid "IOMMU device: '%s' is only supported with Q35 and ARM Virt machines"
+msgstr ""
+
+#, c-format
 msgid "IOMMU device: '%s' is only supported with Q35 machines"
+msgstr ""
+
+#, c-format
+msgid "IOMMU device: '%s' needs a PCI address"
+msgstr ""
+
+#, c-format
+msgid "IOMMU device: '%s' requires ACPI"
 msgstr ""
 
 msgid "IOMMU eim requires interrupt remapping to be enabled"
@@ -9441,10 +9308,6 @@ msgstr ""
 #, fuzzy
 msgid "IOThread to be used by supported device"
 msgstr "சாதனத்திற்கு இந்த செயலுக்கு ஆதரவில்லை: %s"
-
-#, fuzzy
-msgid "IOThreads for virtio-scsi not supported for this QEMU"
-msgstr "இந்த QEMU க்கு IOThreads ஆதரிக்கப்படாது"
 
 #, fuzzy, c-format
 msgid "IOThreads not available for bus %s target %s"
@@ -9555,10 +9418,6 @@ msgstr ""
 "அல்ல)"
 
 msgid "Incorrect data type"
-msgstr "தவறான தரவு வகை"
-
-#, fuzzy
-msgid "Incorrect disk format"
 msgstr "தவறான தரவு வகை"
 
 msgid "Incorrect number of cells in a table row"
@@ -9719,10 +9578,6 @@ msgstr "%s இல் தவறான cpuNum"
 msgid "Invalid 'level' attribute in cache element for NUMA node %d"
 msgstr ""
 
-#, c-format
-msgid "Invalid 'removed' attribute for feature %s in model %s"
-msgstr ""
-
 #, fuzzy, c-format
 msgid "Invalid --with-loader-nvram list: %s"
 msgstr "தவறான nvram வடிவமைப்பு: '%s'"
@@ -9836,14 +9691,6 @@ msgstr ""
 "'%2$s' க்கு செல்லுபடியாகாத STP நிலை மதிப்பு %1$d பெறப்பட்டது. -1, 0 அல்லது 1 என்று "
 "இருக்க வேண்டும்."
 
-#, fuzzy
-msgid "Invalid TSC frequency"
-msgstr "தவறான டைமர் நிகழ்வெண்"
-
-#, fuzzy
-msgid "Invalid TSC scaling attribute"
-msgstr "தவறான ஃபால்பேக் பண்புரு"
-
 #, c-format
 msgid "Invalid ULong value specified for prefix in definition of network '%s'"
 msgstr ""
@@ -9887,29 +9734,16 @@ msgstr "அளவுரு '%s' க்கு தவறான வகை '%s', எ
 msgid "Invalid address."
 msgstr "தவறான  முகவரி."
 
-#.
-#. * Don't check for *selectSet != NULL here because selectSet is a list
-#. * and might contain items already. This function appends to selectSet.
-#.
-#. optional
-#. optional
-#. nothing
-#. nothing
-#. nothing
 msgid "Invalid argument"
 msgstr "தவறான அளவுரு"
+
+msgid "Invalid async job start"
+msgstr ""
 
 #, c-format
 msgid ""
 "Invalid attempt to reset PCI device %s. Only PCI endpoint devices can be "
 "reset"
-msgstr ""
-
-#, c-format
-msgid ""
-"Invalid attempt to set <interface type='ethernet'> device name with <source "
-"dev='%s'/>. Use <target dev='%s'/> (for host-side) or <guest dev='%s'/> (for "
-"guest-side) instead."
 msgstr ""
 
 msgid ""
@@ -10066,14 +9900,6 @@ msgstr ""
 msgid "Invalid disk read error policy: '%s'"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "Invalid dns enable setting '%s' in network '%s'"
-msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
-
-#, c-format
-msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
-msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத dns forwardPlainNames அமைவு '%s'"
-
 #, fuzzy
 msgid "Invalid domain checkpoint"
 msgstr "தவறான கள புள்ளி"
@@ -10081,10 +9907,6 @@ msgstr "தவறான கள புள்ளி"
 #, fuzzy, c-format
 msgid "Invalid domain checkpoint: %s"
 msgstr "%sஇல் தவறான களப்புள்ளி"
-
-#, fuzzy, c-format
-msgid "Invalid domain localOnly setting '%s' in network '%s'"
-msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
 
 #, fuzzy
 msgid "Invalid domain snapshot"
@@ -10189,10 +10011,6 @@ msgstr "பிணையம் '%s' இல் செல்லுபடியா�
 msgid "Invalid forwarder element, must contain at least one of addr or domain"
 msgstr "%s இல் உள்ள டோம்ஸ் அணிவரிசையில் குறைந்தது ஒரு டொமைனாவது இருக்க வேண்டும்"
 
-#, fuzzy, c-format
-msgid "Invalid guest rx filters trust setting '%s' "
-msgstr "தவறான பிணைய வடிப்பி: %s"
-
 #, c-format
 msgid "Invalid harddisk device name: %s"
 msgstr "தவறான நிலைவட்டு சாதன பெயர்: %s"
@@ -10217,9 +10035,6 @@ msgstr "தவறான பண்புக்கூறுப் பயன்ம�
 msgid "Invalid integer value '%s' in file '%s'"
 msgstr "'%s' க்கு செல்லுபடியாகாத மதிப்பு '%s'"
 
-msgid "Invalid ip address prefix value"
-msgstr "தவறான ip முகவரி முன்னொட்டு மதிப்பு"
-
 #, c-format
 msgid "Invalid ipv6 setting '%s' in network '%s'"
 msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
@@ -10243,10 +10058,6 @@ msgstr "செல்லுபடியாகாத தோல்வி செய�
 #, fuzzy, c-format
 msgid "Invalid lifecycle type '%s'."
 msgstr "செல்லுபடியாகாத ரகசிய வகை '%s'"
-
-#, fuzzy, c-format
-msgid "Invalid localPtr value '%s' in network '%s'"
-msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத தாமதித்தல் மதிப்பு"
 
 #, c-format
 msgid "Invalid log destination '%s' for log output '%s'"
@@ -10282,27 +10093,8 @@ msgid "Invalid macTableManager setting '%s' in network port"
 msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
 
 #, fuzzy, c-format
-msgid "Invalid managed setting '%s' in network port"
-msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
-
-msgid "Invalid match attribute for CPU specification"
-msgstr "CPU குறிப்பிடுதலுக்கான தவறான பொருந்தும் பண்பு"
-
-#, fuzzy, c-format
 msgid "Invalid match string '%s'"
 msgstr "தவறான பண்புக்கூறுப் பயன்முறை '%s'"
-
-#, c-format
-msgid "Invalid maxEventChannels: %i"
-msgstr ""
-
-#, c-format
-msgid "Invalid maxGrantFrames: %i"
-msgstr ""
-
-#, c-format
-msgid "Invalid memory core dump attribute value '%s'"
-msgstr "செல்லுபடியாகாத நினைவக கோர் டம்ப் பண்புரு மதிப்பு '%s'"
 
 #, c-format
 msgid "Invalid message prog=%d type=%d serial=%u proc=%d"
@@ -10375,10 +10167,6 @@ msgid "Invalid network port pointer: %s"
 msgstr "தவறான பிணைய வடிப்பி: %s"
 
 #, fuzzy, c-format
-msgid "Invalid network prt plug type '%s'"
-msgstr "தவறான பிணைய வடிப்பி: %s"
-
-#, fuzzy, c-format
 msgid "Invalid node id %u "
 msgstr "தவறான பயன்முறை: %s"
 
@@ -10428,6 +10216,10 @@ msgstr "virXPathULong()க்கு தவறான அளவுரு"
 msgid "Invalid parameter type passed to free"
 msgstr "virXPathNode()க்கு தவறான அளவுரு"
 
+#, c-format
+msgid "Invalid parameters macaddr=%p allowRetry=%p"
+msgstr ""
+
 msgid "Invalid partial specification for virtio ccw address"
 msgstr "virtio ccw முகவரிக்கு செல்லுபடியாகாத பகுதியளவு விவரக் குறிப்பீடு"
 
@@ -10456,10 +10248,6 @@ msgstr "தவறான துறை எண்: '%s'"
 #, c-format
 msgid "Invalid port range '%u-%u'."
 msgstr "செல்லுபடியாகாத முனைய வரம்பு '%u-%u'."
-
-#, c-format
-msgid "Invalid ports: %i"
-msgstr ""
 
 #, c-format
 msgid "Invalid prefix or netmask for '%s'"
@@ -10557,10 +10345,6 @@ msgstr "தவறான இலக்கு"
 msgid "Invalid target domain state '%s'. Refusing snapshot reversion"
 msgstr "டொமைன் ஸ்னாப்ஷாட் XML இல் '%s' எனும் தவறான நிலை உள்ளது"
 
-#, c-format
-msgid "Invalid target index '%i' in PCI controller"
-msgstr ""
-
 #, fuzzy
 msgid "Invalid target model for serial device"
 msgstr "USB சாதனத்திற்கு செல்லுபடியாகாத முகவரி"
@@ -10572,14 +10356,6 @@ msgid ""
 msgstr ""
 "நெட்வொர்க் '%s' IPv6 நிலை வழங்கி வரையறையில் '%s' என்ற MAC முகவரியை குறிப்பிடுவது "
 "செல்லுபடியாகாது"
-
-#, fuzzy, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
-msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
-
-#, c-format
-msgid "Invalid trustGuestRxFilters setting '%s' in portgroup"
-msgstr ""
 
 #, c-format
 msgid "Invalid type '%s' requested for parameter '%s', actual type is '%s'"
@@ -10638,9 +10414,31 @@ msgid "Invalid value for attribute '%s' in element '%s': '%s'."
 msgstr ""
 
 #, c-format
+msgid "Invalid value for attribute '%s' in element '%s': '%s'. Expected UUID"
+msgstr ""
+
+#, c-format
 msgid ""
 "Invalid value for attribute '%s' in element '%s': '%s'. Expected integer "
 "value"
+msgstr ""
+
+#, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected long long "
+"integer value"
+msgstr ""
+
+#, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative integer value"
+msgstr ""
+
+#, c-format
+msgid ""
+"Invalid value for attribute '%s' in element '%s': '%s'. Expected non-"
+"negative value"
 msgstr ""
 
 #, c-format
@@ -10681,10 +10479,6 @@ msgid "Invalid value for timeout"
 msgstr "நேர வெளியேற்றத்திற்கான மதிப்பு தவறானது"
 
 #, c-format
-msgid "Invalid value in migratable attribute: '%s'"
-msgstr ""
-
-#, c-format
 msgid "Invalid value of %d for I/O weight"
 msgstr "I/O எடைக்கு %d இன் தவறான மதிப்பு"
 
@@ -10699,10 +10493,6 @@ msgstr "'ephemeral'க்கு தவறான மதிப்பு"
 #, fuzzy, c-format
 msgid "Invalid value of 'nodeset': %s"
 msgstr "'%s' க்கு செல்லுபடியாகாத மதிப்பு '%s'"
-
-#, c-format
-msgid "Invalid vectors: %i"
-msgstr ""
 
 #, c-format
 msgid "Invalid vendor element in CPU model %s"
@@ -10770,10 +10560,6 @@ msgstr "இதை விட (பைட்டுகள்) சிறிய இண
 msgid "KVM device assignment is no longer supported on this system"
 msgstr "இந்தக் கணினியில் இப்போது VFIO சாதனம் ஒதுக்கியமைத்தலுக்கு ஆதரவில்லை"
 
-#, fuzzy, c-format
-msgid "KVM is not supported by '%s' on this host"
-msgstr "Raw I/O இந்த இயங்குதளத்தில் ஆதரிக்கப்படாது"
-
 #, fuzzy
 msgid "KVM is not supported on this platform"
 msgstr "Raw I/O இந்த இயங்குதளத்தில் ஆதரிக்கப்படாது"
@@ -10802,10 +10588,6 @@ msgstr ""
 
 msgid "Known, but different label format present, requires build --overwrite"
 msgstr ""
-
-#, fuzzy
-msgid "LUKS encrypted QCOW2 images are not supported by this QEMU"
-msgstr "இந்த QEMU இல் vnc கிராஃபிக்ஸ் ஆதரிக்கப்படாது"
 
 msgid "LXC Guest Enter Namespace"
 msgstr "LXC Guest Enter Namespace"
@@ -11167,6 +10949,10 @@ msgstr "அதிகபட்ச நினைவகம்:"
 msgid "Maximum CPUs greater than specified machine type limit %u"
 msgstr ""
 
+#, c-format
+msgid "Maximum supported number of ISA serial ports is '%d'"
+msgstr ""
+
 msgid "Media Registry is null"
 msgstr ""
 
@@ -11405,10 +11191,6 @@ msgstr ""
 msgid "Missing 'link' attribute for NIC"
 msgstr "NIC க்கு 'link' பண்புக்கூறு இல்லை"
 
-#, fuzzy
-msgid "Missing 'model' attribute in mediated device's <hostdev> element"
-msgstr "இடைமுகத்தின் <actual> கூறில் வகை பண்புரு இல்லை"
-
 #, c-format
 msgid "Missing 'name' property in %s lookup"
 msgstr "%s தேடியறிதலில் 'name' பண்பு இல்லை"
@@ -11489,6 +11271,9 @@ msgstr "பிணையம் '%s' DNS HOST பதிவில் IP முக�
 #, c-format
 msgid "Missing IP address in static host definition for network '%s'"
 msgstr "பிணையம் '%s' இல் நிலையான வழங்கி வரையறையில் IP முகவரி இல்லை"
+
+msgid "Missing LISTEN_FDNAMES env from systemd socket activation"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "Missing PVR information for CPU model %s"
@@ -11589,9 +11374,6 @@ msgid "Missing device name for container-side veth"
 msgstr "எழுத்துக்குறி சாதனத்திற்கான மூல சேவை மதிப்புருக்களை விடுபட்டுள்ளது"
 
 msgid "Missing disk file path in domain"
-msgstr ""
-
-msgid "Missing disk info when adding volume"
 msgstr ""
 
 #, fuzzy
@@ -11766,6 +11548,10 @@ msgstr "vlan குறிச்சொல் ஐடி பண்புரு இ�
 msgid "Missing or invalid 'vlan-table' array in query-rx-filter response"
 msgstr ""
 
+#, c-format
+msgid "Missing or invalid CPU address size in %s"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "Missing or invalid CPU frequency in %s"
 msgstr "CPU மாதிரியம் %s இல் PVR மதிப்பு விடுபட்டுள்ளது அல்லது செல்லாததாக உள்ளது"
@@ -11795,18 +11581,9 @@ msgid ""
 "response"
 msgstr ""
 
-msgid "Missing or invalid fd in add-fd response"
-msgstr ""
-
-msgid "Missing or invalid fdset-id in add-fd response"
-msgstr ""
-
 #, fuzzy
 msgid "Missing or invalid name in query-rx-filter response"
 msgstr "CPU மாதிரியம் %s இல் PVR மதிப்பு விடுபட்டுள்ளது அல்லது செல்லாததாக உள்ளது"
-
-msgid "Missing or invalid return data in add-fd response"
-msgstr ""
 
 msgid "Missing or invalid scsi adapter 'unique_id' value"
 msgstr "scsi அடாப்ட்டர் 'unique_id' மதிப்பு விடுபட்டுள்ளது அல்லது தவறாக உள்ளது"
@@ -12075,10 +11852,6 @@ msgstr "பொருந்தாது "
 msgid "NBD URI must be supplied when migration URI uses UNIX transport method"
 msgstr ""
 
-#, fuzzy
-msgid "NBD migration with TLS is not supported"
-msgstr "cpu affinity துணைபுரியவில்லை"
-
 msgid "NBD migration with TLS is not supported over UNIX socket"
 msgstr ""
 
@@ -12202,12 +11975,12 @@ msgstr "இந்த QEMU binary உடன் SATA துணைபுரிய�
 msgid "NVMe namespace can't be zero"
 msgstr "hugepage அளவு பூச்சியமாக இருக்கக்கூடாது"
 
-#. Output old style header
-#. We only get here if the --details option was selected.
-#. Insert the header into table
-#. The old output format
-#. We only get here if the --details option was selected.
-#. Insert the header into table
+msgid "NVRAM is not permitted when loader is stateless"
+msgstr ""
+
+msgid "NVRAM template is not permitted when loader is stateless"
+msgstr ""
+
 msgid "Name"
 msgstr "பெயர்"
 
@@ -12404,54 +12177,6 @@ msgstr ""
 #, fuzzy
 msgid "Nicdev support unavailable"
 msgstr "கணினி கிடைக்கவில்லை"
-
-#, fuzzy
-msgid "No <local> 'address' attribute specified with socket interface"
-msgstr "<source> 'முகவரி' மதிப்புரு சாக்கெட் முகப்புடன் இல்லை"
-
-#, fuzzy
-msgid "No <local> 'port' attribute specified with socket interface"
-msgstr "<source> 'துறை' அளவுரு சாக்கெட் முகப்புடன் குறிப்பிடப்படவில்லை"
-
-msgid "No <source> 'address' attribute specified with socket interface"
-msgstr "<source> 'முகவரி' மதிப்புரு சாக்கெட் முகப்புடன் இல்லை"
-
-msgid ""
-"No <source> 'bridge' attribute specified with <interface type='bridge'/>"
-msgstr ""
-"<source> 'bridge' பண்பானது <interface type='bridge'/>உடன் குறிப்பிடப்படவில்லை"
-
-msgid "No <source> 'dev' attribute specified with <interface type='direct'/>"
-msgstr "<source> 'dev'  பண்பானது <interface type='direct'/>உடன் குறிப்பிடப்படவில்லை"
-
-msgid "No <source> 'dev' attribute specified with <interface type='vdpa'/>"
-msgstr ""
-
-msgid ""
-"No <source> 'mode' attribute specified with <interface type='vhostuser'/>"
-msgstr ""
-"<interface type='vhostuser'/> உடன் <source> 'mode' பண்புக்கூறு குறிப்பிடப்படவில்லை"
-
-msgid ""
-"No <source> 'name' attribute specified with <interface type='internal'/>"
-msgstr "<source> 'name' பண்பு <interface type='internal'/>உடன் குறிப்பிடப்பவில்லை"
-
-msgid ""
-"No <source> 'network' attribute specified with <interface type='network'/>"
-msgstr ""
-"<source> 'பிணைய' அளவுரு <interface type='network'/>உடன் குறிப்பிடப்படவில்லை"
-
-msgid ""
-"No <source> 'path' attribute specified with <interface type='vhostuser'/>"
-msgstr ""
-"<interface type='vhostuser'/> உடன் <source> 'path' பண்புக்கூறு குறிப்பிடப்படவில்லை"
-
-msgid "No <source> 'port' attribute specified with socket interface"
-msgstr "<source> 'துறை' அளவுரு சாக்கெட் முகப்புடன் குறிப்பிடப்படவில்லை"
-
-msgid "No <source> 'type' attribute specified for <interface type='vhostuser'>"
-msgstr ""
-"<interface type='vhostuser'> க்கு <source> 'type' பண்புக்கூறு குறிப்பிடப்படவில்லை"
 
 msgid "No CA certificate path set to match server key/cert"
 msgstr ""
@@ -12709,9 +12434,6 @@ msgstr "பிணையம் '%s' இல் இணைந்த இடைமு�
 msgid "No open log file %s"
 msgstr "பதிவுக் கோப்பு %s ஐத் திறக்க இயலவில்லை"
 
-msgid "No output from iptables --version"
-msgstr "iptables --version இலிருந்து வெளியீடு இல்லை"
-
 msgid "No per-CPU stats available"
 msgstr "ஒரு CPU க்கான புள்ளிவிவரம் கிடைக்கவில்லை"
 
@@ -12906,6 +12628,9 @@ msgstr "ஸ்ட்ரீமிலிருந்து வாசிக்க �
 msgid "Not detaching active device %s"
 msgstr "செயலில் உள்ள சாதனம் %s ஐக் கண்டறியவில்லை"
 
+msgid "Not enough arguments passed, nothing to set"
+msgstr ""
+
 #, c-format
 msgid "Not enough free space in pool for volume '%s'"
 msgstr "தொகுதி '%s'க்கு போதிய இடம் தொகுப்பகத்தில் இல்லை"
@@ -13050,6 +12775,9 @@ msgstr "PTY கன்சோல் வகைகள் மட்டுமே ஆ�
 msgid "Only 1 thread per core is supported"
 msgstr "ஒரு பிரதான வீடியோ சாதனம் மட்டுமே ஆதரிக்கப்படும்"
 
+msgid "Only EFI firmware permits NVRAM"
+msgstr ""
+
 msgid "Only IPv4 or IPv6 addresses can be used with a prefix"
 msgstr ""
 
@@ -13176,6 +12904,12 @@ msgstr "ஒரு பிரதான வீடியோ சாதனம் ம�
 msgid "Only one primary video device is supported"
 msgstr "ஒரு பிரதான வீடியோ சாதனம் மட்டுமே ஆதரிக்கப்படும்"
 
+msgid "Only one vgpu device can have 'ramfb' enabled"
+msgstr ""
+
+msgid "Only pflash loader type permits NVRAM"
+msgstr ""
+
 msgid "Only ploop disk images are supported by vz driver."
 msgstr ""
 
@@ -13263,20 +12997,6 @@ msgstr ""
 "முகவரி %2$s இல் உள்ள சாதனத்திற்கு தேவைப்படுகின்ற குறியீடு %1$u ஐக் கொண்டுள்ள PCI "
 "கன்ட்ரோலருக்கு  சாதன மாற்றுப் பெயர் அமைக்கப்படவில்லை"
 
-#. Macros to help dealing with required options.
-#. VSH_REQUIRE_OPTION_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable).
-#. * @NAME2: String containing the name of required option.
-#. * @EXPR2: Expression to validate the variable (boolean variable).
-#. *
-#. * Check if required command options in virsh was set.  Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Option --%s is required by option --%s"
 msgstr ""
@@ -13296,20 +13016,6 @@ msgstr "விருப்பம் மதிப்புரு காலிய�
 msgid "Optional flags or --rawstats are not supported by the daemon"
 msgstr ""
 
-#. Macros to help dealing with mutually exclusive options.
-#. VSH_EXCLUSIVE_OPTIONS_EXPR:
-#. *
-#. * @NAME1: String containing the name of the option.
-#. * @EXPR1: Expression to validate the variable (boolean variable)
-#. * @NAME2: String containing the name of the option.
-#. * @EXPR2: Expression to validate the variable (boolean variable)
-#. *
-#. * Reject mutually exclusive command options in virsh. Use the
-#. * provided expression to check the variables.
-#. *
-#. * This helper does an early return and therefore it has to be called
-#. * before anything that would require cleanup.
-#.
 #, c-format
 msgid "Options --%s and --%s are mutually exclusive"
 msgstr "--%s மற்றும் --%s ஆகிய விருப்பங்கள் ஒன்றுக்கொன்று பிரத்யேகமானவை"
@@ -13552,7 +13258,6 @@ msgstr "பாகுபடுத்திய JSON மறுமொழி '%s' ஒ
 msgid "Partition path '%s' must start with '/'"
 msgstr "பிரிவகப் பாதை '%s' ஆனது  '/' ஐக் கொண்டே தொடங்க வேண்டும்"
 
-#. warn users that the --base64 option passed from command line is wrong
 #, fuzzy
 msgid "Passing secret value as command-line argument is insecure!"
 msgstr "qemu கட்டளை வரி அளவுரு குறிப்பிடப்படவில்லை"
@@ -13889,9 +13594,15 @@ msgstr ""
 msgid "QEMU does not support SEV guest"
 msgstr "QEMU பைனரியானது %s ஐ ஆதரிக்காது"
 
+msgid "QEMU does not support calculating dirty page rate"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "QEMU does not support device assignment mode '%s'"
 msgstr "இந்த QEMU ஆனது '-device usb-storage' ஐ ஆதரிக்காது"
+
+msgid "QEMU does not support dirty page rate calculation mode."
+msgstr ""
 
 msgid "QEMU does not support multiple listens for one graphics device."
 msgstr ""
@@ -13919,6 +13630,9 @@ msgstr "QEMU மானிட்டர் கட்டளை"
 
 msgid ""
 "QEMU reports invalid default CPU model \"host\" for non-kvm domain virt type"
+msgstr ""
+
+msgid "QEMU reports migration is still running"
 msgstr ""
 
 #, c-format
@@ -14372,9 +14086,6 @@ msgstr "டொமைனை மீண்டும் ஸ்னாப்ஷாட�
 msgid "Revert domain to snapshot"
 msgstr "டொமைனை மீண்டும் ஸ்னாப்ஷாட்டாக மீட்டமை"
 
-msgid "Root element is not 'node'"
-msgstr "ரூட் உருப்படி ஒரு 'முனை' இல்லை"
-
 #, c-format
 msgid "Route address '%s' conflicts with IP address for '%s'"
 msgstr ""
@@ -14414,13 +14125,15 @@ msgstr "இயங்கும் hypervisor: %s %d.%d.%d\n"
 msgid "S3 state is disabled for this domain"
 msgstr "இந்த டொமைனுக்கு S3 நிலை முடக்கப்பட்டுள்ளது"
 
+msgid "S390 PV launch security is not supported by this host or kernel"
+msgstr ""
+
 msgid "S390 PV launch security is not supported with this QEMU binary"
 msgstr ""
 
 msgid "S4 state is disabled for this domain"
 msgstr "இந்த டொமைனுக்கு S4 நிலை முடக்கப்பட்டுள்ளது"
 
-#. Denied
 #, c-format
 msgid "SASL client identity '%s' not allowed by ACL"
 msgstr ""
@@ -14446,6 +14159,9 @@ msgstr "இந்த QEMU binary உடன் SATA துணைபுரிய�
 
 #, c-format
 msgid "SATA unit index %d out of [0..29] range"
+msgstr ""
+
+msgid "SCHED_CORE not supported by kernel"
 msgstr ""
 
 #, c-format
@@ -14713,10 +14429,6 @@ msgstr ""
 "%s என்ற முகவரியில் வலைத்தளத்தைப் பார்வையிடவும்\n"
 "\n"
 
-#, fuzzy
-msgid "Selecting disks to migrate is not implemented for tunnelled migration"
-msgstr "டன்னல்டு இடப்பெயர்ப்புக்கு பைப்பை உருவாக்க முடியாது"
-
 msgid "Send keycodes (integers or symbolic names) to the guest"
 msgstr ""
 "விருந்தினருக்கு விசைக்குறியீடுகளை (முழு எண்கள் அல்லது குறியீட்டுப் பெயர்கள்) அனுப்பு"
@@ -14848,15 +14560,6 @@ msgstr ""
 msgid "Setting different SELinux label on %s which is already in use"
 msgstr ""
 
-#, c-format
-msgid "Setting disk %s is not allowed for disk of network type"
-msgstr "பிணைய வகை வட்டுக்கு வட்டு %s ஐ அமைக்க அனுமட்ஹியில்லை"
-
-msgid "Setting disk 'requisite' is allowed only for cdrom or floppy"
-msgstr ""
-"cdrom அலல்து நெகிழ்வட்டு ஆகியவற்றுக்கு மட்டுமே வட்டு 'requisite' ஐ அமைத்தலுக்கு  "
-"அனுமதியுண்டு"
-
 #, fuzzy
 msgid "Setting disk block sizes is not supported by vz driver."
 msgstr "இந்த QEMU இல் ide வட்டுக்கு wwn ஐ அமைக்க ஆதரவில்லை"
@@ -14970,14 +14673,16 @@ msgstr "CPU நேரம்:"
 msgid "Shared memory mapping is not supported with this QEMU"
 msgstr "இந்த QEMU இல் பகிரப்பட்ட நினைவக மேப்பிங் ஆதரிக்கப்படாது"
 
-#. XXX: Need to sort the returned params once new parameter
-#. * fields not of shared memory are added.
-#.
 msgid "Shared memory:\n"
 msgstr "பகிரப்பட்ட நினைவகம்:\n"
 
 #, c-format
 msgid "Shell '%s' should have absolute path"
+msgstr ""
+
+msgid ""
+"Shortcut for calling the command with a single CPU model and no additional "
+"features"
 msgstr ""
 
 msgid "Should define both master and slave path attributes for nmdm device"
@@ -15052,7 +14757,6 @@ msgstr "இந்த QEMU இல் பகிரப்பட்ட நினை�
 msgid "Snapshot"
 msgstr "ஸ்னாப்ஷாட் பட்டியல்"
 
-#. Depending on flags, we re-edit even if XML is unchanged.
 #, c-format
 msgid "Snapshot %s XML configuration not changed.\n"
 msgstr "ஸ்னாப்ஷாட் %s XML அமைவாக்கம் மாற்றப்படவில்லை.\n"
@@ -15173,6 +14877,9 @@ msgstr ""
 
 msgid "Specifying mount point is not supported for now"
 msgstr "மவுன்ட் புள்ளியைக் குறிப்பிட தற்போது ஆதரவில்லை"
+
+msgid "Spice audio is not supported without spice graphics"
+msgstr ""
 
 #, fuzzy
 msgid "Start"
@@ -15535,10 +15242,6 @@ msgid "TPM 1.2 is not supported with the SPAPR device model"
 msgstr ""
 
 #, c-format
-msgid "TPM Proxy model %s is only available for PPC64 guests"
-msgstr ""
-
-#, c-format
 msgid "TPM Proxy model %s requires 'Passthrough' backend"
 msgstr ""
 
@@ -15547,14 +15250,13 @@ msgid "TPM device path %s is invalid"
 msgstr "TPM சாதன பாதை %s ஆனது செல்லாதது"
 
 #, c-format
-msgid "TPM model '%s' is only available for x86 and aarch64 guests"
+msgid "TPM version '%s' is not supported"
 msgstr ""
 
 #, fuzzy
 msgid "Table row cannot be empty"
 msgstr "%s காலியாக இருக்கக்கூடாது"
 
-#. title
 msgid "Target"
 msgstr "இலக்கு"
 
@@ -15596,6 +15298,9 @@ msgstr "இலக்கு CPU அம்சம் எண்ணிக்கை %z
 #, c-format
 msgid "Target CPU feature policy %s does not match source %s"
 msgstr "இலக்கு CPU அம்சம் கொள்கை %s மூலம் %s உடன் பொருந்தவில்லை"
+
+msgid "Target CPU maxphysaddr does not match source"
+msgstr ""
 
 #, c-format
 msgid "Target CPU mode %s does not match source %s"
@@ -16162,6 +15867,10 @@ msgstr ""
 "இலக்கு திருப்பிவடப்பட்ட சாதன மூல வகை %s ஆனது மூல சாதன மூல வகை %s உடன் பொருந்தவில்லை"
 
 #, c-format
+msgid "Target serial model %s does not match source %s"
+msgstr ""
+
+#, c-format
 msgid "Target serial port %d does not match source %d"
 msgstr "இலக்கு சீரியல் முனையம் %d ஆனது மூலம் %d உடன் பொருந்தவில்லை"
 
@@ -16213,8 +15922,8 @@ msgid "Target timer %s does not match source %s"
 msgstr "இலக்கு timer பயன்முறை %s ஆனது மூலம் %s உடன் பொருந்தவில்லை"
 
 #, c-format
-msgid "Target timer presence %d does not match source %d"
-msgstr "இலக்கு timer presence  %d ஆனது மூலம் %d உடன் பொருந்தவில்லை"
+msgid "Target timer presence '%s' does not match source '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "Target type '%s' cannot have an associated address"
@@ -16366,6 +16075,9 @@ msgstr "QEMU செயல்படுத்தத்தக்கக் கூற
 msgid "The XML configuration was changed by another user."
 msgstr "XML அமைவாக்கம் வேறு பயனரால் மாற்றப்பட்டது."
 
+msgid "The associated audio is not of 'dbus' kind."
+msgstr ""
+
 #, c-format
 msgid "The certificate %s basic constraints do not show a CA"
 msgstr "சான்றிதழ் %s அடிப்படைக் கட்டுப்பாடுகள் CA வைக் காட்டவில்லை"
@@ -16429,6 +16141,10 @@ msgid ""
 msgstr ""
 
 #, c-format
+msgid "The device at PCI address %s needs to be an integrated device (bus=0)"
+msgstr ""
+
+#, c-format
 msgid ""
 "The device at PCI address %s requires hotplug capability, but the PCI "
 "controller with index='%d' doesn't support hotplug"
@@ -16462,18 +16178,16 @@ msgid ""
 "The ich9-intel-hda audio controller is not supported in this QEMU binary"
 msgstr "இந்த QEMU பைனரியில் ich9-intel-hda ஆடியோ கன்ட்ரோலர் ஆதரிக்கப்படாது"
 
-msgid "The keyword is not comprised only of uppercase ASCII letters or digits"
-msgstr ""
-
-#, c-format
-msgid "The keyword length is not 2 bytes: %s"
-msgstr ""
-
 #, fuzzy
 msgid "The machine has no snapshot and it should have it"
 msgstr "டொமைன் %s இல் %s என்ற பெயர் கொண்ட ஸ்னாப்ஷாட்டுகள் இல்லை"
 
 msgid "The minimum lease time should be greater than 2 minutes"
+msgstr ""
+
+msgid ""
+"The number of virtual CPU address bits cannot exceed the number supported by "
+"the host CPU"
 msgstr ""
 
 msgid ""
@@ -16505,9 +16219,6 @@ msgstr "சேவையகம் '%s' இல் இருந்து '%s' க�
 #, fuzzy
 msgid "The slirp-helper doesn't support migration"
 msgstr "சேமிப்பக தொகுப்பகம் தொகுதி உருவாக்கத்திற்கு துணைபுரியவில்லை"
-
-msgid "The string resource has invalid characters in its value"
-msgstr ""
 
 #, fuzzy, c-format
 msgid "The vbox driver does not support %s SCSI controller model"
@@ -16842,11 +16553,9 @@ msgstr "பிழை நிலையில் சாக்கெட்டில�
 msgid "Try again?"
 msgstr ""
 
-#. Better leak than crash
 msgid "Trying to free MultiCURL object that is still in use"
 msgstr "இன்னும் பயன்பாட்டில் உள்ள MultiCURL பொருளை விடுவிக்க முயற்சிக்கிறது"
 
-#. Better leak than crash
 msgid "Trying to free SharedCURL object that is still in use"
 msgstr "இன்னும் பயன்பாட்டில் உள்ள SharedCURL பொருளை விடுவிக்க முயற்சிக்கிறது"
 
@@ -17039,10 +16748,6 @@ msgstr "%s என்ற அமைவாக்கக் கோப்பை அண
 #, c-format
 msgid "Unable to access file descriptor %d"
 msgstr "கோப்பு விவரிப்பு %d ஐ அணுக முடியவில்லை"
-
-#, c-format
-msgid "Unable to access file descriptor %d path %s"
-msgstr ""
 
 #, fuzzy
 msgid "Unable to access kernel32.dll"
@@ -17285,10 +16990,6 @@ msgstr "%s ஐ மூட முடியவில்லை"
 msgid "Unable to close disk children"
 msgstr "%s ஐ மூட முடியவில்லை"
 
-#, fuzzy, c-format
-msgid "Unable to close file '%s'"
-msgstr "கோப்பு %s ஐ மூட முடியவில்லை"
-
 #, fuzzy
 msgid "Unable to close recursively all disks"
 msgstr "வளம் %s ஐ திறக்க முடியவில்லை"
@@ -17522,6 +17223,9 @@ msgstr ""
 msgid "Unable to destroy '%s': device in use"
 msgstr ""
 
+msgid "Unable to detect SCHED_CORE"
+msgstr ""
+
 #, c-format
 msgid "Unable to detect filesystem for %s"
 msgstr "%s க்கான கோப்புமுறைமையைக் கண்டறிய முடியவில்லை"
@@ -17602,6 +17306,9 @@ msgstr "'cpuacct' cgroups கன்ட்ரோலர் மவுன்ட்�
 msgid "Unable to find 'devices' cgroups controller mount"
 msgstr "'devices' cgroups கன்ட்ரோலர் மவுன்ட்டைக் கண்டறிய முடியவில்லை"
 
+msgid "Unable to find 'dnsmasq' binary in $PATH"
+msgstr ""
+
 msgid "Unable to find 'memory' cgroups controller mount"
 msgstr "'memory' cgroups கன்ட்ரோலர் மவுன்ட்டைக் கண்டறிய முடியவில்லை"
 
@@ -17633,6 +17340,13 @@ msgstr ""
 #, fuzzy
 msgid "Unable to find a satisfying virtiofsd"
 msgstr "முனையத்திற்கு பிணைக்க முடியவில்லை"
+
+msgid "Unable to find a vCPU that is online"
+msgstr ""
+
+#, c-format
+msgid "Unable to find address for mdev parent device '%s'"
+msgstr ""
 
 #, c-format
 msgid "Unable to find address for parent device '%s'"
@@ -17703,10 +17417,6 @@ msgstr "நேரத்தை வடிவமைக்க முடியவி�
 #, fuzzy
 msgid "Unable to freeze filesystems"
 msgstr "கோப்புமுறைமை %s ஐத் திறக்க முடியவில்லை"
-
-#, c-format
-msgid "Unable to generate diffie-hellman parameters: %s"
-msgstr "diffie-hellman அளவுருக்களை உருவாக்க முடியவில்லை: %s"
 
 #, fuzzy, c-format
 msgid "Unable to get ACLs on %s"
@@ -17834,10 +17544,6 @@ msgstr "முகப்பு தகவலை பெற முடியவில
 msgid "Unable to get daemon logging outputs information"
 msgstr "வட்டு தகவலை பெற முடியவில்லை"
 
-#, c-format
-msgid "Unable to get device ID '%s'"
-msgstr "சாதன ID '%s' ஐப் பெற முடியவில்லை"
-
 #, fuzzy
 msgid "Unable to get device master from netlink on this platform"
 msgstr "இந்த இயங்குதளத்தில் மெய்நிகர் செயலம்சங்களைப் பெற முடியவில்லை"
@@ -17924,9 +17630,6 @@ msgstr "இந்த இயங்குதளத்தில் இடைமு�
 msgid "Unable to get interface parameters"
 msgstr "இடைமுக அளவுருக்களைப் பெற முடியவில்லை"
 
-msgid "Unable to get key length for diffie-hellman parameters"
-msgstr ""
-
 #, c-format
 msgid "Unable to get kvm descriptor: %s"
 msgstr "kvm விவரிப்பைப் பெற முடியவில்லை: %s"
@@ -17954,10 +17657,6 @@ msgstr "நினைவக அளவுருக்களைப் பெற ம
 
 msgid "Unable to get memory stats"
 msgstr "நினைவக புள்ளிவிவரங்களைப் பெற முடியவில்லை"
-
-#, c-format
-msgid "Unable to get minor number of device '%s'"
-msgstr "சாதனம் '%s' இன் மைனர் எண்ணிக்கையைப் பெற முடியவில்லை"
 
 msgid "Unable to get node cpu stats"
 msgstr "கனு cpu புள்ளிவிவரத்தைப் பெற முடியவில்லை"
@@ -18068,9 +17767,6 @@ msgstr "சேவையக சான்றிதழ் %s ஐ இறக்கு
 msgid "Unable to init device stream mutex"
 msgstr "சாதன ஸ்ட்ரீம் சடுதிமாற்றத்தை init செய்ய முடியவில்லை"
 
-msgid "Unable to init qemu driver mutexes"
-msgstr "qemu இயக்கி மியூட்டெக்சஸை init செய்ய முடியவில்லை"
-
 #, fuzzy
 msgid "Unable to initialize RW lock"
 msgstr "லாக்ஸ்பேஸ் %s ஐ துவக்க முடியவில்லை"
@@ -18088,10 +17784,6 @@ msgstr ""
 #, fuzzy
 msgid "Unable to initialize condition variable"
 msgstr "நிபந்தனை மாறியை துவக்க முடியவில்லை"
-
-#, c-format
-msgid "Unable to initialize diffie-hellman parameters: %s"
-msgstr "diffie-hellman அளவுருக்களைத் துவக்க முடியவில்லை: %s"
 
 #, c-format
 msgid "Unable to initialize lease %s"
@@ -18359,10 +18051,6 @@ msgstr "லாக் நிலை %s ஐ பாகுபடுத்த மு�
 #, fuzzy
 msgid "Unable to parse ovs-vsctl output"
 msgstr "vzlist வெளிப்பாட்டை பகுக்க முடியவில்லை"
-
-#, fuzzy, c-format
-msgid "Unable to parse port id '%s'"
-msgstr "class id ' %s' ஐ பாகுபடுத்த முடியவில்லை"
 
 msgid "Unable to parse quota"
 msgstr "ஒதுக்கீட்டளவைப் பாகுபடுத்த முடியவில்லை"
@@ -18669,6 +18357,10 @@ msgstr ""
 msgid "Unable to retrieve threadpool parameters"
 msgstr "நினைவக அளவுருக்களைப் பெற முடியவில்லை"
 
+#, c-format
+msgid "Unable to run among %llu"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "Unable to run command to get OVS master for interface %s"
 msgstr "இடைமுகம் %s க்கான OVS முனைய தரவைப் பெறுவதற்கான கட்டளையை இயக்க முடியவில்லை"
@@ -18750,6 +18442,9 @@ msgstr "%d ஐ செயலாக்க %d சமிக்ஞையை அனு
 msgid "Unable to send SIGTERM to init pid %llu"
 msgstr "Init pid %llu க்கு SIGTERM ஐ அனுப்ப முடியவில்லை"
 
+msgid "Unable to send a VF SETLINK request on this platform"
+msgstr ""
+
 msgid "Unable to send container continue message"
 msgstr "கொள்கலனுக்கு தொடர் செய்தியை அனுப்ப முடியவில்லை"
 
@@ -18776,6 +18471,9 @@ msgstr "FD %d தொகுப்பாக்கத்தை அமைக்க �
 #, fuzzy
 msgid "Unable to set IPV6_V6ONLY flag"
 msgstr "cloexec கொடியை அமைக்க முடியவில்லை"
+
+msgid "Unable to set SCHED_CORE"
+msgstr ""
 
 #, c-format
 msgid "Unable to set SELinux context MCS '%s'"
@@ -18808,6 +18506,15 @@ msgstr "இந்த இயங்குதளத்தில் %s இல் STP
 #, fuzzy, c-format
 msgid "Unable to set XATTR %s on %s"
 msgstr "%s இல் STP தாமதத்தை அமைக்க முடியவில்லை"
+
+msgid "Unable to set a VF MAC on this platform"
+msgstr ""
+
+msgid "Unable to set a VF VLAN on this platform"
+msgstr ""
+
+msgid "Unable to set a VF config on this platform"
+msgstr ""
 
 #, fuzzy
 msgid "Unable to set agent close-on-exec flag"
@@ -19180,12 +18887,6 @@ msgstr "எதிர்பாராத QEMU ஏஜன்ட் டொமைன�
 msgid "Unexpected QEMU monitor still active during domain deletion"
 msgstr "எதிர்பாராத QEMU மானிட்டர் டொமைன் நீக்கத்தின் போதும் செயலில் உள்ளது"
 
-msgid "Unexpected RV keyword in the read-write section."
-msgstr ""
-
-msgid "Unexpected RW keyword in the read-only section."
-msgstr ""
-
 #, fuzzy, c-format
 msgid "Unexpected SCSI controller model %d"
 msgstr "எதிர்பார்க்காத கட்டுப்படுத்தி வகை %d"
@@ -19233,9 +18934,6 @@ msgstr "எதிர்பார்க்காத மூல உறுப்ப�
 msgid "Unexpected event thread still active during domain deletion"
 msgstr "எதிர்பாராத QEMU ஏஜன்ட் டொமைன் நீக்கத்தின் போதும் செயலில் உள்ளது"
 
-msgid "Unexpected field value format encountered."
-msgstr ""
-
 #, c-format
 msgid "Unexpected filesystem type %s"
 msgstr "எதிர்பார்க்காத கோப்புமுறைமை வகை %s"
@@ -19282,10 +18980,6 @@ msgstr "எதிர்பார்க்காத செய்தி வகை 
 msgid "Unexpected network port type %s"
 msgstr "ஆதரிக்கப்படாத பிணைய வகை %s"
 
-#, fuzzy, c-format
-msgid "Unexpected network protocol '%s'"
-msgstr "எதிர்பார்க்காத விதி நெறிமுறை %d"
-
 msgid "Unexpected output of cloud-hypervisor binary"
 msgstr ""
 
@@ -19322,10 +19016,6 @@ msgstr "எதிர்பார்க்காத hostdev இயக்கி �
 #, c-format
 msgid "Unexpected signal received: %d"
 msgstr "எதிர்பாராத சிக்னல் பெறப்பட்டது: %d"
-
-#, fuzzy, c-format
-msgid "Unexpected socket family %d"
-msgstr "எதிர்பார்க்காத மூலப் பயன்முறை %d"
 
 #, c-format
 msgid "Unexpected state of feature '%s'"
@@ -19390,10 +19080,6 @@ msgstr "தெரியாத JSON பதில் '%s'"
 msgid "Unknown LXC namespace source '%s'"
 msgstr "தெரியாத pci மூல வகை '%s'"
 
-#, c-format
-msgid "Unknown PCI device <driver name='%s'/> has been specified"
-msgstr "தெரியாத PCI சாதனம் <driver name='%s'/> குறிப்பிடப்பட்டுள்ளது"
-
 #, fuzzy, c-format
 msgid "Unknown PCI header type '%d' for device '%s'"
 msgstr "'%d'க்கு தெரியாத தகுதியான வகை '%s'"
@@ -19416,14 +19102,6 @@ msgstr "தெரியாத கட்டுப்படுத்தி வக�
 #, c-format
 msgid "Unknown SCSI subsystem protocol '%s'"
 msgstr "தெரியாத SCSI உபமுறைமை நெறிமுறை '%s'"
-
-#, c-format
-msgid "Unknown TPM backend type '%s'"
-msgstr "தெரியாத TPM பின்புல முறைமை வகை '%s'"
-
-#, c-format
-msgid "Unknown TPM frontend model '%s'"
-msgstr "தெரியாத TPM முன்னமைப்பு மாதிரியம் '%s'"
 
 #, fuzzy, c-format
 msgid "Unknown URI parameter '%s'"
@@ -19458,6 +19136,10 @@ msgid "Unknown cache type '%s'"
 msgstr "தெரியாத auth வகை '%s'"
 
 #, c-format
+msgid "Unknown calculation mode '%s'"
+msgstr ""
+
+#, c-format
 msgid "Unknown cgroup controller '%s'"
 msgstr "தெரியாத cgroup கன்ட்ரோலர் '%s'"
 
@@ -19484,6 +19166,10 @@ msgstr "தெரியாத பணி நிலை %s"
 #, fuzzy, c-format
 msgid "Unknown data source '%s'"
 msgstr "தெரியாத மூல மாதிரி '%s'"
+
+#, c-format
+msgid "Unknown dirty page rate calculation mode: %s"
+msgstr ""
 
 #, c-format
 msgid "Unknown dirty rate status: %s"
@@ -19516,7 +19202,6 @@ msgstr "பிணையத்தில் தெரியாத forwardPlainName
 msgid "Unknown error"
 msgstr "தெரியாத பிழை"
 
-#. should never happen (tm)
 msgid "Unknown error value"
 msgstr "தெரியாத பிழை மதிப்பு"
 
@@ -19543,14 +19228,6 @@ msgstr "பிணையத்தில் தெரியாத forwardPlainName
 #, fuzzy
 msgid "Unknown input device type"
 msgstr "தெரியாத உள்ளீடு சாதனம் வகை '%s'"
-
-#, c-format
-msgid "Unknown interface <driver name='%s'> has been specified"
-msgstr "தெரியாத இடைமுகம் <driver name='%s'> குறிப்பிடப்பட்டுள்ளது"
-
-#, c-format
-msgid "Unknown interface <driver txmode='%s'> has been specified"
-msgstr "தெரியாத இடைமுகம் <driver txmode='%s'> குறிப்பிடப்பட்டுள்ளது"
 
 #, fuzzy
 msgid "Unknown invocation state"
@@ -19595,9 +19272,6 @@ msgid ""
 "'paravirt'"
 msgstr ""
 
-msgid "Unknown mode has been specified"
-msgstr "தெரியாத பயன்முறை குறிப்பிடப்பட்டுள்ளது"
-
 #, c-format
 msgid "Unknown model type '%s'"
 msgstr "தெரியாத மாடல் வகை '%s'"
@@ -19632,6 +19306,10 @@ msgstr ""
 
 msgid "Unknown return code"
 msgstr "தெரியாத வழங்கல் குறியீடு"
+
+#, c-format
+msgid "Unknown sched_core value %s"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "Unknown scsi_host subsystem protocol '%s'"
@@ -19806,10 +19484,6 @@ msgid "Unsupported SMBIOS mode '%s'"
 msgstr "ஆதரிக்கப்படாத SMBIOS பயன்முறை '%s'"
 
 #, fuzzy, c-format
-msgid "Unsupported TPM version '%s'"
-msgstr "ஆதரிக்கப்படாத பஸ் வகை '%s'"
-
-#, fuzzy, c-format
 msgid "Unsupported URI scheme '%s'"
 msgstr "ஆதரிக்கப்படாத SMBIOS பயன்முறை '%s'"
 
@@ -19971,9 +19645,9 @@ msgstr "ஆதரிக்கப்படாத hostdev பயன்முறை
 msgid "Unsupported hostdev type %s"
 msgstr "ஆதரிக்கப்படாத hostdev வகை %s"
 
-#, fuzzy, c-format
-msgid "Unsupported interface %s for TPM 1.2"
-msgstr "ஆதரிக்கப்படாத இடைமுக வகை %s"
+#, c-format
+msgid "Unsupported interface '%s' for TPM 1.2"
+msgstr ""
 
 #, fuzzy
 msgid "Unsupported listen type"
@@ -20247,12 +19921,6 @@ msgstr "qemu இன் இந்தப் பதிப்பில் VFIO PCI �
 msgid "VFIO device assignment is currently not supported on this system"
 msgstr "இந்தக் கணினியில் இப்போது VFIO சாதனம் ஒதுக்கியமைத்தலுக்கு ஆதரவில்லை"
 
-msgid "VIR_DOMAIN_BLOCK_COPY_SYNCHRONOUS_WRITES is not supported by this VM"
-msgstr ""
-
-msgid "VIR_MIGRATE_NON_SHARED_SYNCHRONOUS_WRITES is not supported by this QEMU"
-msgstr ""
-
 msgid "VM is already active"
 msgstr "VM ஏற்கனவே செயலிலுள்ளது"
 
@@ -20331,12 +19999,10 @@ msgstr "செய்தி"
 msgid "Video adapters are not supported int containers."
 msgstr "இந்த QEMU இல் ஸ்பைஸ் கிராஃபிக்ஸ் ஆதரிக்கப்படாது"
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, c-format
 msgid "Virsh command line tool of libvirt %s\n"
 msgstr "லிப்விர்ட்டின் Virsh கட்டளை வரிக் கருவி %s\n"
 
-#. FIXME - list a copyright blurb, as in GNU programs?
 #, fuzzy, c-format
 msgid "Virt-admin command line tool of libvirt %s\n"
 msgstr "லிப்விர்ட்டின் Virsh கட்டளை வரிக் கருவி %s\n"
@@ -20410,10 +20076,6 @@ msgid "VxHS protocol accepts only one host"
 msgstr "நெறிமுறை '%s' ஒரு வழங்கியை மட்டுமே ஏற்கும்"
 
 #, fuzzy
-msgid "VxHS protocol does not support URI syntax"
-msgstr "பூல்லானது தொகுப்பகம் அழித்தலுக்கு துணைபுரிவதில்லை"
-
-#, fuzzy
 msgid "VxHS protocol is not supported with this QEMU binary"
 msgstr "இந்த QEMU binary உடன் SATA துணைபுரியவில்லை"
 
@@ -20479,12 +20141,6 @@ msgstr "'%s' இலிருந்து '%s'க்கு vport உருவா�
 msgid "Write to '%s' to trigger host scan failed"
 msgstr "டிரிகல் புரவல ஸ்கேனை '%s' க்கு எழுதுவதில் தோல்வி"
 
-msgid ""
-"Wrong <source> 'mode' attribute specified with <interface type='vhostuser'/>"
-msgstr ""
-"<interface type='vhostuser'/> உடன் தவறான <source> 'mode' பண்புக்கூறு "
-"குறிப்பிடப்பட்டுள்ளது"
-
 msgid "Wrong MAC address"
 msgstr "தவறான MAC முகவரி"
 
@@ -20539,10 +20195,6 @@ msgstr "XML இல் எதிர்பார்த்த 'sysinfo' கூற�
 #, fuzzy
 msgid "XML does not contain expected 'chassis' element"
 msgstr "XML இல் எதிர்பார்த்த 'sysinfo' கூறு இல்லை"
-
-#, fuzzy
-msgid "XML does not contain expected 'cookie' element"
-msgstr "XML இல் எதிர்பார்த்த 'cpu' கூறு இல்லை"
 
 msgid "XML does not contain expected 'cpu' element"
 msgstr "XML இல் எதிர்பார்த்த 'cpu' கூறு இல்லை"
@@ -20687,10 +20339,6 @@ msgstr "அணுகல் மறுக்கப்பட்டது: %s"
 msgid "active"
 msgstr "செயலிலுள்ளது"
 
-#, fuzzy
-msgid "active commit not supported with this QEMU binary"
-msgstr "இந்த QEMU binary உடன் SATA துணைபுரியவில்லை"
-
 #, fuzzy, c-format
 msgid "active commit requested but '%s' is not active"
 msgstr "சேமிக்கப்பட்ட தொகுப்பகம் '%s' செயல்பாட்டில் இல்லை"
@@ -20751,6 +20399,10 @@ msgstr ""
 
 msgid "address of disk device"
 msgstr "வட்டு சாதனத்தின் முகவரி"
+
+#, c-format
+msgid "address of type '%s' is supported only for hostdevs"
+msgstr ""
 
 msgid "address source: 'lease' or 'agent'"
 msgstr ""
@@ -20816,11 +20468,6 @@ msgstr ""
 msgid "allocate the new capacity, rather than leaving it sparse"
 msgstr "லேசானதாக விட்டுவிடாமல் புதிய கொள்ளளவை ஒதுக்கீடு செய்யவும்"
 
-#.
-#. * we need to use an intermediary pointer to @data as compilers may sometimes
-#. * complain about @data not being a pointer type:
-#. * error: the address of 'foo' will always evaluate as 'true' [-Werror=address]
-#.
 msgid "allocated netlink buffer is too small"
 msgstr "ஒதுக்கீடு செய்யப்பட்ட netlink பஃபர் மிகச் சிறியது"
 
@@ -20880,6 +20527,10 @@ msgstr "கிராஃபிக்ஸ் லிசன் வகை குறி
 msgid "another backup job is already running"
 msgstr "இடைமுகம் ஏற்கனவே இயக்கத்தில் உள்ளது"
 
+#, c-format
+msgid "another migration job is already running for domain '%s'"
+msgstr ""
+
 #, fuzzy
 msgid "any configuration"
 msgstr "துணைபுரியாத கட்டமைப்பு"
@@ -20890,10 +20541,6 @@ msgstr ""
 
 msgid "apparmor_parser exited with error"
 msgstr "apparmor_parser பிழையுடன் வெளியேறியது"
-
-#, fuzzy
-msgid "append not supported in this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் %s ஆதரிக்கப்படாது"
 
 msgid "applyDHCPOnlyRules failed - spoofing not protected!"
 msgstr "applyDHCPOnlyRules தோல்வி - ஸ்பூஃபிங் பாதுகாக்கப்படவில்லை!"
@@ -20959,6 +20606,9 @@ msgid ""
 msgstr ""
 "வரி %d இல்: %s%s\n"
 "%s"
+
+msgid "at most 1 fd can be passed to qemu along with a command"
+msgstr ""
 
 msgid "at most one CPU cache element may be specified"
 msgstr ""
@@ -21074,6 +20724,13 @@ msgstr ""
 msgid "authentication failed: %s"
 msgstr "அங்கீகாரம் செயலிழக்கப்பட்டது: %s"
 
+#, c-format
+msgid "authentication is not supported for protocol '%s'"
+msgstr ""
+
+msgid "authentication is supported only for network backed disks"
+msgstr ""
+
 msgid "authentication required"
 msgstr "அங்கீகாரம் தேவைப்படுகிறது"
 
@@ -21150,27 +20807,22 @@ msgstr "கனு அமைப்பு நினைவக அளவுருக
 msgid "backing store protocol '%s' is not yet supported"
 msgstr "தொடர் பணிமுனையத்தை இணைக்க ஆதரவில்லை"
 
-msgid "backingStore is not supported with vhostuser disk"
+msgid "backingStore is not supported with NVRAM"
 msgstr ""
 
-#, fuzzy
-msgid "backingStore of mirror target is not supported by this qemu"
-msgstr "இந்த QEMU இல் ide வட்டுக்கு wwn ஐ அமைக்க ஆதரவில்லை"
+msgid "backingStore is not supported with vhostuser disk"
+msgstr ""
 
 msgid ""
 "backingStore of mirror without VIR_DOMAIN_BLOCK_COPY_SHALLOW doesn't make "
 "sense"
 msgstr ""
 
+msgid "backup"
+msgstr ""
+
 msgid "backup TLS directory not configured"
 msgstr ""
-
-msgid "backup is not supported with this QEMU"
-msgstr ""
-
-#, fuzzy
-msgid "backup job"
-msgstr "பின்புலப் பணி"
 
 msgid "backup job data missing"
 msgstr ""
@@ -21758,6 +21410,9 @@ msgstr "அமர்வு தலைவராக முடியவில்ல�
 msgid "cannot block signals"
 msgstr "சிக்னல்களை தடுக்க முடியவில்லை"
 
+msgid "cannot both keep and delete TPM"
+msgstr ""
+
 msgid "cannot both keep and delete nvram"
 msgstr ""
 
@@ -22234,6 +21889,10 @@ msgstr "CPU affinity ன் செயற்பாடு %dஐ பெற மு�
 msgid "cannot get RSS for domain"
 msgstr "டொமைனுக்கான RSS ஐப் பெற முடியவில்லை"
 
+#, c-format
+msgid "cannot get cert distinguished name: %s"
+msgstr ""
+
 #, fuzzy
 msgid "cannot get children disk"
 msgstr "நடப்பு நேரத்தைப் பெற முடியவில்லை"
@@ -22417,6 +22076,10 @@ msgstr "%d ஸ்னாப்ஷாட்டுகளைக் கொண்ட�
 msgid "cannot migrate domain with I/O error"
 msgstr "I/O பிழையுடன் உள்ள டொமைனை இடப்பெயர்க்க முடியாது"
 
+#, c-format
+msgid "cannot migrate domain: %s"
+msgstr ""
+
 #, fuzzy
 msgid "cannot migrate this domain without dbus-vmstate support"
 msgstr "%d ஸ்னாப்ஷாட்டுகளைக் கொண்டுள்ள டொமைனை இடப்பெயர்க்க முடியாது"
@@ -22570,7 +22233,6 @@ msgstr "பாதை '%s'ஐ திறக்க முடியவில்ல�
 msgid "cannot open path '%s' in '%s'"
 msgstr "'%s' இல் உள்ள பாதை '%s' ஐ திறக்க முடியவில்லை"
 
-#. A dangling symlink now implies a TOCTTOU race; report it.
 #, c-format
 msgid "cannot open volume '%s'"
 msgstr "'%s' தொகுதியை திறக்க முடியவில்லை"
@@ -22593,10 +22255,6 @@ msgstr "CPU தரவை பாகுபடுத்த முடியவில
 #, fuzzy, c-format
 msgid "cannot parse MAC address '%s' from file '%s'"
 msgstr "பிணையம் '%s' இல் உள்ள MAC முகவரி '%s' ஐ பாகுபடுத்த முடியவில்லை"
-
-#, fuzzy, c-format
-msgid "cannot parse cache mode '%s' for virtiofs"
-msgstr "RAM கோப்பு முறைமைக்கு '%s' ஐப் பயன்படுத்தி பாகுபடுத்த முடியாது"
 
 #, fuzzy, c-format
 msgid "cannot parse cpu sys stat '%s'"
@@ -22655,13 +22313,13 @@ msgstr "RAM கோப்பு முறைமைக்கு '%s' ஐப் ப
 msgid "cannot parse rdp port %s"
 msgstr "rdp துறை %sஐ பகுக்க முடியவில்லை"
 
-#, c-format
-msgid "cannot parse sandbox mode '%s' for virtiofs"
-msgstr ""
-
 #, fuzzy, c-format
 msgid "cannot parse target for lunStr '%s'"
 msgstr "இலக்கு '%s' ஐப் பாகுபடுத்த முடியவில்லை"
+
+#, c-format
+msgid "cannot parse thread pool size '%s' for virtiofs"
+msgstr ""
 
 #, c-format
 msgid "cannot parse usage '%s' for RAM filesystem"
@@ -23124,6 +22782,11 @@ msgstr "பிணையம் '%s' இல் உள்ள MAC முகவரி
 msgid "cannot use custom tap device in session mode"
 msgstr "அமர்வு தலைவராக முடியவில்லை"
 
+msgid ""
+"cannot use feature-based firmware autoselection when firmware autoselection "
+"is disabled"
+msgstr ""
+
 #, fuzzy
 msgid "cannot use namespaces in session mode"
 msgstr "அமர்வு தலைவராக முடியவில்லை"
@@ -23187,12 +22850,11 @@ msgstr "cd: %s: %s"
 msgid "cd: command valid only in interactive mode"
 msgstr "cd: கட்டளை ஊடாடல் முறைமையில் மட்டுமே செல்லுபடியாகும்"
 
+msgid "cdrom device with virtio bus isn't supported"
+msgstr ""
+
 msgid "cdrom device without source path not supported"
 msgstr "மூலப் பாதையில்லாத cdrom சாதனம் ஆதரிக்கப்படாது"
-
-#, fuzzy
-msgid "cdrom/floppy device hotplug isn't supported"
-msgstr "இயக்கி ஹாட்பிளக்குக்கு ஆதரவில்லை"
 
 #, fuzzy
 msgid "cell number must be non-negative integer or -1"
@@ -23253,6 +22915,9 @@ msgstr " CPUகள் மெய்நிகர் எண்ணிக்கைய
 
 msgid "change of nodeset for running domain requires restrictive numa mode"
 msgstr ""
+
+msgid "change of nodeset for running domain requires strict numa mode"
+msgstr "இயங்கும் டொமைனுக்கான கனுத்தொகுப்பை மாற்ற கண்டிப்பான நியூமா பயன்முறை அவசியம்"
 
 msgid "change the current directory"
 msgstr "நடப்பு அடைவை மாற்றவும்"
@@ -23337,6 +23002,14 @@ msgstr "கோப்புபெயரில் எழுத்து சாத�
 msgid "character device name"
 msgstr "எழுத்து சாதன பெயர்"
 
+#, c-format
+msgid "chardev '%s' not supported in this QEMU binary"
+msgstr ""
+
+#, c-format
+msgid "chardev '%s' not supported without spice graphics"
+msgstr ""
+
 msgid "chardev already exists"
 msgstr "chardev ஏற்கனவே உள்ளது"
 
@@ -23387,7 +23060,6 @@ msgstr "க்ளோன் பெயர்"
 msgid "child didn't write error (status=%d)"
 msgstr ""
 
-#. in case of EACCES, the parent will retry
 #, c-format
 msgid "child failed to create directory '%s'"
 msgstr "அடைவு '%s'ஐ சேயால் உருவாக்க முடியவில்லை"
@@ -24305,6 +23977,9 @@ msgstr "நடப்பு"
 msgid "current bridge device name"
 msgstr "நடப்பு பிரிட்ஜ் சாதனத்தின் பெயர்"
 
+msgid "current job is not outgoing migration in post-copy mode"
+msgstr ""
+
 msgid "current vcpu count must equal maximum"
 msgstr "நடப்பு vcpu எண்ணிக்கை அதிகபட்சம் இதற்கு சமமாக இருக்க வேண்டும்"
 
@@ -24319,6 +23994,9 @@ msgid "custom alias name of interface device"
 msgstr ""
 
 msgid "custom configuration parameters specified"
+msgstr ""
+
+msgid "custom device configuration"
 msgstr ""
 
 msgid "custom device tree blob used"
@@ -24474,20 +24152,6 @@ msgid "delete the specified network port"
 msgstr ""
 
 #, c-format
-msgid "deleting %s drive failed: %s"
-msgstr "%s இயக்கியை அழித்தல் தோல்வி: %s"
-
-#, fuzzy
-msgid "deleting committed images is not supported by this VM"
-msgstr "இந்த QEMU இல் ide வட்டுக்கு wwn ஐ அமைக்க ஆதரவில்லை"
-
-msgid ""
-"deleting drive is not supported.  This may leak data if disk is reassigned"
-msgstr ""
-"இயக்ககத்தை நீக்குவதற்கு ஆதரவில்லை. வட்டு மீண்டும் நிர்ணயிக்கப்பட்டால் இதனால் தரவு கசிவு "
-"ஏற்படலாம்"
-
-#, c-format
 msgid "deletion of %d external disk snapshots not supported yet"
 msgstr "%d வெளிப்புற வட்டு ஸ்னாப்ஷாட்டுகளை நீக்க இன்னும் ஆதரவு இல்லை"
 
@@ -24553,10 +24217,6 @@ msgstr "வரிசை பணிமுனையத்தை பிரித்�
 
 msgid "detailed domain vcpu information"
 msgstr "விவரமான டொமைன் vcpu தகவல்"
-
-#, fuzzy
-msgid "detect_zeroes is not supported by this QEMU binary"
-msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
 
 msgid "detect_zeroes is not supported with vhostuser disk"
 msgstr ""
@@ -24698,12 +24358,20 @@ msgstr ""
 msgid "directory to switch to (default: home or else root)"
 msgstr "மாற்ற வேண்டிய அடைவு (முன்னிருப்புt: இல்லம் அல்லது ரூட்)"
 
+msgid ""
+"dirty page rate calculation mode, either of these 3 options 'page-sampling, "
+"dirty-bitmap, dirty-ring' can be specified."
+msgstr ""
+
 msgid "dirty ring must be power of 2 and ranges [1024, 65536]"
 msgstr ""
 
 #, c-format
 msgid ""
 "dirty ring size of KVM feature '%s' differs: source: '%d', destination: '%d'"
+msgstr ""
+
+msgid "dirty-ring calculation mode requires dirty-ring feature enabled."
 msgstr ""
 
 msgid "disable"
@@ -24721,12 +24389,6 @@ msgstr ""
 #, fuzzy
 msgid "disabled"
 msgstr "செயல்நீக்கம்"
-
-msgid "disabling audio mixing engine is not supported with this QEMU"
-msgstr ""
-
-msgid "discard is not supported by this QEMU binary"
-msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
 
 #, c-format
 msgid "discard is not supported for model '%s'"
@@ -24936,6 +24598,13 @@ msgstr ""
 msgid "disk source path is missing"
 msgstr "வட்டு மூலப்பாதை விடுபட்டுள்ளது"
 
+#, c-format
+msgid "disk startupPolicy '%s' is not allowed for disk of '%s' type"
+msgstr ""
+
+msgid "disk startupPolicy 'requisite' is allowed only for cdrom or floppy"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "disk target %s not found"
 msgstr "வட்டு %s காணப்படவில்லை"
@@ -24994,10 +24663,6 @@ msgstr "இடப்பெயர்ப்பின் செயல் நில�
 
 msgid "display the progress of save"
 msgstr "சேமிப்பின் செயல் நிலையைக் காண்பி"
-
-#, c-format
-msgid "dnsmasq binary %s is not executable"
-msgstr "dnsmasq பைனரி %s ஆனது செயல்படுத்தக்கூடியதல்ல"
 
 #, c-format
 msgid "dnsmasq version >= %u.%u required but %lu.%lu found"
@@ -25141,8 +24806,8 @@ msgstr ""
 msgid "domain control interface state"
 msgstr "டொமைன் கட்டுப்பாடு இடைமுக நிலை"
 
-msgid "domain core dump job"
-msgstr "டொமைன் கோர் டம்ப் பணி"
+msgid "domain core dump"
+msgstr ""
 
 msgid "domain display connection URI"
 msgstr "டொமைன் காட்சி இணைப்பு URI"
@@ -25255,8 +24920,8 @@ msgstr "செயற்களப் பெயர் அல்லது uuid"
 msgid "domain name, id or uuid"
 msgstr "செயற்களத்தின் பெயர், id or uuid"
 
-msgid "domain save job"
-msgstr "டொமைன் சேமித்தல் பணி"
+msgid "domain save"
+msgstr ""
 
 msgid "domain snapshot XML"
 msgstr "டொமைன் ஸ்னாப்ஷாட் XML"
@@ -25309,19 +24974,8 @@ msgid "domainMigratePrepare3 did not set uri"
 msgstr "domainMigratePrepare3  ஆனது uri ஐ அமைக்கவில்லை"
 
 #, fuzzy
-msgid "domainbackup"
-msgstr "domainsnapshot"
-
-#, fuzzy
-msgid "domaincheckpoint"
-msgstr "டொமைன் vcpu எண்ணிக்கைகள்"
-
-#, fuzzy
 msgid "domains in 'doms' array must belong to a single connection"
 msgstr "%s இல் உள்ள டொமைன் '%s' இணைப்புக்குப் பொருந்த வேண்டும்"
-
-msgid "domainsnapshot"
-msgstr "domainsnapshot"
 
 #, c-format
 msgid "doms array in %s must contain at least one domain"
@@ -25346,9 +25000,6 @@ msgstr "முடிந்தது"
 msgid "download volume contents to a file"
 msgstr "பிரிவக உள்ளடக்கத்தை ஒரு கோப்பாகப் பதிவிறக்கு"
 
-msgid "drive hotplug is not supported"
-msgstr "இயக்கி ஹாட்பிளக்குக்கு ஆதரவில்லை"
-
 #, fuzzy, c-format
 msgid "driver does not support net model '%s'"
 msgstr "nbd ஆனது போக்குவரத்து '%s' ஐ ஆதரிக்காது"
@@ -25372,9 +25023,6 @@ msgstr ""
 
 msgid "dump the core of a domain to a file for analysis"
 msgstr "செயற்களத்தை ஆய்வு செய்ய ஒரு கோப்பில் கோர் சேமிக்கவும்"
-
-msgid "dump-guest-memory is not supported"
-msgstr "dump-guest-memory க்கு ஆதரவில்லை"
 
 #, c-format
 msgid "dumpformat '%d' is not supported"
@@ -25571,6 +25219,9 @@ msgid "encryption format of inputvol must be LUKS"
 msgstr ""
 
 msgid "encryption is not supported with vhostuser disk"
+msgstr ""
+
+msgid "encryption is supported only with 'raw' and 'qcow2' image format"
 msgstr ""
 
 #, c-format
@@ -25984,6 +25635,10 @@ msgid "expecting a value"
 msgstr "எதிர்பார்த்த ஒரு மதிப்பு"
 
 #, c-format
+msgid "expecting a value for value of type %s"
+msgstr ""
+
+#, c-format
 msgid "expecting absolute path: %s"
 msgstr "ஒரு முழுமையான பாதை எதிர்பார்க்கப்படுகிறது: %s"
 
@@ -26006,14 +25661,6 @@ msgstr "புற"
 #, c-format
 msgid "external active snapshots are not supported on '%s' disks"
 msgstr "'%s' வட்டுகளில் வெளிப்புற செயலில் உள்ள ஸ்னாப்ஷாட்டுகள் ஆதரிக்கப்படாது"
-
-#, c-format
-msgid ""
-"external active snapshots are not supported on 'network' disks using '%s' "
-"protocol"
-msgstr ""
-"'%s' நெறிமுறையைப் பயன்படுத்தும் 'network' வட்டுகளில் வெளிப்புற செயலில் உள்ள "
-"ஸ்னாப்ஷாட்டுகள் ஆதரிக்கப்படாது"
 
 msgid "external active snapshots are not supported on scsi passthrough devices"
 msgstr "scsi பாஸ்த்ரூ சாதனங்களில் வெளிப்புற செயலில் உள்ள ஸ்னாப்ஷாட்டுகள் ஆதரிக்கப்படாது"
@@ -26048,10 +25695,6 @@ msgid ""
 msgstr ""
 "வட்டு %s க்கான வெளிப்புற ஸ்னாப்ஷாட் கோப்பு ஏற்கனவே உள்ளது, அது தொகுப்பு சாதனமும் அல்ல: %s"
 
-#, fuzzy, c-format
-msgid "external snapshot for readonly disk %s is not supported"
-msgstr "வட்டு %s க்கான வெளிப்புற ஸ்னாப்ஷாட் வடிவம் ஆதரிக்கப்படாது: %s"
-
 #, c-format
 msgid "external snapshot format for disk %s is unsupported: %s"
 msgstr "வட்டு %s க்கான வெளிப்புற ஸ்னாப்ஷாட் வடிவம் ஆதரிக்கப்படாது: %s"
@@ -26076,9 +25719,6 @@ msgstr "செயலிழக்கப்பட்ட Xen syscall %s "
 #, c-format
 msgid "failed Xen syscall %s"
 msgstr "செயலிழக்கப்பட்ட Xen syscall %s "
-
-msgid "failed due to I/O error"
-msgstr "I/O பிழையின் காரணமாகத் தோல்வியடைந்தது"
 
 #, fuzzy
 msgid "failed probing capabilities"
@@ -26250,9 +25890,9 @@ msgstr "ஸ்னாப்ஷாட் %s ஐ அழிக்க முடிய
 msgid "failed to create a new XML namespace"
 msgstr "ஒரு புதிய XML பெயரிடைவெளியை உருவாக்குவது தோல்வியடைந்தது"
 
-#, fuzzy, c-format
-msgid "failed to create channel dir '%s': %s"
-msgstr "சேமிப்பக கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+#, c-format
+msgid "failed to create channel dir '%s'"
+msgstr ""
 
 msgid "failed to create connection to CH socket"
 msgstr ""
@@ -26266,8 +25906,8 @@ msgid "failed to create directory '%s'"
 msgstr "அடைவு '%s:ஐ உருவாக்க முடியவில்லை"
 
 #, c-format
-msgid "failed to create dump dir '%s': %s"
-msgstr "டம்ப் dir '%s' ஐ உருவாக்குவதில் தோல்வி: %s"
+msgid "failed to create dump dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create glfs object for '%s'"
@@ -26287,16 +25927,16 @@ msgid "failed to create json"
 msgstr "json ஐ உருவாக்க முடியவில்லை"
 
 #, c-format
-msgid "failed to create lib dir '%s': %s"
-msgstr "lib கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+msgid "failed to create lib dir '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "failed to create libssh channel: %s"
 msgstr "ssh சேனலைத் திறப்பதில் தோல்வி: %s"
 
 #, c-format
-msgid "failed to create log dir '%s': %s"
-msgstr "பதிவுக் கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+msgid "failed to create log dir '%s'"
+msgstr ""
 
 #, c-format
 msgid "failed to create logfile %s"
@@ -26309,8 +25949,8 @@ msgid "failed to create profile"
 msgstr "விவரத்தொகுப்பை உருவாக்குவதில் தோல்வி"
 
 #, c-format
-msgid "failed to create save dir '%s': %s"
-msgstr "சேமிப்பக கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+msgid "failed to create save dir '%s'"
+msgstr ""
 
 msgid "failed to create socket"
 msgstr "சாக்கெட்டை உருவாக்க முடியவில்லை"
@@ -26324,8 +25964,8 @@ msgid "failed to create socketpair"
 msgstr "சாக்கெட்டை உருவாக்க முடியவில்லை"
 
 #, c-format
-msgid "failed to create state dir '%s': %s"
-msgstr "நிலை கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+msgid "failed to create state dir '%s'"
+msgstr ""
 
 msgid "failed to create the RADOS cluster"
 msgstr "RADOS க்ளஸ்டரை உருவாக்குவதில் தோல்வி"
@@ -26853,9 +26493,15 @@ msgstr "'%s' இலிருந்து uid மற்றும் gid ஐப்
 msgid "failed to parse node name index"
 msgstr "தொகுதி பெயர் %s ஐ பகுக்க முடியவில்லை"
 
+msgid "failed to parse original memlock size"
+msgstr ""
+
 #, c-format
 msgid "failed to parse port number '%s'"
 msgstr "துறை எண் '%s' ஐப் பாகுபடுத்துவதில் தோல்வியடைந்தது"
+
+msgid "failed to parse pre-migration memlock limit"
+msgstr ""
 
 msgid "failed to parse qemu capabilities cpus"
 msgstr "qemu திறப்பாடுகள் cpus ஐப் பாகுபடுத்துவதில் தோல்வி"
@@ -26912,10 +26558,6 @@ msgstr "'%s' இல் இருந்து ஸ்னாப்ஷாட் XML 
 #, fuzzy, c-format
 msgid "failed to parse the index of the VMX key '%s'"
 msgstr "முழு எண்ணைப் பாகுபடுத்துவதில் தோல்வி: '%s'"
-
-#, c-format
-msgid "failed to parse value of %s"
-msgstr "%s இன் மதிப்பை பாகுபடுத்துவதில் தோல்வியடைந்தது"
 
 #, c-format
 msgid "failed to parse write_bps_device: '%s'"
@@ -27327,7 +26969,8 @@ msgstr "fd சரியானதாக இருக்க வேண்டும�
 msgid "fd passing is not supported by this connection"
 msgstr "இந்த இணைப்பு fd அனுப்புதலை ஆதரிக்காது"
 
-msgid "fdset must be valid"
+#, c-format
+msgid "fdset '%u' is already in use by qemu"
 msgstr ""
 
 msgid "fetch or set the currently defined set of logging filters on daemon"
@@ -27336,9 +26979,6 @@ msgstr ""
 msgid "fetch or set the currently defined set of logging outputs on daemon"
 msgstr ""
 
-#. parse inbound and outbound which are in the format of
-#. * 'average,peak,burst,floor', in which peak and burst are optional,
-#. * thus 'average,,burst' and 'average,peak' are also legal.
 #, fuzzy, c-format
 msgid "field '%s' is malformed"
 msgstr "%s தவறான கட்டமைப்பு மதிப்பு"
@@ -27393,10 +27033,6 @@ msgstr "XML தொகுதி விளக்கத்தை கொண்டு
 
 msgid "file containing secret attributes in XML"
 msgstr "XMLஇல் இரகசிய அளவுருக்கள் கொண்ட கோப்பு"
-
-#, c-format
-msgid "file descriptor %d has not been transferred"
-msgstr ""
 
 msgid "file format type raw,bochs,qcow,qcow2,qed,vmdk"
 msgstr "கோப்பு வடிவமைப்பு வகை raw,bochs,qcow,qcow2,qed,vmdk"
@@ -27542,6 +27178,15 @@ msgstr ""
 msgid "firmware auto selection not implemented for this driver"
 msgstr "இடைமுக ஸ்டேட்ஸ் இந்த இயங்குதளத்தில் செயல்படுத்தப்படவில்லை"
 
+msgid ""
+"firmware feature 'enrolled-keys' cannot be enabled when firmware feature "
+"'secure-boot' is disabled"
+msgstr ""
+
+#, c-format
+msgid "firmware type '%s' does not support nvram"
+msgstr ""
+
 msgid "fixed audio settings requires mixing engine"
 msgstr ""
 
@@ -27562,6 +27207,9 @@ msgstr ""
 #, fuzzy
 msgid "floor attribute is not supported for this config"
 msgstr "ram பண்புருவானது qxl வகைக்கு மட்டுமே ஆதரிக்கப்படும்"
+
+msgid "floppy device hotplug isn't supported"
+msgstr ""
 
 msgid "fmode and dmode must be used with accessmode=mapped"
 msgstr ""
@@ -27679,9 +27327,6 @@ msgstr "fs இயக்கி %s ஆதரிக்கப்படாது"
 #, c-format
 msgid "fs format %s is not supported"
 msgstr "fs வடிவமைப்பு %s ஆதரிக்கப்படாது"
-
-msgid "fseek failed"
-msgstr "fseek தோல்வியடைந்தது"
 
 msgid "fully-qualified path of disk"
 msgstr "வட்டின் முழு தகுதியான பாதை"
@@ -27901,6 +27546,13 @@ msgstr ""
 msgid "guest failed to start: %s"
 msgstr "விருந்தினர் %s ஐ துவங்குவதில் தோல்வி"
 
+msgid "guest failed to start: terminated abnormally"
+msgstr ""
+
+#, c-format
+msgid "guest failed to start: unexpected exit status %d"
+msgstr ""
+
 #, fuzzy
 msgid "guest interface"
 msgstr "முன்பே உள்ள இடைமுக பெயர்"
@@ -27934,6 +27586,9 @@ msgstr "guest-get-vcpus பதிலளிப்பில் திருப்�
 msgid "guest-get-vcpus reply was missing return data"
 msgstr "guest-get-vcpus பதிலளிப்பில் திருப்பல் தரவு விடுபட்டுள்ளது"
 
+msgid "guestReset is not supported with this version of QEMU"
+msgstr ""
+
 msgid "guestfwd channel does not define a target address"
 msgstr "guestfwd சேனல் ஒரு இலக்கு முகவரியை வரையறுக்கவில்லை"
 
@@ -27947,7 +27602,6 @@ msgstr "ஸ்னாப்ஷாட் உருவாக்கப்பட்�
 msgid "handler failed to wait on condition"
 msgstr "கட்டளைக்கு காத்திருக்க முடியவில்லை"
 
-#. caller's error
 msgid "hash lookup resulted in NULL pointer"
 msgstr "ஹாஷ் லுக்கப் செயல்பாட்டின் முடிவாக NULL பாயின்ட்டர் கிடைத்தது"
 
@@ -28137,10 +27791,6 @@ msgstr "சாதனம் '%s' இன் நேரடி இணைப்பு�
 msgid "hpet timer is not supported"
 msgstr "hpet டைமருக்கு ஆதரவில்லை"
 
-#, fuzzy
-msgid "http cookies are not supported by this QEMU binary"
-msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
-
 msgid "http cookies are supported only with HTTP(S) protocol"
 msgstr ""
 
@@ -28215,6 +27865,11 @@ msgid "ids of vcpus to manipulate"
 msgstr ""
 
 msgid "if IOMMU is enabled by kernel"
+msgstr ""
+
+#, c-format
+msgid ""
+"if using CPU maximum physical address mode='%s', bits= must be specified too"
 msgstr ""
 
 #, c-format
@@ -28491,9 +28146,6 @@ msgstr "இடைமுகம் இயங்கவில்லை"
 msgid "interface mac"
 msgstr "இடைமுகப்பு சாதனம்"
 
-msgid "interface misses the type attribute"
-msgstr "பண்பு வகையில் இடைமுகத்தை விடுக்கிறது"
-
 msgid "interface mtu value is improper"
 msgstr "முகப்பு mtu மதிப்பு சரியில்லை"
 
@@ -28501,28 +28153,9 @@ msgid "interface name"
 msgstr "இடைமுகப் பெயர்"
 
 #, c-format
-msgid "interface name %s does not fit into buffer "
-msgstr "இடைமுகம் %s ஆனது பஃபருக்குள் பொருந்தவில்லை"
+msgid "interface name %s does not fit into buffer"
+msgstr ""
 
-#.
-#. * virsh-interface.c: Commands to manage host interface
-#. *
-#. * Copyright (C) 2005, 2007-2016 Red Hat, Inc.
-#. *
-#. * This library is free software; you can redistribute it and/or
-#. * modify it under the terms of the GNU Lesser General Public
-#. * License as published by the Free Software Foundation; either
-#. * version 2.1 of the License, or (at your option) any later version.
-#. *
-#. * This library is distributed in the hope that it will be useful,
-#. * but WITHOUT ANY WARRANTY; without even the implied warranty of
-#. * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#. * Lesser General Public License for more details.
-#. *
-#. * You should have received a copy of the GNU Lesser General Public
-#. * License along with this library.  If not, see
-#. * <http://www.gnu.org/licenses/>.
-#.
 msgid "interface name or MAC address"
 msgstr "MAC முகவரி அல்லது இடைமுகப் பெயர்"
 
@@ -28536,6 +28169,10 @@ msgstr "lxc நிலை இயக்கி செயலில் இல்ல�
 
 msgid "interface stats not implemented on this platform"
 msgstr "இடைமுக ஸ்டேட்ஸ் இந்த இயங்குதளத்தில் செயல்படுத்தப்படவில்லை"
+
+#, c-format
+msgid "interface type='%s' requires a 'source' element"
+msgstr ""
 
 msgid "internal"
 msgstr "அக"
@@ -28595,6 +28232,9 @@ msgstr ""
 msgid "internal use only"
 msgstr "உள்ளார்ந்த பிழை"
 
+msgid "interrupt post-copy migration"
+msgstr ""
+
 msgid "intr:"
 msgstr ""
 
@@ -28622,10 +28262,6 @@ msgstr "தவறான %s மதிப்பு: '%s'"
 #, c-format
 msgid "invalid '=' after option --%s"
 msgstr "விருப்பம் --%s க்கு அடுத்ததாக தவறான '=' உள்ளது"
-
-#, fuzzy, c-format
-msgid "invalid 'managed' value '%s'"
-msgstr "தவறான %s மதிப்பு: '%s'"
 
 msgid "invalid 'type' attribute for vhostuser disk source"
 msgstr ""
@@ -28804,10 +28440,6 @@ msgstr "தவறான VM வரையறை"
 msgid "invalid XML length: %d"
 msgstr "தவறான XML நீளம்: %d"
 
-#, fuzzy, c-format
-msgid "invalid allowReboot value '%s'"
-msgstr "தவறான இடைநிலை மதிப்பு '%s'"
-
 #, c-format
 msgid "invalid ap-adapter value '%s' for '%s'"
 msgstr ""
@@ -28833,9 +28465,6 @@ msgstr "தெரியாத நெறிமுறை '%s'"
 #, fuzzy, c-format
 msgid "invalid backing protocol string '%s'"
 msgstr "%sஇல் தவறான சேமிப்பக தொகுப்பக சுட்டி"
-
-msgid "invalid cache size in query-migrate-cache-size reply"
-msgstr ""
 
 #, fuzzy, c-format
 msgid "invalid capability_filters capability '%s'"
@@ -28910,7 +28539,7 @@ msgid "invalid disk target '%s', partitions can't appear in disk targets"
 msgstr ""
 
 #, c-format
-msgid "invalid dmode: '%s'"
+msgid "invalid dmode: '0%o'"
 msgstr ""
 
 msgid "invalid domain pointer in"
@@ -28943,14 +28572,6 @@ msgstr "செல்லுபடியாகாத தோல்வி செய�
 msgid "invalid fd %d for %s"
 msgstr "%2$s க்கு தவறான fd %1$d"
 
-#, c-format
-msgid "invalid firmware feature enabled value '%s'"
-msgstr ""
-
-#, c-format
-msgid "invalid firmware feature name '%s'"
-msgstr ""
-
 msgid "invalid flag"
 msgstr "தவறான கொடி"
 
@@ -28959,7 +28580,7 @@ msgid "invalid flag combination: (0x%x)"
 msgstr "தவறான கொடி சேர்க்கை: (0x%x)"
 
 #, c-format
-msgid "invalid fmode: '%s'"
+msgid "invalid fmode: '0%o'"
 msgstr ""
 
 msgid "invalid hasmanagedsave"
@@ -29063,16 +28684,6 @@ msgid ""
 "invalid mac address '%s' in 'unicast-table' array in query-rx-filter response"
 msgstr ""
 
-#, c-format
-msgid "invalid mac address check value: '%s'"
-msgstr ""
-
-#, c-format
-msgid ""
-"invalid mac address type value: '%s'. Valid values are \"generated\" and "
-"\"static\"."
-msgstr ""
-
 #, fuzzy, c-format
 msgid "invalid master key read, size=%zd"
 msgstr "%d என்ற தவறான நினைவாக அளவைப் பெற்றது"
@@ -29080,10 +28691,6 @@ msgstr "%d என்ற தவறான நினைவாக அளவைப்
 #, fuzzy
 msgid "invalid microcode version"
 msgstr "தவறான பயன்முறை"
-
-#, fuzzy
-msgid "invalid migratability value for host CPU model"
-msgstr "தொடக்க CPU க்கான மதிப்பு செல்லாதது"
 
 msgid "invalid mode"
 msgstr "தவறான பயன்முறை"
@@ -29159,14 +28766,6 @@ msgid ""
 "invalid number value for '%s' host CPU model property in QEMU capabilities "
 "cache"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "invalid or missing decode/guest attribute in CPU model %s"
-msgstr "CPU டோபாலஜியில் 'குறியீடுகள்' பண்பு விடுபட்டுள்ளது"
-
-#, fuzzy, c-format
-msgid "invalid or missing decode/host attribute in CPU model %s"
-msgstr "CPU டோபாலஜியில் 'குறியீடுகள்' பண்பு விடுபட்டுள்ளது"
 
 #, c-format
 msgid "invalid parent device '%s'"
@@ -29262,10 +28861,6 @@ msgstr "செல்லுபடியாகாத ஸ்னாப்ஷாட�
 msgid "invalid ssid value '%s' for '%s'"
 msgstr "'%s' க்கு செல்லுபடியாகாத மதிப்பு '%s'"
 
-#, c-format
-msgid "invalid storage pool cow feature state '%s'"
-msgstr ""
-
 msgid "invalid storage pool pointer in"
 msgstr "தவறான சேமிப்பக தொகுப்பக சுட்டி"
 
@@ -29318,6 +28913,9 @@ msgstr "'%s' க்கு தவறான unique_id வழங்கப்பட�
 msgid "invalid use of command API"
 msgstr "கட்டளை API யின் தவறான பயன்பாடு"
 
+msgid "invalid use of conf API"
+msgstr ""
+
 msgid "invalid use with no flags"
 msgstr "கொடிகள் இல்லாமல் தவறான பயன்பாடு"
 
@@ -29337,20 +28935,14 @@ msgstr "VMX உள்ளீடு '%s' க்கு தவறான மதிப
 msgid "invalid value '%s' for parameter '%s' of device '%s'"
 msgstr "அளவுரு '%s' க்கு தவறான வகை '%s', எதிர்பார்த்தது '%s'"
 
-#, fuzzy, c-format
-msgid "invalid value for 'managed': %s"
-msgstr "'தனிப்பட்டதற்கு' தவறான மதிப்பு"
-
-msgid "invalid value for boot menu timeout"
+#, c-format
+msgid "invalid value '%s' of 'value' attribute of 'qemu:property'"
 msgstr ""
 
 msgid "invalid value for boot menu timeout, must be in range [0,65535]"
 msgstr ""
 "பூட் மெனு காலாவதிக்கு தவறான மதிப்பு, மதிப்பு அதற்குரிய வரம்புக்குள்ளே இருக்க வேண்டும் "
 "[0,65535]"
-
-msgid "invalid value for rebootTimeout"
-msgstr ""
 
 msgid "invalid value for rebootTimeout, must be in range [-1,65535]"
 msgstr "rebootTimeout க்கு தவறான மதிப்பு, [-1,65535] என்ற வரம்பிலேயே இருக்க வேண்டும்"
@@ -29400,6 +28992,14 @@ msgstr ""
 #, fuzzy
 msgid "iommu driver option is only supported for virtio devices"
 msgstr "scsi வழங்கி சாதனத்திற்கு மட்டுமே rawio ஆதரிக்கப்படும்"
+
+#, c-format
+msgid "iommu model '%s' can't have address"
+msgstr ""
+
+#, c-format
+msgid "iommu model '%s' doesn't support additional attributes"
+msgstr ""
 
 msgid "iommu: aw_bits is not supported with this QEMU binary"
 msgstr ""
@@ -29452,8 +29052,8 @@ msgstr "ipset பெயரில் தவறான எழுத்துக்�
 msgid "ipset name is too long"
 msgstr "ipset பெயர் மிக நீளமாக உள்ளது"
 
-msgid "is not active"
-msgstr "செயலில் இல்லை"
+msgid "isa-debug serial type only valid on x86 architecture"
+msgstr ""
 
 msgid "iscsi pool only supports 'chap' auth type"
 msgstr "iscsi தொகுப்பகங்கள் 'chap' அங்கீகரிப்பு வகையை மட்டுமே ஆதரிக்கும்"
@@ -29469,8 +29069,29 @@ msgstr ""
 msgid "ivshmem device is not supported with this QEMU binary"
 msgstr "இந்த QEMU பைனரி nvram சாதனத்தை ஆதரிக்காது"
 
-msgid "job"
-msgstr "பணி"
+#, c-format
+msgid "job '%s' canceled by client"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed due to I/O error"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed in post-copy phase"
+msgstr ""
+
+#, c-format
+msgid "job '%s' failed: %s"
+msgstr ""
+
+#, c-format
+msgid "job '%s' is not active"
+msgstr ""
+
+#, c-format
+msgid "job '%s' unexpectedly failed"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "job type '%s' does not support pivot"
@@ -29482,6 +29103,9 @@ msgstr "memory-only டம்பில் மட்டுமே kdump-compressed
 
 msgid "kdump-compressed format is only supported with memory-only dump"
 msgstr "memory-only டம்பில் மட்டுமே kdump-compressed வடிவமைப்பு ஆதரிக்கப்படும்"
+
+msgid "keep TPM state"
+msgstr ""
 
 msgid "keep nvram file"
 msgstr ""
@@ -29554,10 +29178,10 @@ msgstr "nl_recv தோல்வியடைந்தது"
 msgid "library call failed: %s"
 msgstr "எழுதுதுதல் தோல்வி: %s"
 
-msgid "librbd encryption engine only supports luks/luks2 formats"
+msgid "librbd encryption is not supported by this QEMU binary"
 msgstr ""
 
-msgid "librbd encryption is not supported by this QEMU binary"
+msgid "librbd encryption is supported only with RBD backed disks"
 msgstr ""
 
 #, fuzzy
@@ -30031,6 +29655,24 @@ msgstr ""
 msgid "live update of device '%s' is not supported"
 msgstr "சாதனம் '%s' இன் நேரடி புதுப்பிப்புக்கு ஆதரவில்லை"
 
+msgid ""
+"loader attribute 'readonly' cannot be specified when firmware autoselection "
+"is enabled"
+msgstr ""
+
+msgid ""
+"loader attribute 'secure' cannot be specified when firmware autoselection is "
+"enabled"
+msgstr ""
+
+msgid ""
+"loader attribute 'type' cannot be specified when firmware autoselection is "
+"enabled"
+msgstr ""
+
+msgid "loader path cannot be specified when firmware autoselection is enabled"
+msgstr ""
+
 #, c-format
 msgid "loadparm value '%s' must be between 1 and 8 characters"
 msgstr ""
@@ -30041,15 +29683,14 @@ msgstr "லாக் மேனேஜர் இணைப்பு தடுக்
 msgid "lock owner details have not been registered"
 msgstr "லாக் உரிமையாளர் விவரங்கள் பதிவு செய்யப்படவில்லை"
 
-#, fuzzy
-msgid "logfile not supported in this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் %s ஆதரிக்கப்படாது"
-
 #, fuzzy, c-format
 msgid "logical volume '%s' is sparse, volume wipe not supported"
 msgstr "%s பிரிவகங்களை உருவாக்க ஆதரவில்லை"
 
 msgid "loop until timeout or interrupt, rather than one-shot"
+msgstr ""
+
+msgid "lower boundary for worker thread pool"
 msgstr ""
 
 msgid "luks2 is currently not supported by the qemu encryption engine"
@@ -30549,9 +30190,6 @@ msgstr "செயற்பாடு செயலிழக்கப்பட்�
 msgid "message"
 msgstr "செய்தி"
 
-msgid "metadata cache max size control is not supported with this QEMU binary"
-msgstr ""
-
 msgid "metadata cache max size control is supported only with qcow2 images"
 msgstr ""
 
@@ -30624,9 +30262,8 @@ msgstr "MiB/s இல் இடப்பெயர்ப்பு பட்டை�
 msgid "migration canceled"
 msgstr "இடப்பெயர்ப்பு ரத்துசெய்யப்பட்டது"
 
-#, fuzzy
-msgid "migration in job"
-msgstr "இடப்பெயர்ப்பு"
+msgid "migration in"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "migration of disk %s failed"
@@ -30636,14 +30273,24 @@ msgstr "'%s' ஐ துவக்க முடியவில்லை"
 msgid "migration of disk %s failed: %s"
 msgstr "செயற்பாடு செயலிழக்கப்பட்டது: %s"
 
+#, c-format
+msgid "migration of domain %s is being actively monitored by another thread"
+msgstr ""
+
+#, c-format
+msgid "migration of domain %s is not in post-copy phase"
+msgstr ""
+
+msgid "migration of non-shared disks requested but NBD is not set up"
+msgstr ""
+
 msgid ""
 "migration of non-shared storage is not supported with tunnelled migration "
 "and this QEMU"
 msgstr ""
 
-#, fuzzy
-msgid "migration out job"
-msgstr "இடப்பெயர்ப்பு"
+msgid "migration out"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "migration parameter '%s' must be less than %llu"
@@ -30677,9 +30324,6 @@ msgstr "நகருதல் செயல்படுத்தப்பட்�
 
 msgid "migration was active, but RAM 'transferred' data was missing"
 msgstr "நகருதல் செயல்படுத்தப்பட்டது, ஆனால் RAM 'இடமாற்றம்' தரவு விடுபட்டது"
-
-msgid "migration was active, but no RAM info was set"
-msgstr "நகருதல் செயல்படுத்தப்பட்டது, ஆனால் RAM தகவல் அமைக்கப்படவில்லை"
 
 msgid "migration with legacy shmem device is not supported"
 msgstr ""
@@ -30764,6 +30408,9 @@ msgstr ""
 msgid "missing 'DateTime' element"
 msgstr "ரூட் உருப்படி விடுபட்டுள்ளது"
 
+msgid "missing 'alias' attribute for qemu:device"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "missing 'architecture' in '%s'"
 msgstr "CPU கட்டமைப்பு விடுபட்டுள்ளது"
@@ -30825,6 +30472,9 @@ msgid ""
 "cache"
 msgstr "QEMU திறப்பாடுகள் தேக்ககத்தில் கணினி பெயர் இல்லை"
 
+msgid "missing 'name' attribute for qemu:property"
+msgstr ""
+
 #, fuzzy
 msgid "missing 'namespace' attribute to disk source"
 msgstr "வட்டு மூலத்திற்கான பெயர் இல்லை"
@@ -30847,6 +30497,9 @@ msgid "missing 'process' value in selinux lxc contexts file '%s'"
 msgstr ""
 
 msgid "missing 'server' attribute in JSON backing definition for NFS volume"
+msgstr ""
+
+msgid "missing 'start' attribute for clock with offset='absolute'"
 msgstr ""
 
 #, c-format
@@ -30884,6 +30537,9 @@ msgid ""
 "missing 'user' or 'group' attribute in JSON backing definition for NFS volume"
 msgstr ""
 
+msgid "missing 'value' attribute for 'qemu:property'"
+msgstr ""
+
 #, fuzzy
 msgid "missing 'value' attribute for HyperV feature 'vendor_id'"
 msgstr "KVM அம்சம் '%s' க்கு 'state' பண்புக்கூறு விடுபட்டுள்ளது"
@@ -30904,10 +30560,6 @@ msgstr "லீஸுக்கு 'target' கூறு இல்லை"
 
 msgid "missing <type> element in <capability> element"
 msgstr ""
-
-#, fuzzy
-msgid "missing @managed attribute for <reservations/>"
-msgstr "RAM கோப்பு முறைமைக்கு 'usage' பண்புரு இல்லை"
 
 #, fuzzy
 msgid "missing CPU data architecture"
@@ -30955,9 +30607,6 @@ msgstr "QEMU திறப்பாடுகள் தேக்ககத்தி
 
 msgid "missing TPM device backend"
 msgstr "TPM சாதன பின்புல முறைமை விடுபட்டுள்ளது"
-
-msgid "missing TPM device backend type"
-msgstr "TPM சாதன பின்புல முறைமை வகை விடுபட்டுள்ளது"
 
 #, fuzzy
 msgid "missing Xen migration stream version"
@@ -31016,9 +30665,6 @@ msgstr "வட்டு '%s' க்கான சேமிப்பக தொக�
 msgid "missing blocker name in QEMU capabilities cache"
 msgstr "QEMU திறப்பாடுகள் தேக்ககத்தில் cpu பெயர் இல்லை"
 
-msgid "missing boot device"
-msgstr "பூட் சாதனம் விடுபட்டுள்ளது"
-
 #, fuzzy
 msgid "missing capability name"
 msgstr "கொள்ளளவு வகை விடுபட்டுள்ளது"
@@ -31069,6 +30715,10 @@ msgid "missing cssid value for '%s'"
 msgstr "'%s' க்கு செல்லுபடியாகாத மதிப்பு '%s'"
 
 #, c-format
+msgid "missing decode element in CPU model %s"
+msgstr ""
+
+#, c-format
 msgid "missing destination file for disk %s: %s"
 msgstr "வட்டு %s க்கான இலக்கு கோப்பு விடுபட்ட்உள்ளது: %s"
 
@@ -31103,9 +30753,6 @@ msgstr "வட்டு பின்னாதரவு ஸ்டோர் மூ
 #, c-format
 msgid "missing disk device alias name for %s"
 msgstr "வட்டு சாதனத்தின் %sக்கான புனைப் பெயர் விடுபட்டுள்ளது"
-
-msgid "missing disk source for 'sheepdog' protocol"
-msgstr "'sheepdog' நெறிமுறைக்கான வட்டு மூலம் விடுபட்டுள்ளது"
 
 #, fuzzy
 msgid "missing domain in checkpoint"
@@ -31382,6 +31029,9 @@ msgstr ""
 #, fuzzy
 msgid "missing path for <reservations/>"
 msgstr "emulatorpin க்கான cpuset இல்லை"
+
+msgid "missing path to restore from"
+msgstr ""
 
 msgid "missing per-device path"
 msgstr "பெர்-டிவைஸ் பாதை இல்லை"
@@ -31728,20 +31378,8 @@ msgstr "விளக்கத்திற்கு பதிலாக தலை�
 msgid "monitor failure"
 msgstr "மானிட்டர் பாதை இல்லை"
 
-#. *
-#. * QEMU_CHECK_MONITOR_FULL:
-#. * @mon: monitor pointer variable to check, evaluated multiple times, no parentheses
-#. * @exit: statement that is used to exit the function
-#. *
-#. * This macro checks that the monitor is valid for given operation and exits
-#. * the function if not. The macro also adds a debug statement regarding the
-#. * monitor.
-#.
 msgid "monitor must not be NULL"
 msgstr "மானிட்டர் NULL ஆக இருக்கக்கூடாது"
-
-msgid "monitor socket did not show up"
-msgstr "மானிட்டர் சாக்கெட் காட்டவில்லை"
 
 #, c-format
 msgid "more than %d vCPUs are only supported on q35-based machine types"
@@ -31884,10 +31522,6 @@ msgstr "தொகுதியின் பெயர்"
 msgid "namespace key is required when modifying metadata"
 msgstr "மீத்தரவை மாற்றியமைக்க பெயரிடைவெளி விசை தேவைப்படுகிறது"
 
-#, c-format
-msgid "nbd does not support transport '%s'"
-msgstr "nbd ஆனது போக்குவரத்து '%s' ஐ ஆதரிக்காது"
-
 #, fuzzy
 msgid "nbd port must be in range 0-65535"
 msgstr "rebootTimeout க்கு தவறான மதிப்பு, [-1,65535] என்ற வரம்பிலேயே இருக்க வேண்டும்"
@@ -31935,7 +31569,6 @@ msgstr "rawio திறன் தேவை"
 msgid "negative size requires --shrink"
 msgstr ""
 
-#. 56 is good for Kerberos
 #, c-format
 msgid "negotiated SSF %d was not strong enough"
 msgstr "SSF %d போதிய பலமாக இல்லை"
@@ -32852,10 +32485,6 @@ msgid "non unique alias detected: %s"
 msgstr ""
 
 #, fuzzy
-msgid "non-file destination not supported yet"
-msgstr "வட்டு ஸ்னாப்ஷாட்டுகளுக்கு இன்னும் ஆதரவு இல்லை"
-
-#, fuzzy
 msgid "none"
 msgstr "(எதுவுமில்லை)"
 
@@ -32949,6 +32578,9 @@ msgstr ""
 msgid "number of read operations:"
 msgstr "படித்தல் செயல்பாடுகளின் எண்ணிக்கை:"
 
+msgid "number of seconds the daemon will run without any active connection"
+msgstr ""
+
 msgid "number of seconds to squelch traffic on newly connected ports"
 msgstr "புதிதாக இணைக்கப்பட்ட முனையங்களில் squelch போக்குவரத்துக்கான வினாடிகளின் எண்ணிக்கை"
 
@@ -32992,6 +32624,11 @@ msgstr "இந்த QEMU பைனரியில் பகிரப்பட�
 
 msgid "nvram address type must be spaprvio"
 msgstr "nvram முகவரி வகை spaprvio ஆகவே இருக்க வேண்டும்"
+
+msgid ""
+"nvram attribute 'template' cannot be specified when firmware autoselection "
+"is enabled"
+msgstr ""
 
 msgid "nvram device is not supported by this QEMU binary"
 msgstr "இந்த QEMU பைனரி nvram சாதனத்தை ஆதரிக்காது"
@@ -33074,7 +32711,8 @@ msgid "only 'pci' addresses are supported for the virtio-pmem device"
 msgstr ""
 
 msgid ""
-"only 1 graphics device of each type (sdl, vnc, spice, headless) is supported"
+"only 1 graphics device of each type (sdl, vnc, spice, headless, dbus) is "
+"supported"
 msgstr ""
 
 msgid "only JSON objects can be top level"
@@ -33124,6 +32762,10 @@ msgstr "ஒரே ஒரு watchdog சாதனம் துணைபுரி
 msgid "only bus 'virtio' is supported for 'passthrough' input devices"
 msgstr "scsi புரவலன் சாதனத்திற்கு மட்டுமே sgio ஆதரிக்கப்படும்"
 
+#, c-format
+msgid "only bus 'virtio' is supported for input model '%s'"
+msgstr ""
+
 msgid "only can reboot running/paused domain"
 msgstr ""
 
@@ -33161,9 +32803,6 @@ msgstr "ஒரே ஒரு RNG பின்புலமுறைமைக்க
 
 msgid "only one TPM backend is supported"
 msgstr "ஒரே ஒரு TPM பின்புல முறைமை மட்டுமே ஆதரிக்கபப்டும்"
-
-msgid "only one audio backend is supported with this QEMU binary"
-msgstr ""
 
 #, fuzzy
 msgid "only one backup job is supported"
@@ -33256,9 +32895,6 @@ msgstr ""
 
 msgid "open an editor to modify the description"
 msgstr "விளக்கத்தை மாற்ற ஒரு திருத்தியைத் திற"
-
-msgid "open disk image file failed"
-msgstr "வட்டு படக் கோப்பைத் திறத்தல் தோல்வி"
 
 #, c-format
 msgid "open(\"%s\")"
@@ -33529,6 +33165,9 @@ msgstr "பிரிப்பு பிழை"
 msgid "partial string to autocomplete"
 msgstr ""
 
+msgid "pass file descriptors N,M,... along with the command"
+msgstr ""
+
 msgid "pass file descriptors N,M,... to the guest"
 msgstr "கோப்பு விளக்கிகள் N,M,... ஐ விருந்தினருக்கு அனுப்பு"
 
@@ -33613,8 +33252,8 @@ msgstr "வட்டு இயக்கி %s க்கு ஆதரவில்
 msgid "pci device %s is not a PCI-Express device"
 msgstr "சாதனம் %s ஒரு PCI சாதனமல்ல"
 
-msgid "pci device assignment backend driver (e.g. 'vfio' or 'kvm')"
-msgstr "pci சாதன ஒதுக்கம் பின்புல முறைமை இயக்கி (எ.கா. 'vfio' அல்லது 'kvm')"
+msgid "pci device assignment backend driver (e.g. 'vfio' or 'xen')"
+msgstr ""
 
 msgid ""
 "pci-expander-bus controllers are only supported on 440fx-based machinetypes"
@@ -33704,6 +33343,9 @@ msgstr "சாதனம் '%s' ஐ நிரந்தரமாக பிரி�
 
 msgid "persistent detach of device is not supported"
 msgstr "சாதனத்தை ஒரே நிலையாக பிரித்தலுக்கு ஆதரவில்லை"
+
+msgid "persistent reservations are not supported with NVRAM"
+msgstr ""
 
 #, c-format
 msgid "persistent update of device '%s' is not supported"
@@ -33858,6 +33500,10 @@ msgstr "MiB/s இல் இடப்பெயர்ப்பு பட்டை�
 msgid "post-copy migration is not supported with non-live or paused migration"
 msgstr "இலக்கு வழங்கி ஆஃப்லைன் இடப்பெயர்ப்பை ஆதரிக்கவில்லை"
 
+#, c-format
+msgid "post-copy migration of domain %s has not failed"
+msgstr ""
+
 msgid "potentially unsafe disk format probing"
 msgstr ""
 
@@ -33914,6 +33560,9 @@ msgstr "அசல் வகை பிரிவகங்களுக்கு ம
 
 msgid "preallocate metadata (for qcow2 instead of full allocation)"
 msgstr "மீத்தரவை முன்னொதுக்கம் செய் (முழு ஒதுக்கத்திற்குப் பதிலாக qcow2 க்கு மட்டும்)"
+
+msgid "preallocation threads are unsupported with this QEMU"
+msgstr ""
 
 #, fuzzy
 msgid "prefix too long"
@@ -33975,6 +33624,9 @@ msgid "print lease info for a given network"
 msgstr "கொடுக்கப்பட்ட ஒரு பிணையத்தை நிர்ப்பந்தித்து நிறுத்தவும்."
 
 msgid "print statistics for any kind of job (even failed ones)"
+msgstr ""
+
+msgid "print the XML used to start the copy job instead of starting the job"
 msgstr ""
 
 #, fuzzy
@@ -34040,12 +33692,12 @@ msgstr ""
 "பிணையம் %s இன் '%s' என்ற பெயர் கொண்ட பதிவில் DNS TXT இல் உள்ள தேவையான மதிப்பு பண்புரு "
 "விடுபட்டுள்ளது"
 
+msgid "property with name 'id' can't be overridden"
+msgstr ""
+
 #, c-format
 msgid "protocol '%s' accepts only one host"
 msgstr "நெறிமுறை '%s' ஒரு வழங்கியை மட்டுமே ஏற்கும்"
-
-msgid "protocol 'sheepdog' accepts up to one host"
-msgstr "நெறிமுறை 'sheepdog' ஒரு வழங்கியை மட்டுமே ஏற்கும்"
 
 msgid "protocol misses the family attribute"
 msgstr "நெறிமுறை குடும்ப அளவுருவை கொண்டிருக்கவில்லை"
@@ -34083,10 +33735,6 @@ msgstr ""
 
 msgid "qemu agent didn't return an array of keys"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "qemu block name '%s' doesn't match expected '%s'"
-msgstr "இலக்கு டொமைன் பெயர் '%s' ஆனது மூலம் '%s' உடன் பொருந்தவில்லை"
 
 #, c-format
 msgid "qemu didn't report thread id for vcpu '%zu'"
@@ -34196,10 +33844,16 @@ msgstr "க்வெரி-cpu-வரையறைகள் பதிலளிப
 msgid "query-cpu-model-comparison reply data was missing 'result'"
 msgstr "க்வெரி-cpu-வரையறைகள் பதிலளிப்பில் 'பெயர்' இல்லை"
 
+msgid "query-dirty-rate parsing 'vcpu-dirty-rate' in failure"
+msgstr ""
+
 msgid "query-dirty-rate reply was missing 'calc-time' data"
 msgstr ""
 
 msgid "query-dirty-rate reply was missing 'dirty-rate' data"
+msgstr ""
+
+msgid "query-dirty-rate reply was missing 'id' data"
 msgstr ""
 
 msgid "query-dirty-rate reply was missing 'return' data"
@@ -34212,9 +33866,6 @@ msgid "query-dirty-rate reply was missing 'status' data"
 msgstr ""
 
 msgid "query-fdsets reply was missing 'fdset-id'"
-msgstr ""
-
-msgid "query-fdsets return data missing 'fd'"
 msgstr ""
 
 msgid "query-fdsets return data missing fd array element"
@@ -34357,6 +34008,9 @@ msgstr ""
 msgid "rawio is only supported for scsi host device"
 msgstr "scsi வழங்கி சாதனத்திற்கு மட்டுமே rawio ஆதரிக்கப்படும்"
 
+msgid "re-initialize NVRAM from its pristine template"
+msgstr ""
+
 msgid "read I/O operations limit per second"
 msgstr "ஒரு வினாடிக்கான படித்தல் I/O செயல்பாடுகள் வரம்பு"
 
@@ -34395,10 +34049,6 @@ msgstr "வாசிப்பு மட்டும் இணைப்புக�
 
 msgid "readahead is supported only with HTTP(S)/FTP(s) protocols"
 msgstr ""
-
-#, fuzzy
-msgid "readahead setting is not supported with this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் vhost-net க்கு ஆதரவில்லை"
 
 msgid "readonly ide disks are not supported"
 msgstr "வாசிக்க மட்டுமான ide வட்டுகளுக்கு ஆதரவு இல்லை"
@@ -34504,6 +34154,9 @@ msgstr ""
 msgid "removable is only valid for usb disks"
 msgstr "அகற்றக்கூடியதானது usb வட்டுகளுக்கு மட்டுமே செல்லுபடியாகும்"
 
+msgid "remove TPM state"
+msgstr ""
+
 msgid "remove all associated storage volumes (use with caution)"
 msgstr "தொடர்புடைய அனைத்து சேமிப்பக பிரிவகங்களையும் நீக்கு (எச்சரிக்கையுடன் பயன்படுத்தவும்)"
 
@@ -34520,6 +34173,9 @@ msgid ""
 msgstr ""
 "தொடர்புடைய சேமிப்பக பிரிவகங்களை நீக்கவும் (இலக்கு அல்லது மூல பாதைகளின் பட்டியல், "
 "காற்புள்ளிகளால் பிரிக்கப்பட்டபடி) (domblklist ஐப் பார்க்கவும்)"
+
+msgid "remove domain logs"
+msgstr ""
 
 msgid "remove domain managed state file"
 msgstr "டொமைனால் நிர்வகிக்கப்படும் நிலைக் கோப்பை நீக்கு"
@@ -34617,6 +34273,9 @@ msgstr "விவரமான டொமைன் vcpu தகவல்"
 msgid "report error if CPUs are incompatible"
 msgstr "CPUக்கள் இணக்கமாக இல்லை"
 
+msgid "report fd-based VM statistics by KVM"
+msgstr ""
+
 #, fuzzy
 msgid "report filesystem information"
 msgstr "XML இல் பிணைய வடிப்பியின் தகவல்"
@@ -34658,7 +34317,8 @@ msgstr "கோரிய cpu அளவானது அதிகபட்சத்
 msgid "requested size must be an integer multiple of block size"
 msgstr ""
 
-msgid "requested size must be smaller than or equal to @size"
+#, c-format
+msgid "requested size must be smaller than or equal to @size (%lluKiB)"
 msgstr ""
 
 msgid "requested size of the cache (in bytes) used for compression"
@@ -34725,6 +34385,9 @@ msgstr "முனை சாதனத்தை மறுஅமைக்கவு�
 msgid "reset the domain after core dump"
 msgstr "கோர் டம்பிற்கு பின் டொமைனை மீட்டமை"
 
+msgid "resetting of nvram is not supported with network backed nvram"
+msgstr ""
+
 msgid "resize a vol"
 msgstr "ஒரு பிரிவகத்தை மறுஅளவிடுக"
 
@@ -34761,6 +34424,9 @@ msgstr "முடிவு மிகப் பெரியது: %llu"
 msgid "resume a domain"
 msgstr "ஒரு செயற்களத்தை மீண்டும் தொடங்குகிறது"
 
+msgid "resume failed post-copy migration"
+msgstr ""
+
 msgid "resume operation failed"
 msgstr "தொடர்ந்த செயற்பாடு செயலிழக்கப்பட்டது"
 
@@ -34769,6 +34435,16 @@ msgstr "டம்ப் தோல்வியுற்ற பின் தொட
 
 msgid "resuming after snapshot failed"
 msgstr "ஸ்னாப்ஷாட்டுக்குப் பிறகு மீண்டும் தொடங்குதல் தோல்வியுற்றது"
+
+#, c-format
+msgid "resuming failed post-copy migration of domain %s already in progress"
+msgstr ""
+
+msgid "resuming failed post-copy migration requires change protection"
+msgstr ""
+
+msgid "resuming failed post-copy migration requires post-copy to be enabled"
+msgstr ""
 
 msgid "retrieve client's identity info from server"
 msgstr ""
@@ -34934,9 +34610,6 @@ msgstr "'%s' லிருந்து '%s' செயற்களத்தை ச
 msgid "sbbc configuration is not supported by this QEMU binary"
 msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
 
-msgid "scheduler information is not supported on this platform"
-msgstr ""
-
 #, fuzzy, c-format
 msgid "scheme and host are mandatory vz migration URI: %s"
 msgstr "இடப்பெயர்ப்பு URI இல் வழங்கி விடுபட்டுள்ளது: %s"
@@ -35055,7 +34728,9 @@ msgstr "பாதுகாப்பு மாதிரி அதிகபட்�
 msgid "security model string exceeds max %d bytes"
 msgstr "பாதுகாப்பு மாதிரி அதிகபட்ச %d பைட்களை விட மிஞ்சியது"
 
-msgid "select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\")"
+msgid ""
+"select particular graphical display (e.g. \"vnc\", \"spice\", \"rdp\", \"dbus"
+"\")"
 msgstr ""
 
 #, fuzzy
@@ -35144,6 +34819,9 @@ msgstr "blkio அளவுருக்களைப் பெறு அல்ல�
 msgid "set server's client-related configuration limits"
 msgstr ""
 
+msgid "set the auto shutdown timeout of the daemon"
+msgstr ""
+
 #, fuzzy
 msgid "set the bandwidth limit in MiB/s"
 msgstr "MiB/s இல் பட்டையகல வரம்பு"
@@ -35160,7 +34838,7 @@ msgstr ""
 msgid "set the user password inside the domain"
 msgstr "டொமைனை இடைநிறுத்துகையில் பிழை"
 
-msgid "set the value for reduction of the IOThread polling time "
+msgid "set the value for reduction of the IOThread polling time"
 msgstr ""
 
 msgid "set the value to increase the IOThread polling time"
@@ -35170,6 +34848,11 @@ msgid "set threshold for block-threshold event for a block device"
 msgstr ""
 
 msgid "set to the time of the host running virsh"
+msgstr ""
+
+msgid ""
+"setting 'value' attribute of 'qemu:property' doesn't make sense with "
+"'remove' type"
 msgstr ""
 
 msgid "setting ACPI S3 not supported"
@@ -35187,18 +34870,6 @@ msgid "setting MTU on interface type %s is not supported yet"
 msgstr "பிணைய வகை %d துணைபுரியவில்லை"
 
 msgid "setting a launch secret is only supported in SEV-enabled domains"
-msgstr ""
-
-msgid "setting audio buffer count is not supported with this QEMU"
-msgstr ""
-
-msgid "setting audio buffer length is not supported with this QEMU"
-msgstr ""
-
-msgid "setting audio latency is not supported with this QEMU"
-msgstr ""
-
-msgid "setting audio stream name is not supported with this QEMU"
 msgstr ""
 
 #, fuzzy, c-format
@@ -35251,17 +34922,6 @@ msgstr ""
 
 msgid "sgio is only supported for scsi host device"
 msgstr "scsi புரவலன் சாதனத்திற்கு மட்டுமே sgio ஆதரிக்கப்படும்"
-
-#, c-format
-msgid "sgio of shared disk '%s' conflicts with other active domains"
-msgstr "பகிரப்பட்ட வட்டு '%s' இன் sgio ஆனது மற்ற செயலில் உள்ள டொமைன்களுடன் முரண்படுகிறது"
-
-#, c-format
-msgid ""
-"sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active domains"
-msgstr ""
-"பகிரப்பட்ட வட்டு 'pool=%s' 'volume=%s' இன் sgio ஆனது மற்ற செயலில் உள்ளடொமைன்களுடன் "
-"முரண்படுகிறது"
 
 #, c-format
 msgid "shallow copy of disk '%s' into a raw file is not possible"
@@ -35422,6 +35082,12 @@ msgstr "முழுமையல்லாத பாதைகளைத் தவ�
 msgid "skipped restricted file"
 msgstr "தடைசெய்யப்பட்ட கோப்பைத் தவிர்த்தது"
 
+msgid "slices are not supported with NVRAM"
+msgstr ""
+
+msgid "snapshot"
+msgstr ""
+
 #, c-format
 msgid "snapshot %s disappeared from list"
 msgstr "பட்டியலில் இருந்து ஸ்னாப்ஷாட் %s மறைந்துவிட்டது"
@@ -35441,10 +35107,6 @@ msgstr "ஸ்னாப்ஷாட் '%s' இல் டொமைன் '%s' �
 msgid "snapshot information"
 msgstr "ஸ்னாப்ஷாட் தகவல்"
 
-#, fuzzy
-msgid "snapshot job"
-msgstr "ஸ்னாப்ஷாட்டின் பெயர்"
-
 msgid "snapshot name"
 msgstr "ஸ்னாப்ஷாட்டின் பெயர்"
 
@@ -35463,9 +35125,6 @@ msgstr "டொமைன் %s க்கு ஸ்னாப்ஷாட்டு�
 
 msgid "sndbuf must be a positive integer"
 msgstr "sndbuf ஒரு நேர்க்குறி முழு எண்ணாக இருக்க வேண்டும்"
-
-msgid "socket attribute required for unix transport"
-msgstr "unix போக்குவரத்துக்கு சாக்கெட் பண்புக்கூறு தேவைப்பட்டது"
 
 msgid "socketpair failed"
 msgstr "சாக்கெட்பேர் தோல்வி"
@@ -35602,9 +35261,8 @@ msgstr ""
 msgid "ssl verification is supported only with HTTPS/FTPS protocol"
 msgstr ""
 
-#, fuzzy
-msgid "ssl verification setting is not supported by this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் ஸ்பாஷ் நேர முடிவுக்கு ஆதரவில்லை"
+msgid "start"
+msgstr ""
 
 msgid "start a (previously defined) inactive domain"
 msgstr "ஒரு செயலற்ற செயற்களத்தை ஆரம்பிக்கவும் (முன்பு வரையறுக்கப்பட்டது)"
@@ -35624,10 +35282,6 @@ msgstr "ஒரு பருநிலை புரவலன் முகப்ப
 #, c-format
 msgid "start cell %d out of range (0-%d)"
 msgstr "ஆரம்ப செல் %d வரம்புக்கு வெளியே உள்ளது (0-%d)"
-
-#, fuzzy
-msgid "start job"
-msgstr "தொடங்கப்பட்டது"
 
 #, c-format
 msgid "start of range %s - %s in network %s/%d is the network address"
@@ -35760,17 +35414,13 @@ msgstr "சேமிப்பக தொகுப்பகத்தில் அ�
 msgid "storage pool only supports LUKS encrypted volumes"
 msgstr "சேமிப்பக தொகுப்பக தொகுதி உருவாக்கத்திற்கு துணைபுரியவில்லை"
 
-#, fuzzy, c-format
-msgid "storage pool protocol ver '%s' is malformed"
-msgstr "சேமிப்பக தொகுப்பக '%s'ல் ஏற்கனவே செயலில் உள்ளது"
+#, c-format
+msgid "storage pool protocol ver '%s' must not contain ','"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "storage pool protocol ver unsupported for pool type '%s'"
 msgstr "சேமிப்பக வகை %s க்கு வட்டு %s க்கான உட்புற ஸ்னாப்ஷாட்  வசதிக்கு ஆதரவில்லை"
-
-#, fuzzy
-msgid "storage slice is not supported by this QEMU binary"
-msgstr "இந்த QEMU பைனரி nvram சாதனத்தை ஆதரிக்காது"
 
 #, fuzzy, c-format
 msgid "storage source pool '%s' volume '%s' is not translated"
@@ -35882,9 +35532,18 @@ msgid ""
 "VIR_MIGRATE_POSTCOPY flag"
 msgstr ""
 
-#, fuzzy
-msgid "swtpm failed to start"
-msgstr "விருந்தினர் %s ஐ துவங்குவதில் தோல்வி"
+msgid "swtpm didn't show up"
+msgstr ""
+
+#, c-format
+msgid "swtpm died and reported: %s"
+msgstr ""
+
+msgid "swtpm died unexpectedly"
+msgstr ""
+
+msgid "swtpm socket did not show up"
+msgstr ""
 
 #, c-format
 msgid "syntax: %s DEVICE [-g]|[-p]\n"
@@ -35992,6 +35651,10 @@ msgid "target pci device "
 msgstr "இலக்கு சாதன வகை"
 
 #, c-format
+msgid "target port '%d' already allocated"
+msgstr ""
+
+#, c-format
 msgid "target type must be specified for %s device"
 msgstr "%s சாதனத்திற்கு இலக்கு வகை குறிப்பிடப்பட வேண்டும்"
 
@@ -36031,9 +35694,6 @@ msgstr ""
 msgid "terminate gracefully"
 msgstr "கனிவாக நிறுத்து"
 
-msgid "terminated abnormally"
-msgstr "வழக்கத்திற்கு மாறாக முடிக்கப்பட்டது"
-
 msgid "testOpen: supply a path or use test:///default"
 msgstr "testOpen: ஒரு பாதையை கொடுக்கவும் அல்லது test:///default ஐ பயன்படுத்தவும்"
 
@@ -36060,6 +35720,10 @@ msgstr "MAC முகவரி '%s' ஆனது பல இடைமுகங்
 #, fuzzy
 msgid "the QEMU binary does not support the ISA panic device"
 msgstr "QEMU பைனரியானது %s ஐ ஆதரிக்காது"
+
+#, c-format
+msgid "the accel '%s' is not supported by '%s' on this host"
+msgstr ""
 
 msgid ""
 "the address family of a dhcp range must match the address family of the dhcp "
@@ -36122,10 +35786,6 @@ msgstr "டொமைனில் ஸ்னாப்ஷாட்டுகள் �
 
 msgid "the new password"
 msgstr ""
-
-#, fuzzy
-msgid "the packed setting is not supported with this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் 64-பிட் PCI துளை அளவு அமைவுக்கு ஆதரவில்லை"
 
 #, fuzzy
 msgid "the password is already encrypted"
@@ -36216,10 +35876,6 @@ msgstr "மற்றொரு பரிமாற்றம் நடந்து�
 msgid "there is no hub at port %u in USB address bus: %u port: %s"
 msgstr ""
 
-#, fuzzy
-msgid "this QEMU binary doesn't support relative block pull/rebase"
-msgstr "QEMU பைனரியானது %s ஐ ஆதரிக்காது"
-
 msgid "this QEMU binary lacks multiple smartcard support"
 msgstr "இந்த QEMU பைனரியில் பல ஸ்மார்ட்கார்டு ஆதரவு இல்லை"
 
@@ -36278,14 +35934,6 @@ msgid "this qemu does not support TLS transport for NBD"
 msgstr "nbd ஆனது போக்குவரத்து '%s' ஐ ஆதரிக்காது"
 
 #, fuzzy
-msgid "this qemu does not support setting device threshold"
-msgstr "ps2 %s உள்ளீடு சாதனத்திற்கு துணைபுரியவில்லை"
-
-#, fuzzy
-msgid "this qemu doesn't support relative block commit"
-msgstr "இந்த qemu ஆனது rng-egd பின்புல முறைமையை ஆதரிக்காது"
-
-#, fuzzy
 msgid "this qemu doesn't support the memory-backend-file object"
 msgstr "இந்த qemu ஆனது rng-egd பின்புல முறைமையை ஆதரிக்காது"
 
@@ -36314,17 +35962,39 @@ msgstr "வட்டு சாதனம் '%s' ஸ்னாப்ஷாட்�
 msgid "this storage volume exists already"
 msgstr "இந்த சேமிப்பக தொகுதி ஏற்கனவே உள்ளது"
 
-#, fuzzy
-msgid "this version of libxenlight does not support backend domain name"
-msgstr "libxenlight இன் இப்பதிப்பு வட்டு 'discard' விருப்பத்தை அனுப்புவதை ஆதரிக்காது"
+#, c-format
+msgid "thread_pool_max (%d) must be a positive number or -1"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_max (%d) must be equal to or greater than 0 for live change"
+msgstr ""
+
+msgid "thread_pool_max must be a positive integer"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) can't be greater than thread_pool_max (%d)"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) must be equal to or greater than -1"
+msgstr ""
+
+#, c-format
+msgid "thread_pool_min (%d) must be equal to or greater than 0 for live change"
+msgstr ""
+
+msgid ""
+"thread_pool_min and thread_pool_max is not supported by this QEMU binary"
+msgstr ""
+
+msgid "thread_pool_min must be smaller or equal to thread_pool_max"
+msgstr ""
 
 #, fuzzy
 msgid "threshold as a scaled number (by default bytes)"
 msgstr "vol இன் அளவு, மறுஅளவீடு செய்யப்பட்ட முழு எண்ணாக (முன்னிருப்பு பைட்டுகள்)"
-
-#, c-format
-msgid "threshold currently can't be set for block device '%s'"
-msgstr ""
 
 #, fuzzy
 msgid "time to set"
@@ -36350,10 +36020,6 @@ msgstr "நேரக் கடப்பு வினாடிகள். நே�
 
 msgid "timeout seconds. must be positive."
 msgstr "நேரக் கடப்பு வினாடிகள். நேர்க்குறி எண்ணாக இருக்க வேண்டும்."
-
-#, fuzzy
-msgid "timeout setting is not supported with this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் vhost-net க்கு ஆதரவில்லை"
 
 msgid "timeout, async and block options are exclusive"
 msgstr "timeout, async மற்றும் block ஆகிய விருப்பங்கள் ஒன்றுக்கொன்று பிரத்யேகமானவை"
@@ -36696,10 +36362,6 @@ msgid ""
 msgstr ""
 
 #, c-format
-msgid "transient disk not supported by this QEMU binary (%s)"
-msgstr ""
-
-#, c-format
 msgid "transient disk supported only with 'disk' device (%s)"
 msgstr ""
 
@@ -36743,12 +36405,6 @@ msgstr "நிலையற்ற வட்டுகளுக்கு இப்�
 msgid "tray is only valid for cdrom and floppy"
 msgstr "ட்ரே சிடிரோம் மற்றும் ஃப்ளாப்பி ஆகியவற்றுக்கு மட்டுமே தகுந்தது"
 
-msgid "tray status 'open' is invalid for block type disk"
-msgstr "டிரே நிலை 'open' ஆனது ப்ளாக் வகை வட்டுக்கு தவறானது"
-
-msgid "tray status 'open' is invalid for block type volume"
-msgstr "பிரிவகம் என்ற தொகுப்பு வகைக்கு ட்ரே நிலை 'open' என்பது செல்லாது"
-
 msgid "treat event as a regex rather than literal filter"
 msgstr ""
 
@@ -36763,6 +36419,9 @@ msgstr "ஆபத்தான நிகழ்வுகளில் கடின�
 
 msgid "tty console"
 msgstr "tty பணியகம்"
+
+msgid "tunnelFD argument is required for tunnelled migration"
+msgstr ""
 
 msgid "tunnelled migration"
 msgstr "வளைவு இடம்பெயர்வு"
@@ -36916,6 +36575,10 @@ msgstr ""
 "பிணையம் '%s' இல் இடைமுகம் '%s' ஐ நீக்க முடியவில்லை. தற்போது %d டொமைன்கள் அதைப் "
 "பயன்படுத்திக் கொண்டுள்ளன."
 
+#, c-format
+msgid "unable to determine access mode of %s"
+msgstr ""
+
 #, fuzzy
 msgid "unable to determine if checkpoint has parent"
 msgstr "ஸ்னாப்ஷாட்டுக்கு தாய் உறுப்பு உள்ளதா எனத் தீர்மானிக்க முடியவில்லை"
@@ -36963,10 +36626,6 @@ msgid "unable to find audio backend for sound device"
 msgstr ""
 
 #, fuzzy, c-format
-msgid "unable to find backing name for device %s"
-msgstr "'%s' க்கு தடுப்புப் பயன்முறையை அமைக்க முடியவில்லை"
-
-#, fuzzy, c-format
 msgid "unable to find disk by target: %s"
 msgstr "இலக்கு %s ஐ ஸ்டாட் பிணைப்பு செய்ய முடியவில்லை"
 
@@ -36988,7 +36647,6 @@ msgstr "mutex ஐ init செய்ய முடியவில்லை"
 msgid "unable to find valid requested VMware backend '%s'"
 msgstr "கோரப்பட்ட செல்லுபடியான VMware பின்புல முறைமை '%s' ஐக் கண்டறிய முடியவில்லை"
 
-#. fdatasync() may fail on some special FDs, e.g. pipes
 #, c-format
 msgid "unable to fsync %s"
 msgstr "%s ஐ fsync செய்ய முடியவில்லை"
@@ -37053,9 +36711,6 @@ msgstr "'%s' இலிருந்து uid மற்றும் gid ஐப்
 #, fuzzy, c-format
 msgid "unable to handle agent type: %s"
 msgstr "மானிட்டர் பாதை கையாள முடியவில்லை: %s"
-
-msgid "unable to handle disk requests in snapshot"
-msgstr "ஸ்னாப்ஷாட்டில் வட்டு கோரிக்கையை கையாள முடியவில்லை"
 
 #, c-format
 msgid "unable to handle monitor type: %s"
@@ -37181,6 +36836,9 @@ msgstr "சேய் stdout ஐப் படிக்க முடியவி�
 msgid "unable to read domain master key file"
 msgstr "vmware பதிவுக் கோப்பினை படிக்க முடியவில்லை"
 
+msgid "unable to read from pipe"
+msgstr ""
+
 #, c-format
 msgid "unable to read server cert %s"
 msgstr "சேவையக சான்றிதழ் %s ஐப் படிக்க முடியவில்லை"
@@ -37250,6 +36908,9 @@ msgstr "உரிமையாளர் '%s'ஐ %d:%d க்கு அமைக�
 msgid "unable to set ownership of '%s' to user %d:%d"
 msgstr "'%s'க்கு உரிமையாளரை அமைக்க முடியவில்லை %d:%d"
 
+msgid "unable to set pipe size"
+msgstr ""
+
 #, c-format
 msgid "unable to set security context '%s'"
 msgstr "பாதுகாப்பு சூழல் '%s' அமைக்க முடியவில்லை"
@@ -37283,12 +36944,24 @@ msgid "unable to set vnet or multiqueue flags on macvtap"
 msgstr "macvtap டேப்பில் உள்ள அம்ச கொடிகளைப் பெற முடியவில்லை"
 
 #, c-format
+msgid "unable to share scheduling cookie from %lld"
+msgstr ""
+
+#, c-format
+msgid "unable to share scheduling cookie to %lld"
+msgstr ""
+
+#, c-format
 msgid "unable to stat %s"
 msgstr ""
 
 #, fuzzy, c-format
 msgid "unable to stat block copy target '%s'"
 msgstr "இலக்கு %s ஐ ஸ்டாட் பிணைப்பு செய்ய முடியவில்லை"
+
+#, c-format
+msgid "unable to stat file descriptor %d path %s"
+msgstr ""
 
 #, c-format
 msgid "unable to stat for disk %s: %s"
@@ -37535,10 +37208,6 @@ msgid "unexpected encryption format"
 msgstr "எதிர்பாராத மறைகுறியாக்க வடிவம்"
 
 #, c-format
-msgid "unexpected exit status %d"
-msgstr "எதிர்பாராத வெளியேற்ற நிலை %d"
-
-#, c-format
 msgid "unexpected feature '%s'"
 msgstr "எதிர்பாராத அம்சம் '%s'"
 
@@ -37597,6 +37266,10 @@ msgstr "எதிர்பார்க்காத மெம்பலூன் �
 #, fuzzy
 msgid "unexpected message type"
 msgstr "எதிர்பார்க்காத செய்தி வகை %d"
+
+#, c-format
+msgid "unexpected migration schema: %d"
+msgstr ""
 
 #, c-format
 msgid "unexpected migration status in %s"
@@ -37660,49 +37333,6 @@ msgid "unexpected protocol type"
 msgstr "எதிர்பார்க்காத நெறிமுறை வகை"
 
 #, c-format
-msgid "unexpected root element <%s> expecting <device>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <device>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <domain>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s>, எதிர்பார்ப்பது <domain>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <domstatus>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <domstatus>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <interface>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <interface>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <network>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <network>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <pool>"
-msgstr "எதிர்பார்க்காத மூல கூறு <%s>, எதிர்பார்ப்பது <pool>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <qemuCaps>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <qemuCaps>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <secret>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <secret>"
-
-#, c-format
-msgid "unexpected root element <%s>, expecting <volume>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <volume>"
-
-msgid "unexpected root element, expecting <domain>"
-msgstr "எதிர்பார்க்காத மூல உறுப்பு, எதிர்பார்ப்பது <domain>"
-
-#, fuzzy, c-format
-msgid "unexpected root element: '%s'"
-msgstr "எதிர்பாராத தரவு '%s'"
-
-#, c-format
 msgid "unexpected secret usage type %d"
 msgstr "எதிர்பார்க்காத இரகசிய பயன்பாட்டு வகை %d"
 
@@ -37745,22 +37375,6 @@ msgstr "எதிர்பார்க்காத மூலப் பயன்�
 #, c-format
 msgid "unexpected sysinfo type model %d"
 msgstr "எதிர்பார்க்காத sysinfo வகை மாடல் %d"
-
-#, c-format
-msgid "unexpected timer mode %d"
-msgstr "எதிர்பார்க்காத டைமர் பயன்முறை %d"
-
-#, c-format
-msgid "unexpected timer name %d"
-msgstr "எதிர்பார்க்காத டைமர் பெயர் %d"
-
-#, c-format
-msgid "unexpected timer tickpolicy %d"
-msgstr "தெரியாத டைமர் டிக்பாலிசி  %d"
-
-#, c-format
-msgid "unexpected timer track %d"
-msgstr "எதிர்பார்க்காத டைமர் ட்ராக் %d"
 
 #, fuzzy
 msgid "unexpected transport in <domainbackup>"
@@ -37809,8 +37423,8 @@ msgstr "எதிர்பார்க்காத watchdog மாதிரி %
 msgid "unexpected zero/negative length request %lld"
 msgstr "எதிர்பாராத பூச்சிய/எதிர்க்குறி நீளக் கோரிக்கை %lld"
 
-msgid "unexpectedly failed"
-msgstr "எதிரிபாராமல் தோல்வியடைந்தது"
+msgid "unfiltered sgio is no longer supported"
+msgstr ""
 
 #, c-format
 msgid "unimplemented parameter type %d"
@@ -37819,8 +37433,6 @@ msgstr "செயல்படுத்தப்படாத அளவுரு �
 msgid "unix"
 msgstr ""
 
-#. Something went wrong retrieving a volume path, cope with it
-#. Something went wrong retrieving volume info, cope with it
 msgid "unknown"
 msgstr "தெரியாத"
 
@@ -37856,10 +37468,6 @@ msgid "unknown OS type '%s'"
 msgstr "தெரியாத OS வகை %s"
 
 #, c-format
-msgid "unknown PM state value %s"
-msgstr "தெரியாத PM நிலை மதிப்பு %s"
-
-#, c-format
 msgid "unknown QEMU_AUDIO_DRV setting %s"
 msgstr ""
 
@@ -37882,18 +37490,6 @@ msgstr "தெரியாத SCSI புரவலன் செயல்தி�
 #, c-format
 msgid "unknown SDL_AUDIODRIVER setting %s"
 msgstr ""
-
-#, fuzzy, c-format
-msgid "unknown accel2d value '%s'"
-msgstr "தெரியாத enable மதிப்பு '%s'"
-
-#, fuzzy, c-format
-msgid "unknown accel3d value '%s'"
-msgstr "தெரியாத enable மதிப்பு '%s'"
-
-#, c-format
-msgid "unknown accessmode '%s'"
-msgstr "தெரியாத அணுகல் பயன்முறை '%s'"
 
 #, c-format
 msgid "unknown address type '%s'"
@@ -37947,10 +37543,6 @@ msgid "unknown bonding mode %s"
 msgstr "தெரியாத பிணைக்கும் தொகுதி %s"
 
 #, c-format
-msgid "unknown boot device '%s'"
-msgstr "தெரியாத பூட் சாதனம் '%s'"
-
-#, c-format
 msgid "unknown capability type '%d' for '%s'"
 msgstr "'%d'க்கு தெரியாத தகுதியான வகை '%s'"
 
@@ -38002,24 +37594,8 @@ msgid "unknown device type in '%s'"
 msgstr "தெரியாத சாதன வகை '%s'"
 
 #, c-format
-msgid "unknown dhcp peerdns value %s"
-msgstr "தெரியாத dhcp peerdns மதிப்பு %s"
-
-#, c-format
 msgid "unknown disk snapshot driver '%s'"
 msgstr "தெரியாத வட்டு ஸ்னாப்ஷாட் இயக்கி '%s'"
-
-#, c-format
-msgid "unknown disk snapshot setting '%s'"
-msgstr "தெரியாத வட்டு ஸ்னாப்ஷாட் அமைவு '%s'"
-
-#, c-format
-msgid "unknown disk snapshot type '%s'"
-msgstr "தெரியாத வட்டு ஸ்னாப்ஷாட் வகை '%s'"
-
-#, c-format
-msgid "unknown disk type '%s'"
-msgstr "தெரியாத வட்டு வகை '%s'"
 
 #, c-format
 msgid "unknown driver format value '%s'"
@@ -38044,17 +37620,9 @@ msgstr "தெரியாத பிழை"
 msgid "unknown event type %s"
 msgstr "தெரியாத சாதன வகை '%s'"
 
-#, c-format
-msgid "unknown filesystem type '%s'"
-msgstr "தெரியாத கோப்புகணினி வகை '%s'"
-
 #, fuzzy, c-format
 msgid "unknown firmware value %s"
 msgstr "தெரியாத ரோம் பார் மதிப்பு '%s'"
-
-#, fuzzy, c-format
-msgid "unknown flock value '%s'"
-msgstr "தெரியாத முழுத்திரை மதிப்பு '%s'"
 
 #, c-format
 msgid "unknown forwarding type '%s'"
@@ -38087,14 +37655,6 @@ msgstr "வழங்கி சாதன மூல முகவரி வகை '
 msgid "unknown hostdev mode '%s'"
 msgstr "தெரியாத hostdev முறைமை '%s'"
 
-#, fuzzy, c-format
-msgid "unknown hostdev model '%s'"
-msgstr "தெரியாத hostdev முறைமை '%s'"
-
-#, c-format
-msgid "unknown hostdev rawio setting '%s'"
-msgstr "தெரியாத ஹோஸ்ட்டெவ் rawio அமைவு '%s'"
-
 #, c-format
 msgid "unknown hub device type '%s'"
 msgstr "தெரியாத ஹப் சாதன வகை '%s'"
@@ -38120,24 +37680,12 @@ msgid "unknown inputvol storage vol type %d"
 msgstr "தெரியாத சேமிப்பக தொகுதி வகை %d"
 
 #, c-format
-msgid "unknown interface event_idx mode '%s'"
-msgstr "தெரியாத இடைமுக event_idx பயன்முறை '%s'"
-
-#, c-format
-msgid "unknown interface ioeventfd mode '%s'"
-msgstr "தெரியாத இடைமுக ioeventfd பயன்முறை '%s'"
-
-#, c-format
 msgid "unknown interface link state '%s'"
 msgstr "தெரியாத இடைமுக இணைப்பு நிலை '%s'"
 
 #, c-format
 msgid "unknown interface startmode %s"
 msgstr "தெரியாத இடைமுக startmode %s"
-
-#, c-format
-msgid "unknown interface type %s"
-msgstr "தெரியாத இடைமுக வகை %s"
 
 #, fuzzy, c-format
 msgid "unknown interface type: '%s'"
@@ -38146,10 +37694,6 @@ msgstr "தெரியாத முகப்பு வகை '%s'"
 #, fuzzy, c-format
 msgid "unknown ip address type '%s'"
 msgstr "தெரியாத முகவரி வகை '%s'"
-
-#, c-format
-msgid "unknown memory snapshot setting '%s'"
-msgstr "தெரியாத நினைவக ஸ்னாப்ஷாட் அமைவு '%s'"
 
 #, fuzzy, c-format
 msgid "unknown memoryBacking/access/mode '%s'"
@@ -38166,10 +37710,6 @@ msgstr "தெரியாத pci மூல வகை '%s'"
 #, c-format
 msgid "unknown metadata type '%d'"
 msgstr "தெரியாத மீத்தரவு வகை '%d'"
-
-#, fuzzy, c-format
-msgid "unknown migratable value for '%s' host CPU model property"
-msgstr "%s 'type' பண்புக்கு தெரியாத மதிப்பு '%s'"
 
 #, fuzzy, c-format
 msgid "unknown migration parameter '%s'"
@@ -38189,14 +37729,6 @@ msgstr "தெரியாத மிரர் பணி வகை '%s'"
 #, c-format
 msgid "unknown mirror ready state %s"
 msgstr "தெரியாத மிரர் தயார் நிலை %s"
-
-#, fuzzy, c-format
-msgid "unknown model '%s'"
-msgstr "தெரியாத RNG மாதிரி '%s'"
-
-#, fuzzy, c-format
-msgid "unknown multidevs '%s'"
-msgstr "தெரியாத வகை '%s'"
 
 #, fuzzy, c-format
 msgid "unknown network device feature '%s'"
@@ -38225,24 +37757,12 @@ msgid "unknown partition type"
 msgstr "தெரியாத பிரிவு வகை"
 
 #, c-format
-msgid "unknown pci writeFiltering setting '%s'"
-msgstr ""
-
-#, c-format
 msgid "unknown pool format number %d"
 msgstr "துணைபுரியாத தொகுப்பக வடிவ எண் %d"
 
 #, c-format
 msgid "unknown pool format type %s"
 msgstr "தெரியாத தொகுப்பக முறை வகை %s"
-
-#, fuzzy, c-format
-msgid "unknown port isolated value '%s'"
-msgstr "தெரியாத PM நிலை மதிப்பு %s"
-
-#, fuzzy, c-format
-msgid "unknown posix lock value '%s'"
-msgstr "தெரியாத மௌஸ் பயன்முறை மதிப்பு '%s'"
 
 #, c-format
 msgid "unknown procedure: %d"
@@ -38263,21 +37783,6 @@ msgstr "தெரியாத redirdev எழுத்துக்குறி �
 msgid "unknown rng-random backend"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "unknown root element '%s' for filter binding"
-msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
-
-#, fuzzy
-msgid "unknown root element for network port"
-msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
-
-msgid "unknown root element for nw filter"
-msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
-
-#, fuzzy
-msgid "unknown root element for nwfilter binding"
-msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
-
 msgid "unknown rule action attribute value"
 msgstr "விதி செயல் பண்புருவுக்கு தெரியாத மதிப்பு"
 
@@ -38294,10 +37799,6 @@ msgstr "தெரியாத இரகசிய பயன்பாட்டு 
 #, c-format
 msgid "unknown secret usage type %s"
 msgstr "தெரியாத இரகசிய பயன்பாடு வகை %s"
-
-#, c-format
-msgid "unknown sgio mode '%s'"
-msgstr "தெரியாத sgio பயன்முறை '%s'"
 
 #, c-format
 msgid "unknown smbios mode '%s'"
@@ -38368,10 +37869,6 @@ msgid "unknown timer name '%s'"
 msgstr "தெரியாத டைமர் பெயர் '%s'"
 
 #, c-format
-msgid "unknown timer present value '%s'"
-msgstr "தெரியாத டைமர் வழங்கல் மதிப்பு '%s'"
-
-#, c-format
 msgid "unknown timer tickpolicy '%s'"
 msgstr "தெரியாத டைமர் டிக்பாலிசி '%s'"
 
@@ -38386,14 +37883,6 @@ msgstr "தெரியாத வகை '%s'"
 #, c-format
 msgid "unknown type presented to host for character device: %s"
 msgstr "எழுத்துக்குறி சாதனத்திற்கான வழங்கிக்கு தெரியாத வகை வழங்கப்பட்டது: %s"
-
-#, fuzzy, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'display'"
-msgstr "eoi பண்புருவுக்கு தெரியாத மதிப்பு: '%s'"
-
-#, fuzzy, c-format
-msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
-msgstr "eoi பண்புருவுக்கு தெரியாத மதிப்பு: '%s'"
 
 #, fuzzy, c-format
 msgid "unknown value '%s' in attribute 'usable'"
@@ -38457,10 +37946,6 @@ msgstr "தெரியாத watchdog மாதிரி '%s'"
 msgid "unknown write_policy value '%u'"
 msgstr ""
 
-#, fuzzy, c-format
-msgid "unknown xattr value '%s'"
-msgstr "தெரியாத ரோம் பார் மதிப்பு '%s'"
-
 msgid "unlimited"
 msgstr "வரம்பற்றது"
 
@@ -38477,9 +37962,6 @@ msgstr "இடைநிறுத்தப்படாதது"
 
 msgid "unplug of device was rejected by the guest"
 msgstr ""
-
-msgid "unpriv_sgio is not supported by this kernel"
-msgstr "இந்த கெர்னல் unpriv_sgio ஐ ஆதரிக்காது"
 
 #, c-format
 msgid "unprocessed hole of size %lld already in the queue"
@@ -38653,6 +38135,10 @@ msgstr "ஆதரிக்கப்படாத வட்டு சாதனம�
 msgid "unsupported disk driver %s"
 msgstr "துணைபுரியாத வட்டு வகை %s"
 
+#, c-format
+msgid "unsupported disk snapshot type '%s'"
+msgstr ""
+
 msgid "unsupported disk type"
 msgstr "ஆதரிக்கப்படாத வட்டு வகை"
 
@@ -38700,28 +38186,6 @@ msgstr ""
 msgid "unsupported filesystem type '%s'"
 msgstr ""
 
-#. *
-#. * virCheckFlags:
-#. * @supported: an OR'ed set of supported flags
-#. * @retval: return value in case unsupported flags were passed
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Exits the caller function if unsupported flags were
-#. * passed to it.
-#.
-#. *
-#. * virCheckFlagsGoto:
-#. * @supported: an OR'ed set of supported flags
-#. * @label: label to jump to on error
-#. *
-#. * To avoid memory leaks this macro has to be used before any non-trivial
-#. * code which could possibly allocate some memory.
-#. *
-#. * Returns nothing. Jumps to a label if unsupported flags were
-#. * passed to it.
-#.
 #, c-format
 msgid "unsupported flags (0x%lx) in function %s"
 msgstr "செயல்தொகுதி %2$s இல் ஆதரிக்கப்படாத கொடிகள் (0x%1$lx)"
@@ -38789,6 +38253,10 @@ msgstr "ஆதரவில்லாத நிகழ்வு ஐடி %d"
 #, c-format
 msgid "unsupported numatune mode: '%d'"
 msgstr "ஆதரிக்கப்படாத numatune பயன்முறை: '%d'"
+
+#, c-format
+msgid "unsupported nvram disk type '%s'"
+msgstr ""
 
 #, fuzzy, c-format
 msgid "unsupported nvram template format '%s'"
@@ -38897,6 +38365,9 @@ msgstr "சாதனம் '%s' இன் நேரடி புதுப்ப�
 msgid "upload file contents to a volume"
 msgstr "கோப்பின் உள்ளடக்கத்தை ஒரு பிரிவகத்திற்குப் பதிவேற்றவும்"
 
+msgid "upper boundary for worker thread pool"
+msgstr ""
+
 #, fuzzy, c-format
 msgid "uptime file has unexpected format '%s'"
 msgstr "xsd:dateTime மதிப்பு '%s' ஆனது எதிர்பார்க்காத வடிவத்திலுள்ளது"
@@ -38957,6 +38428,9 @@ msgstr ""
 
 msgid "use virDomainMigrateToURI3 for peer-to-peer migration"
 msgstr "பீர் - பீர் இடப்பெயர்ப்புக்கு virDomainMigrateToURI3 ஐப் பயன்படுத்தவும்"
+
+msgid "use zero-copy mechanism for migrating memory pages"
+msgstr ""
 
 msgid "user"
 msgstr "பயனர்"
@@ -39288,6 +38762,10 @@ msgid "video type %s is not supported by libxl"
 msgstr "பிணைய வகை %d துணைபுரியவில்லை"
 
 #, c-format
+msgid "video type '%s' doesn't support multiple 'heads'"
+msgstr ""
+
+#, c-format
 msgid "video type '%s' is only valid as primary video device"
 msgstr ""
 
@@ -39325,6 +38803,9 @@ msgstr "virDomainGetXMLDesc பாதுகாப்பு கொடியுட
 
 msgid "virDomainSnapshotGetXMLDesc with secure flag"
 msgstr "பாதுகாப்பு கொடியுடன் virDomainSnapshotGetXMLDesc"
+
+msgid "virFileDiskCopy unsupported on this platform"
+msgstr ""
 
 msgid "virFileOpenAs is not implemented for WIN32"
 msgstr "WIN32 க்கு virFileOpenAs செயல்படுத்தப்படவில்லை"
@@ -39414,6 +38895,12 @@ msgstr "ஆதரிக்கப்படாத வட்டு முகவர�
 msgid "virtio non-transitional model not supported for this qemu"
 msgstr "host%2$d இல் vport செயல்பாடு '%1$s' க்கு ஆதரவில்லை"
 
+msgid "virtio rss hash report is not supported with this QEMU binary"
+msgstr ""
+
+msgid "virtio rss is not supported with this QEMU binary"
+msgstr ""
+
 #, c-format
 msgid "virtio rx_queue_size option %d is not same with tx_queue_size %d"
 msgstr ""
@@ -39468,9 +38955,6 @@ msgstr ""
 msgid "virtio-net teaming transient interface must be type='hostdev', not '%s'"
 msgstr ""
 
-msgid "virtio-net-pci 'tx' option not supported in this QEMU binary"
-msgstr "இந்த QEMU பைனரியில் virtio-net-pci 'tx' விருப்பம் ஆதரிக்கப்படாது"
-
 msgid "virtio-pmem does not support NUMA nodes"
 msgstr ""
 
@@ -39524,6 +39008,10 @@ msgstr "QEMU இன் இந்தப் பதிப்பில் USB தி
 msgid "virtiofs only supports passthrough accessmode"
 msgstr "பாஸ்த்ரூ அணுகல்பயன்முறையை மட்டுமே ஆதரிக்கும்"
 
+#, c-format
+msgid "virtiofsd binary '%s' is not executable"
+msgstr ""
+
 msgid "virtiofsd died unexpectedly"
 msgstr ""
 
@@ -39564,6 +39052,10 @@ msgstr ""
 
 msgid "vlan trunking is not supported by SR-IOV network devices"
 msgstr "SR-IOV பிணைய சாதனங்கள் vlan trunking வசதியை ஆதரிக்காது"
+
+#, c-format
+msgid "vlanid out of range: %d"
+msgstr ""
 
 #, fuzzy
 msgid "vmcoreinfo is not available with this QEMU binary"
@@ -39616,22 +39108,6 @@ msgid "vnuma vnode %zu contains invalid pnode value '%s'"
 msgstr "டொமைன் பெயரில் தவறான எஸ்கேப் வரிசை உள்ளது"
 
 #, fuzzy, c-format
-msgid "vnuma vnode %zu pnode '%s' too long for destination"
-msgstr "இலக்குக்கு, புலம் '%s' மிக நீளமானது"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu size '%s' too long for destination"
-msgstr "இலக்குக்கு, புலம் '%s' மிக நீளமானது"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu vcpus '%s' too long for destination"
-msgstr "CPU மாடல் %s ஆனது இலக்கிற்கு மிகப் பெரியதாக உள்ளது"
-
-#, fuzzy, c-format
-msgid "vnuma vnode %zu vdistances '%s' too long for destination"
-msgstr "இலக்குக்கு, புலம் '%s' மிக நீளமானது"
-
-#, fuzzy, c-format
 msgid "vnuma vnode invalid format '%s'"
 msgstr "தவறான nvram வடிவமைப்பு: '%s'"
 
@@ -39648,9 +39124,6 @@ msgstr "தொகுதி '%s' இன்னும் ஒதுக்கீட�
 #, fuzzy, c-format
 msgid "volume '%s' is still in use."
 msgstr "தொகுதி '%s' இன்னும் ஒதுக்கீடப்படுகிறது.கிறது"
-
-msgid "volume capacity required for this pool"
-msgstr ""
 
 #, fuzzy
 msgid "volume capacity required for this storage pool"
@@ -39852,6 +39325,9 @@ msgstr "--wait ஐப் பயன்படுத்தினால், ரத�
 msgid "with redefine, set current snapshot"
 msgstr "மறுவரையறையின் போது நடப்பு ஸ்னாப்ஷாட்டை அமை"
 
+msgid "wrap xpath results in an common root element"
+msgstr ""
+
 msgid "write I/O operations limit per second"
 msgstr "ஒரு வினாடிக்கான எழுதுதல் I/O செயல்பாடுகள் வரம்பு"
 
@@ -39902,6 +39378,9 @@ msgstr "ஏற்ற xml தரவு கோப்பு"
 msgid "xml modification unsupported"
 msgstr "xml மாற்றம் செய்தலுக்கு ஆதரவில்லை"
 
+msgid "xpath expression to filter the XML document"
+msgstr ""
+
 #, c-format
 msgid "xsd:dateTime value '%s' has unexpected format"
 msgstr "xsd:dateTime மதிப்பு '%s' ஆனது எதிர்பார்க்காத வடிவத்திலுள்ளது"
@@ -39916,6 +39395,9 @@ msgstr "ஆம்"
 msgid "zPCI %s %o is already reserved"
 msgstr "ஏற்கனவே ஒரு குளோஸ் கால்பேக் பதிவு செய்யப்பட்டுள்ளது"
 
+msgid "zero-copy is only available for parallel migration"
+msgstr ""
+
 #, c-format
 msgid "zone %s requested for network %s but firewalld is not active"
 msgstr ""
@@ -39923,6 +39405,792 @@ msgstr ""
 #, c-format
 msgid "{[--%s] <string>}..."
 msgstr "{[--%s] <string>}..."
+
+#, fuzzy
+#~ msgid "%s 3d acceleration is not supported"
+#~ msgstr "செயல்பாட்டிற்கு ஆதரவு கிடையாது"
+
+#, fuzzy
+#~ msgid ""
+#~ "'reconnect' attribute  unsupported 'server' mode for <interface "
+#~ "type='vhostuser'>"
+#~ msgstr ""
+#~ "<interface type='vhostuser'> க்கு <source> 'type' பண்புக்கூறு "
+#~ "குறிப்பிடப்படவில்லை"
+
+#~ msgid "(network status)"
+#~ msgstr "(பிணைய நிலை)"
+
+#, fuzzy
+#~ msgid "(pool state)"
+#~ msgstr "நிலையில்லை"
+
+#, fuzzy
+#~ msgid "CCW address type is not supported by this QEMU"
+#~ msgstr "இந்த QEMU பைனரியில் மறுதொடக்க நேரக் கடப்புக்கு ஆதரவில்லை"
+
+#, fuzzy
+#~ msgid "Cannot parse <local> 'port' attribute with socket interface"
+#~ msgstr "<source> 'துறை' மதிப்பை சாக்கெட் முகப்புடன் பகுக்க முடியாது"
+
+#~ msgid "Cannot parse <source> 'port' attribute with socket interface"
+#~ msgstr "<source> 'துறை' மதிப்பை சாக்கெட் முகப்புடன் பகுக்க முடியாது"
+
+#, fuzzy
+#~ msgid "No <local> 'address' attribute specified with socket interface"
+#~ msgstr "<source> 'முகவரி' மதிப்புரு சாக்கெட் முகப்புடன் இல்லை"
+
+#, fuzzy
+#~ msgid "No <local> 'port' attribute specified with socket interface"
+#~ msgstr "<source> 'துறை' அளவுரு சாக்கெட் முகப்புடன் குறிப்பிடப்படவில்லை"
+
+#~ msgid "No <source> 'address' attribute specified with socket interface"
+#~ msgstr "<source> 'முகவரி' மதிப்புரு சாக்கெட் முகப்புடன் இல்லை"
+
+#~ msgid ""
+#~ "No <source> 'bridge' attribute specified with <interface type='bridge'/>"
+#~ msgstr ""
+#~ "<source> 'bridge' பண்பானது <interface type='bridge'/>உடன் குறிப்பிடப்படவில்லை"
+
+#~ msgid ""
+#~ "No <source> 'dev' attribute specified with <interface type='direct'/>"
+#~ msgstr ""
+#~ "<source> 'dev'  பண்பானது <interface type='direct'/>உடன் குறிப்பிடப்படவில்லை"
+
+#~ msgid ""
+#~ "No <source> 'mode' attribute specified with <interface type='vhostuser'/>"
+#~ msgstr ""
+#~ "<interface type='vhostuser'/> உடன் <source> 'mode' பண்புக்கூறு "
+#~ "குறிப்பிடப்படவில்லை"
+
+#~ msgid ""
+#~ "No <source> 'name' attribute specified with <interface type='internal'/>"
+#~ msgstr ""
+#~ "<source> 'name' பண்பு <interface type='internal'/>உடன் குறிப்பிடப்பவில்லை"
+
+#~ msgid ""
+#~ "No <source> 'network' attribute specified with <interface type='network'/>"
+#~ msgstr ""
+#~ "<source> 'பிணைய' அளவுரு <interface type='network'/>உடன் குறிப்பிடப்படவில்லை"
+
+#~ msgid ""
+#~ "No <source> 'path' attribute specified with <interface type='vhostuser'/>"
+#~ msgstr ""
+#~ "<interface type='vhostuser'/> உடன் <source> 'path' பண்புக்கூறு "
+#~ "குறிப்பிடப்படவில்லை"
+
+#~ msgid "No <source> 'port' attribute specified with socket interface"
+#~ msgstr "<source> 'துறை' அளவுரு சாக்கெட் முகப்புடன் குறிப்பிடப்படவில்லை"
+
+#~ msgid ""
+#~ "No <source> 'type' attribute specified for <interface type='vhostuser'>"
+#~ msgstr ""
+#~ "<interface type='vhostuser'> க்கு <source> 'type' பண்புக்கூறு "
+#~ "குறிப்பிடப்படவில்லை"
+
+#~ msgid "Root element is not 'node'"
+#~ msgstr "ரூட் உருப்படி ஒரு 'முனை' இல்லை"
+
+#, fuzzy
+#~ msgid "Unable to parse port id '%s'"
+#~ msgstr "class id ' %s' ஐ பாகுபடுத்த முடியவில்லை"
+
+#~ msgid "Unknown mode has been specified"
+#~ msgstr "தெரியாத பயன்முறை குறிப்பிடப்பட்டுள்ளது"
+
+#~ msgid ""
+#~ "Wrong <source> 'mode' attribute specified with <interface "
+#~ "type='vhostuser'/>"
+#~ msgstr ""
+#~ "<interface type='vhostuser'/> உடன் தவறான <source> 'mode' பண்புக்கூறு "
+#~ "குறிப்பிடப்பட்டுள்ளது"
+
+#, fuzzy
+#~ msgid "XML does not contain expected 'cookie' element"
+#~ msgstr "XML இல் எதிர்பார்த்த 'cpu' கூறு இல்லை"
+
+#, fuzzy
+#~ msgid "domainbackup"
+#~ msgstr "domainsnapshot"
+
+#, fuzzy
+#~ msgid "domaincheckpoint"
+#~ msgstr "டொமைன் vcpu எண்ணிக்கைகள்"
+
+#~ msgid "domainsnapshot"
+#~ msgstr "domainsnapshot"
+
+#, fuzzy
+#~ msgid "invalid 'managed' value '%s'"
+#~ msgstr "தவறான %s மதிப்பு: '%s'"
+
+#~ msgid "unexpected root element <%s> expecting <device>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <device>"
+
+#~ msgid "unexpected root element <%s>, expecting <domain>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s>, எதிர்பார்ப்பது <domain>"
+
+#~ msgid "unexpected root element <%s>, expecting <domstatus>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <domstatus>"
+
+#~ msgid "unexpected root element <%s>, expecting <interface>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <interface>"
+
+#~ msgid "unexpected root element <%s>, expecting <network>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <network>"
+
+#~ msgid "unexpected root element <%s>, expecting <pool>"
+#~ msgstr "எதிர்பார்க்காத மூல கூறு <%s>, எதிர்பார்ப்பது <pool>"
+
+#~ msgid "unexpected root element <%s>, expecting <qemuCaps>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <qemuCaps>"
+
+#~ msgid "unexpected root element <%s>, expecting <secret>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <secret>"
+
+#~ msgid "unexpected root element <%s>, expecting <volume>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு <%s> எதிர்பார்ப்பது <volume>"
+
+#~ msgid "unexpected root element, expecting <domain>"
+#~ msgstr "எதிர்பார்க்காத மூல உறுப்பு, எதிர்பார்ப்பது <domain>"
+
+#, fuzzy
+#~ msgid "unexpected root element: '%s'"
+#~ msgstr "எதிர்பாராத தரவு '%s'"
+
+#, fuzzy
+#~ msgid "unknown root element '%s' for filter binding"
+#~ msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
+
+#, fuzzy
+#~ msgid "unknown root element for network port"
+#~ msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
+
+#~ msgid "unknown root element for nw filter"
+#~ msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
+
+#, fuzzy
+#~ msgid "unknown root element for nwfilter binding"
+#~ msgstr "nw வடிப்பானுக்கு தெரியாத மூலக் கூறு"
+
+#~ msgid "Cannot parse controller index %s"
+#~ msgstr "கட்டுப்படுத்தி அட்டவணை %sஐ பாகுபடுத்த முடியவில்லை"
+
+#, fuzzy
+#~ msgid "IOThreads for virtio-scsi not supported for this QEMU"
+#~ msgstr "இந்த QEMU க்கு IOThreads ஆதரிக்கப்படாது"
+
+#~ msgid "Unable to init qemu driver mutexes"
+#~ msgstr "qemu இயக்கி மியூட்டெக்சஸை init செய்ய முடியவில்லை"
+
+#, fuzzy
+#~ msgid "append not supported in this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் %s ஆதரிக்கப்படாது"
+
+#, fuzzy
+#~ msgid "logfile not supported in this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் %s ஆதரிக்கப்படாது"
+
+#~ msgid "terminated abnormally"
+#~ msgstr "வழக்கத்திற்கு மாறாக முடிக்கப்பட்டது"
+
+#, fuzzy
+#~ msgid "the packed setting is not supported with this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் 64-பிட் PCI துளை அளவு அமைவுக்கு ஆதரவில்லை"
+
+#~ msgid "unexpected exit status %d"
+#~ msgstr "எதிர்பாராத வெளியேற்ற நிலை %d"
+
+#, fuzzy
+#~ msgid "'ssh' protocol is not yet supported"
+#~ msgstr "fs வடிவமைப்பு %s ஆதரிக்கப்படாது"
+
+#~ msgid "64-bit PCI hole size setting is not supported with this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் 64-பிட் PCI துளை அளவு அமைவுக்கு ஆதரவில்லை"
+
+#, fuzzy
+#~ msgid "Incorrect disk format"
+#~ msgstr "தவறான தரவு வகை"
+
+#, fuzzy
+#~ msgid "LUKS encrypted QCOW2 images are not supported by this QEMU"
+#~ msgstr "இந்த QEMU இல் vnc கிராஃபிக்ஸ் ஆதரிக்கப்படாது"
+
+#, fuzzy
+#~ msgid "NBD migration with TLS is not supported"
+#~ msgstr "cpu affinity துணைபுரியவில்லை"
+
+#, fuzzy
+#~ msgid ""
+#~ "Selecting disks to migrate is not implemented for tunnelled migration"
+#~ msgstr "டன்னல்டு இடப்பெயர்ப்புக்கு பைப்பை உருவாக்க முடியாது"
+
+#, fuzzy
+#~ msgid "Unexpected network protocol '%s'"
+#~ msgstr "எதிர்பார்க்காத விதி நெறிமுறை %d"
+
+#~ msgid "Unknown TPM backend type '%s'"
+#~ msgstr "தெரியாத TPM பின்புல முறைமை வகை '%s'"
+
+#~ msgid "Unknown TPM frontend model '%s'"
+#~ msgstr "தெரியாத TPM முன்னமைப்பு மாதிரியம் '%s'"
+
+#, fuzzy
+#~ msgid "Unsupported TPM version '%s'"
+#~ msgstr "ஆதரிக்கப்படாத பஸ் வகை '%s'"
+
+#, fuzzy
+#~ msgid "Unsupported interface %s for TPM 1.2"
+#~ msgstr "ஆதரிக்கப்படாத இடைமுக வகை %s"
+
+#, fuzzy
+#~ msgid "VxHS protocol does not support URI syntax"
+#~ msgstr "பூல்லானது தொகுப்பகம் அழித்தலுக்கு துணைபுரிவதில்லை"
+
+#, fuzzy
+#~ msgid "active commit not supported with this QEMU binary"
+#~ msgstr "இந்த QEMU binary உடன் SATA துணைபுரியவில்லை"
+
+#, fuzzy
+#~ msgid "backingStore of mirror target is not supported by this qemu"
+#~ msgstr "இந்த QEMU இல் ide வட்டுக்கு wwn ஐ அமைக்க ஆதரவில்லை"
+
+#~ msgid "deleting %s drive failed: %s"
+#~ msgstr "%s இயக்கியை அழித்தல் தோல்வி: %s"
+
+#, fuzzy
+#~ msgid "deleting committed images is not supported by this VM"
+#~ msgstr "இந்த QEMU இல் ide வட்டுக்கு wwn ஐ அமைக்க ஆதரவில்லை"
+
+#~ msgid ""
+#~ "deleting drive is not supported.  This may leak data if disk is reassigned"
+#~ msgstr ""
+#~ "இயக்ககத்தை நீக்குவதற்கு ஆதரவில்லை. வட்டு மீண்டும் நிர்ணயிக்கப்பட்டால் இதனால் தரவு கசிவு "
+#~ "ஏற்படலாம்"
+
+#, fuzzy
+#~ msgid "detect_zeroes is not supported by this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
+
+#~ msgid "discard is not supported by this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
+
+#~ msgid "drive hotplug is not supported"
+#~ msgstr "இயக்கி ஹாட்பிளக்குக்கு ஆதரவில்லை"
+
+#~ msgid "dump-guest-memory is not supported"
+#~ msgstr "dump-guest-memory க்கு ஆதரவில்லை"
+
+#~ msgid ""
+#~ "external active snapshots are not supported on 'network' disks using '%s' "
+#~ "protocol"
+#~ msgstr ""
+#~ "'%s' நெறிமுறையைப் பயன்படுத்தும் 'network' வட்டுகளில் வெளிப்புற செயலில் உள்ள "
+#~ "ஸ்னாப்ஷாட்டுகள் ஆதரிக்கப்படாது"
+
+#, fuzzy
+#~ msgid "external snapshot for readonly disk %s is not supported"
+#~ msgstr "வட்டு %s க்கான வெளிப்புற ஸ்னாப்ஷாட் வடிவம் ஆதரிக்கப்படாது: %s"
+
+#, fuzzy
+#~ msgid "http cookies are not supported by this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
+
+#~ msgid "missing TPM device backend type"
+#~ msgstr "TPM சாதன பின்புல முறைமை வகை விடுபட்டுள்ளது"
+
+#~ msgid "missing disk source for 'sheepdog' protocol"
+#~ msgstr "'sheepdog' நெறிமுறைக்கான வட்டு மூலம் விடுபட்டுள்ளது"
+
+#~ msgid "monitor socket did not show up"
+#~ msgstr "மானிட்டர் சாக்கெட் காட்டவில்லை"
+
+#~ msgid "nbd does not support transport '%s'"
+#~ msgstr "nbd ஆனது போக்குவரத்து '%s' ஐ ஆதரிக்காது"
+
+#, fuzzy
+#~ msgid "non-file destination not supported yet"
+#~ msgstr "வட்டு ஸ்னாப்ஷாட்டுகளுக்கு இன்னும் ஆதரவு இல்லை"
+
+#~ msgid "open disk image file failed"
+#~ msgstr "வட்டு படக் கோப்பைத் திறத்தல் தோல்வி"
+
+#~ msgid "protocol 'sheepdog' accepts up to one host"
+#~ msgstr "நெறிமுறை 'sheepdog' ஒரு வழங்கியை மட்டுமே ஏற்கும்"
+
+#, fuzzy
+#~ msgid "qemu block name '%s' doesn't match expected '%s'"
+#~ msgstr "இலக்கு டொமைன் பெயர் '%s' ஆனது மூலம் '%s' உடன் பொருந்தவில்லை"
+
+#, fuzzy
+#~ msgid "readahead setting is not supported with this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் vhost-net க்கு ஆதரவில்லை"
+
+#~ msgid "socket attribute required for unix transport"
+#~ msgstr "unix போக்குவரத்துக்கு சாக்கெட் பண்புக்கூறு தேவைப்பட்டது"
+
+#, fuzzy
+#~ msgid "ssl verification setting is not supported by this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் ஸ்பாஷ் நேர முடிவுக்கு ஆதரவில்லை"
+
+#, fuzzy
+#~ msgid "storage slice is not supported by this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரி nvram சாதனத்தை ஆதரிக்காது"
+
+#, fuzzy
+#~ msgid "this QEMU binary doesn't support relative block pull/rebase"
+#~ msgstr "QEMU பைனரியானது %s ஐ ஆதரிக்காது"
+
+#, fuzzy
+#~ msgid "this qemu does not support setting device threshold"
+#~ msgstr "ps2 %s உள்ளீடு சாதனத்திற்கு துணைபுரியவில்லை"
+
+#, fuzzy
+#~ msgid "this qemu doesn't support relative block commit"
+#~ msgstr "இந்த qemu ஆனது rng-egd பின்புல முறைமையை ஆதரிக்காது"
+
+#, fuzzy
+#~ msgid "timeout setting is not supported with this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் vhost-net க்கு ஆதரவில்லை"
+
+#~ msgid "tray status 'open' is invalid for block type disk"
+#~ msgstr "டிரே நிலை 'open' ஆனது ப்ளாக் வகை வட்டுக்கு தவறானது"
+
+#~ msgid "tray status 'open' is invalid for block type volume"
+#~ msgstr "பிரிவகம் என்ற தொகுப்பு வகைக்கு ட்ரே நிலை 'open' என்பது செல்லாது"
+
+#, fuzzy
+#~ msgid "unable to find backing name for device %s"
+#~ msgstr "'%s' க்கு தடுப்புப் பயன்முறையை அமைக்க முடியவில்லை"
+
+#~ msgid "virtio-net-pci 'tx' option not supported in this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரியில் virtio-net-pci 'tx' விருப்பம் ஆதரிக்கப்படாது"
+
+#~ msgid "Unable to generate diffie-hellman parameters: %s"
+#~ msgstr "diffie-hellman அளவுருக்களை உருவாக்க முடியவில்லை: %s"
+
+#~ msgid "Unable to initialize diffie-hellman parameters: %s"
+#~ msgstr "diffie-hellman அளவுருக்களைத் துவக்க முடியவில்லை: %s"
+
+#, fuzzy
+#~ msgid "cdrom/floppy device hotplug isn't supported"
+#~ msgstr "இயக்கி ஹாட்பிளக்குக்கு ஆதரவில்லை"
+
+#, fuzzy
+#~ msgid "storage pool protocol ver '%s' is malformed"
+#~ msgstr "சேமிப்பக தொகுப்பக '%s'ல் ஏற்கனவே செயலில் உள்ளது"
+
+#~ msgid "unknown disk type '%s'"
+#~ msgstr "தெரியாத வட்டு வகை '%s'"
+
+#~ msgid "'startupPolicy' is only valid for 'file' type volume"
+#~ msgstr "'startupPolicy' ஆனது 'file' வகை பிரிவகத்திற்கு மட்டுமே செல்லும்"
+
+#, fuzzy
+#~ msgid "Could not find placement for v1 controller %s at %s"
+#~ msgstr "மாறி '%s' க்கு ஒரு மதிப்பைக் கண்டுபிடிக்க முடியவில்லை"
+
+#~ msgid "Setting disk %s is not allowed for disk of network type"
+#~ msgstr "பிணைய வகை வட்டுக்கு வட்டு %s ஐ அமைக்க அனுமட்ஹியில்லை"
+
+#~ msgid "Setting disk 'requisite' is allowed only for cdrom or floppy"
+#~ msgstr ""
+#~ "cdrom அலல்து நெகிழ்வட்டு ஆகியவற்றுக்கு மட்டுமே வட்டு 'requisite' ஐ அமைத்தலுக்கு  "
+#~ "அனுமதியுண்டு"
+
+#, fuzzy
+#~ msgid "backup job"
+#~ msgstr "பின்புலப் பணி"
+
+#~ msgid "domain core dump job"
+#~ msgstr "டொமைன் கோர் டம்ப் பணி"
+
+#~ msgid "domain save job"
+#~ msgstr "டொமைன் சேமித்தல் பணி"
+
+#~ msgid "failed due to I/O error"
+#~ msgstr "I/O பிழையின் காரணமாகத் தோல்வியடைந்தது"
+
+#~ msgid "is not active"
+#~ msgstr "செயலில் இல்லை"
+
+#~ msgid "job"
+#~ msgstr "பணி"
+
+#, fuzzy
+#~ msgid "migration in job"
+#~ msgstr "இடப்பெயர்ப்பு"
+
+#, fuzzy
+#~ msgid "migration out job"
+#~ msgstr "இடப்பெயர்ப்பு"
+
+#~ msgid "migration was active, but no RAM info was set"
+#~ msgstr "நகருதல் செயல்படுத்தப்பட்டது, ஆனால் RAM தகவல் அமைக்கப்படவில்லை"
+
+#, fuzzy
+#~ msgid "snapshot job"
+#~ msgstr "ஸ்னாப்ஷாட்டின் பெயர்"
+
+#, fuzzy
+#~ msgid "start job"
+#~ msgstr "தொடங்கப்பட்டது"
+
+#~ msgid "unexpectedly failed"
+#~ msgstr "எதிரிபாராமல் தோல்வியடைந்தது"
+
+#~ msgid "%s: unable to determine access mode of fd %d"
+#~ msgstr "%s: fd %d இன் அணுகல் பயன்முறையைத் தீர்மானிக்க முடியவில்லை"
+
+#~ msgid "Can only open VNC or SPICE graphics backends, not %s"
+#~ msgstr ""
+#~ "VNC அல்லது SPICE கிராஃபிக் பின்புல முறைமைகளையே திறக்க முடியும், %s ஐ திறக்க "
+#~ "முடியாது"
+
+#~ msgid "Failed to release port %d"
+#~ msgstr "%d முனையத்தை விடுவிப்பதில் தோல்வி"
+
+#, fuzzy
+#~ msgid "%s: failed to communicate with bridge helper: %s%s"
+#~ msgstr "%s: பதிவு கோப்பினை எழுத முடியவில்லை: %s"
+
+#, fuzzy
+#~ msgid "HTP resizing is not supported by this QEMU binary"
+#~ msgstr "இந்த QEMU பைனரி அப்புறப்படுத்தலை ஆதரிக்காது"
+
+#, fuzzy
+#~ msgid "failed to create channel dir '%s': %s"
+#~ msgstr "சேமிப்பக கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+
+#~ msgid "failed to create dump dir '%s': %s"
+#~ msgstr "டம்ப் dir '%s' ஐ உருவாக்குவதில் தோல்வி: %s"
+
+#~ msgid "failed to create lib dir '%s': %s"
+#~ msgstr "lib கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+
+#~ msgid "failed to create log dir '%s': %s"
+#~ msgstr "பதிவுக் கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+
+#~ msgid "failed to create save dir '%s': %s"
+#~ msgstr "சேமிப்பக கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+
+#~ msgid "failed to create state dir '%s': %s"
+#~ msgstr "நிலை கோப்பகம் '%s' ஐ உருவாக்குவதில் தோல்வியடைந்தது: %s"
+
+#~ msgid "pci device assignment backend driver (e.g. 'vfio' or 'kvm')"
+#~ msgstr "pci சாதன ஒதுக்கம் பின்புல முறைமை இயக்கி (எ.கா. 'vfio' அல்லது 'kvm')"
+
+#~ msgid "Call to utsname failed: %d"
+#~ msgstr "utsname க்கான அழைப்பு தோல்வியடைந்தது: %d"
+
+#~ msgid "Cannot parse version string '%s'"
+#~ msgstr "பதிபு சரம் '%s' ஐப் பாகுபடுத்த முடியவில்லை"
+
+#~ msgid "Could not determine kernel version from string %s"
+#~ msgstr "சரம் %s இலிருந்து கெர்னல் பதிப்பைத் தீர்மானிக்க முடியவில்லை"
+
+#~ msgid "Failed to kill process %lld: %s"
+#~ msgstr "செயலாக்கம் %lld ஐ முடிப்பது தோல்வியடைந்தது: %s"
+
+#~ msgid "No output from iptables --version"
+#~ msgstr "iptables --version இலிருந்து வெளியீடு இல்லை"
+
+#~ msgid "fseek failed"
+#~ msgstr "fseek தோல்வியடைந்தது"
+
+#~ msgid "interface name %s does not fit into buffer "
+#~ msgstr "இடைமுகம் %s ஆனது பஃபருக்குள் பொருந்தவில்லை"
+
+#~ msgid "unable to handle disk requests in snapshot"
+#~ msgstr "ஸ்னாப்ஷாட்டில் வட்டு கோரிக்கையை கையாள முடியவில்லை"
+
+#~ msgid "unknown disk snapshot setting '%s'"
+#~ msgstr "தெரியாத வட்டு ஸ்னாப்ஷாட் அமைவு '%s'"
+
+#~ msgid "unknown disk snapshot type '%s'"
+#~ msgstr "தெரியாத வட்டு ஸ்னாப்ஷாட் வகை '%s'"
+
+#~ msgid "unknown memory snapshot setting '%s'"
+#~ msgstr "தெரியாத நினைவக ஸ்னாப்ஷாட் அமைவு '%s'"
+
+#~ msgid "'queues' attribute must be positive number: %s"
+#~ msgstr "'queues' பண்புரு ஒரு நேர்க்குறி எண்ணாக இருக்க வேண்டும்: %s"
+
+#, fuzzy
+#~ msgid "'rx_queue_size' attribute must be positive number: %s"
+#~ msgstr "'queues' பண்புரு ஒரு நேர்க்குறி எண்ணாக இருக்க வேண்டும்: %s"
+
+#~ msgid "'sgio' is not supported for SCSI generic device yet "
+#~ msgstr "SCSI பொது சாதனத்திற்கு 'sgio' ஆதரிக்கப்படாது"
+
+#, fuzzy
+#~ msgid "'tx_queue_size' attribute must be positive number: %s"
+#~ msgstr "'queues' பண்புரு ஒரு நேர்க்குறி எண்ணாக இருக்க வேண்டும்: %s"
+
+#~ msgid "Cannot check dnsmasq binary %s"
+#~ msgstr "dnsmasq பைனரியை சோதிக்க முடியவில்லை%s"
+
+#, fuzzy
+#~ msgid "Cannot find name for FD %d socket family %d"
+#~ msgstr "நிரல் %d பதிப்பு %d ஐக் கண்டறிய முடியவில்லை"
+
+#, fuzzy
+#~ msgid "Cannot set interface MAC/vlanid to %s/%d for ifname %s vf %d"
+#~ msgstr "'%s' இல் இடைமுக MAC ஐ அமைக்க முடியாது"
+
+#, fuzzy
+#~ msgid "Invalid TSC frequency"
+#~ msgstr "தவறான டைமர் நிகழ்வெண்"
+
+#, fuzzy
+#~ msgid "Invalid TSC scaling attribute"
+#~ msgstr "தவறான ஃபால்பேக் பண்புரு"
+
+#, fuzzy
+#~ msgid "Invalid dns enable setting '%s' in network '%s'"
+#~ msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
+
+#~ msgid "Invalid dns forwardPlainNames setting '%s' in network '%s'"
+#~ msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத dns forwardPlainNames அமைவு '%s'"
+
+#, fuzzy
+#~ msgid "Invalid domain localOnly setting '%s' in network '%s'"
+#~ msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
+
+#, fuzzy
+#~ msgid "Invalid guest rx filters trust setting '%s' "
+#~ msgstr "தவறான பிணைய வடிப்பி: %s"
+
+#~ msgid "Invalid ip address prefix value"
+#~ msgstr "தவறான ip முகவரி முன்னொட்டு மதிப்பு"
+
+#, fuzzy
+#~ msgid "Invalid localPtr value '%s' in network '%s'"
+#~ msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத தாமதித்தல் மதிப்பு"
+
+#, fuzzy
+#~ msgid "Invalid managed setting '%s' in network port"
+#~ msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
+
+#~ msgid "Invalid match attribute for CPU specification"
+#~ msgstr "CPU குறிப்பிடுதலுக்கான தவறான பொருந்தும் பண்பு"
+
+#~ msgid "Invalid memory core dump attribute value '%s'"
+#~ msgstr "செல்லுபடியாகாத நினைவக கோர் டம்ப் பண்புரு மதிப்பு '%s'"
+
+#, fuzzy
+#~ msgid "Invalid network prt plug type '%s'"
+#~ msgstr "தவறான பிணைய வடிப்பி: %s"
+
+#, fuzzy
+#~ msgid "Invalid trustGuestRxFilters setting '%s' in network '%s'"
+#~ msgstr "பிணையம் '%s' இல் செல்லுபடியாகாத ipv6 அமைப்பு '%s'"
+
+#, fuzzy
+#~ msgid "KVM is not supported by '%s' on this host"
+#~ msgstr "Raw I/O இந்த இயங்குதளத்தில் ஆதரிக்கப்படாது"
+
+#, fuzzy
+#~ msgid "Missing 'model' attribute in mediated device's <hostdev> element"
+#~ msgstr "இடைமுகத்தின் <actual> கூறில் வகை பண்புரு இல்லை"
+
+#~ msgid "Target timer presence %d does not match source %d"
+#~ msgstr "இலக்கு timer presence  %d ஆனது மூலம் %d உடன் பொருந்தவில்லை"
+
+#, fuzzy
+#~ msgid "Unable to close file '%s'"
+#~ msgstr "கோப்பு %s ஐ மூட முடியவில்லை"
+
+#~ msgid "Unable to get device ID '%s'"
+#~ msgstr "சாதன ID '%s' ஐப் பெற முடியவில்லை"
+
+#~ msgid "Unable to get minor number of device '%s'"
+#~ msgstr "சாதனம் '%s' இன் மைனர் எண்ணிக்கையைப் பெற முடியவில்லை"
+
+#, fuzzy
+#~ msgid "Unexpected socket family %d"
+#~ msgstr "எதிர்பார்க்காத மூலப் பயன்முறை %d"
+
+#~ msgid "Unknown PCI device <driver name='%s'/> has been specified"
+#~ msgstr "தெரியாத PCI சாதனம் <driver name='%s'/> குறிப்பிடப்பட்டுள்ளது"
+
+#~ msgid "Unknown interface <driver name='%s'> has been specified"
+#~ msgstr "தெரியாத இடைமுகம் <driver name='%s'> குறிப்பிடப்பட்டுள்ளது"
+
+#~ msgid "Unknown interface <driver txmode='%s'> has been specified"
+#~ msgstr "தெரியாத இடைமுகம் <driver txmode='%s'> குறிப்பிடப்பட்டுள்ளது"
+
+#, fuzzy
+#~ msgid "cannot parse cache mode '%s' for virtiofs"
+#~ msgstr "RAM கோப்பு முறைமைக்கு '%s' ஐப் பயன்படுத்தி பாகுபடுத்த முடியாது"
+
+#~ msgid "dnsmasq binary %s is not executable"
+#~ msgstr "dnsmasq பைனரி %s ஆனது செயல்படுத்தக்கூடியதல்ல"
+
+#~ msgid "failed to parse value of %s"
+#~ msgstr "%s இன் மதிப்பை பாகுபடுத்துவதில் தோல்வியடைந்தது"
+
+#~ msgid "interface misses the type attribute"
+#~ msgstr "பண்பு வகையில் இடைமுகத்தை விடுக்கிறது"
+
+#, fuzzy
+#~ msgid "invalid allowReboot value '%s'"
+#~ msgstr "தவறான இடைநிலை மதிப்பு '%s'"
+
+#, fuzzy
+#~ msgid "invalid migratability value for host CPU model"
+#~ msgstr "தொடக்க CPU க்கான மதிப்பு செல்லாதது"
+
+#, fuzzy
+#~ msgid "invalid or missing decode/guest attribute in CPU model %s"
+#~ msgstr "CPU டோபாலஜியில் 'குறியீடுகள்' பண்பு விடுபட்டுள்ளது"
+
+#, fuzzy
+#~ msgid "invalid or missing decode/host attribute in CPU model %s"
+#~ msgstr "CPU டோபாலஜியில் 'குறியீடுகள்' பண்பு விடுபட்டுள்ளது"
+
+#, fuzzy
+#~ msgid "invalid value for 'managed': %s"
+#~ msgstr "'தனிப்பட்டதற்கு' தவறான மதிப்பு"
+
+#, fuzzy
+#~ msgid "missing @managed attribute for <reservations/>"
+#~ msgstr "RAM கோப்பு முறைமைக்கு 'usage' பண்புரு இல்லை"
+
+#~ msgid "missing boot device"
+#~ msgstr "பூட் சாதனம் விடுபட்டுள்ளது"
+
+#~ msgid "sgio of shared disk '%s' conflicts with other active domains"
+#~ msgstr ""
+#~ "பகிரப்பட்ட வட்டு '%s' இன் sgio ஆனது மற்ற செயலில் உள்ள டொமைன்களுடன் முரண்படுகிறது"
+
+#~ msgid ""
+#~ "sgio of shared disk 'pool=%s' 'volume=%s' conflicts with other active "
+#~ "domains"
+#~ msgstr ""
+#~ "பகிரப்பட்ட வட்டு 'pool=%s' 'volume=%s' இன் sgio ஆனது மற்ற செயலில் உள்ளடொமைன்களுடன் "
+#~ "முரண்படுகிறது"
+
+#, fuzzy
+#~ msgid "swtpm failed to start"
+#~ msgstr "விருந்தினர் %s ஐ துவங்குவதில் தோல்வி"
+
+#, fuzzy
+#~ msgid "this version of libxenlight does not support backend domain name"
+#~ msgstr ""
+#~ "libxenlight இன் இப்பதிப்பு வட்டு 'discard' விருப்பத்தை அனுப்புவதை ஆதரிக்காது"
+
+#~ msgid "unexpected timer mode %d"
+#~ msgstr "எதிர்பார்க்காத டைமர் பயன்முறை %d"
+
+#~ msgid "unexpected timer name %d"
+#~ msgstr "எதிர்பார்க்காத டைமர் பெயர் %d"
+
+#~ msgid "unexpected timer tickpolicy %d"
+#~ msgstr "தெரியாத டைமர் டிக்பாலிசி  %d"
+
+#~ msgid "unexpected timer track %d"
+#~ msgstr "எதிர்பார்க்காத டைமர் ட்ராக் %d"
+
+#~ msgid "unknown PM state value %s"
+#~ msgstr "தெரியாத PM நிலை மதிப்பு %s"
+
+#, fuzzy
+#~ msgid "unknown accel2d value '%s'"
+#~ msgstr "தெரியாத enable மதிப்பு '%s'"
+
+#, fuzzy
+#~ msgid "unknown accel3d value '%s'"
+#~ msgstr "தெரியாத enable மதிப்பு '%s'"
+
+#~ msgid "unknown accessmode '%s'"
+#~ msgstr "தெரியாத அணுகல் பயன்முறை '%s'"
+
+#~ msgid "unknown boot device '%s'"
+#~ msgstr "தெரியாத பூட் சாதனம் '%s'"
+
+#~ msgid "unknown dhcp peerdns value %s"
+#~ msgstr "தெரியாத dhcp peerdns மதிப்பு %s"
+
+#~ msgid "unknown filesystem type '%s'"
+#~ msgstr "தெரியாத கோப்புகணினி வகை '%s'"
+
+#, fuzzy
+#~ msgid "unknown flock value '%s'"
+#~ msgstr "தெரியாத முழுத்திரை மதிப்பு '%s'"
+
+#, fuzzy
+#~ msgid "unknown hostdev model '%s'"
+#~ msgstr "தெரியாத hostdev முறைமை '%s'"
+
+#~ msgid "unknown hostdev rawio setting '%s'"
+#~ msgstr "தெரியாத ஹோஸ்ட்டெவ் rawio அமைவு '%s'"
+
+#~ msgid "unknown interface event_idx mode '%s'"
+#~ msgstr "தெரியாத இடைமுக event_idx பயன்முறை '%s'"
+
+#~ msgid "unknown interface ioeventfd mode '%s'"
+#~ msgstr "தெரியாத இடைமுக ioeventfd பயன்முறை '%s'"
+
+#~ msgid "unknown interface type %s"
+#~ msgstr "தெரியாத இடைமுக வகை %s"
+
+#, fuzzy
+#~ msgid "unknown migratable value for '%s' host CPU model property"
+#~ msgstr "%s 'type' பண்புக்கு தெரியாத மதிப்பு '%s'"
+
+#, fuzzy
+#~ msgid "unknown model '%s'"
+#~ msgstr "தெரியாத RNG மாதிரி '%s'"
+
+#, fuzzy
+#~ msgid "unknown multidevs '%s'"
+#~ msgstr "தெரியாத வகை '%s'"
+
+#, fuzzy
+#~ msgid "unknown port isolated value '%s'"
+#~ msgstr "தெரியாத PM நிலை மதிப்பு %s"
+
+#, fuzzy
+#~ msgid "unknown posix lock value '%s'"
+#~ msgstr "தெரியாத மௌஸ் பயன்முறை மதிப்பு '%s'"
+
+#~ msgid "unknown sgio mode '%s'"
+#~ msgstr "தெரியாத sgio பயன்முறை '%s'"
+
+#~ msgid "unknown timer present value '%s'"
+#~ msgstr "தெரியாத டைமர் வழங்கல் மதிப்பு '%s'"
+
+#, fuzzy
+#~ msgid "unknown value '%s' for <hostdev> attribute 'display'"
+#~ msgstr "eoi பண்புருவுக்கு தெரியாத மதிப்பு: '%s'"
+
+#, fuzzy
+#~ msgid "unknown value '%s' for <hostdev> attribute 'ramfb'"
+#~ msgstr "eoi பண்புருவுக்கு தெரியாத மதிப்பு: '%s'"
+
+#, fuzzy
+#~ msgid "unknown xattr value '%s'"
+#~ msgstr "தெரியாத ரோம் பார் மதிப்பு '%s'"
+
+#~ msgid "unpriv_sgio is not supported by this kernel"
+#~ msgstr "இந்த கெர்னல் unpriv_sgio ஐ ஆதரிக்காது"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu pnode '%s' too long for destination"
+#~ msgstr "இலக்குக்கு, புலம் '%s' மிக நீளமானது"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu size '%s' too long for destination"
+#~ msgstr "இலக்குக்கு, புலம் '%s' மிக நீளமானது"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu vcpus '%s' too long for destination"
+#~ msgstr "CPU மாடல் %s ஆனது இலக்கிற்கு மிகப் பெரியதாக உள்ளது"
+
+#, fuzzy
+#~ msgid "vnuma vnode %zu vdistances '%s' too long for destination"
+#~ msgstr "இலக்குக்கு, புலம் '%s' மிக நீளமானது"
 
 #~ msgid "Cannot find %s - Possibly the package isn't installed"
 #~ msgstr "%s ஐக் கண்டறிய முடியவில்லை -தொகுப்பு நிறுவப்படாமல் இருக்கலாம்"
@@ -40010,9 +40278,6 @@ msgstr "{[--%s] <string>}..."
 
 #~ msgid "Unable to wait on monitor condition"
 #~ msgstr "மானிட்டர் நிலையில் காத்திருக்க முடியவில்லை"
-
-#~ msgid "change of nodeset for running domain requires strict numa mode"
-#~ msgstr "இயங்கும் டொமைனுக்கான கனுத்தொகுப்பை மாற்ற கண்டிப்பான நியூமா பயன்முறை அவசியம்"
 
 #~ msgid "couldn't write radvd config file '%s'"
 #~ msgstr "radvd அமைவாக்கக் கோப்பு '%s' ஐ எழுத முடியவில்லை"

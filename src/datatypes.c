@@ -187,8 +187,7 @@ virConnectCloseCallbackDataReset(virConnectCloseCallbackData *closeData)
 
     closeData->freeCallback = NULL;
     closeData->opaque = NULL;
-    virObjectUnref(closeData->conn);
-    closeData->conn = NULL;
+    g_clear_pointer(&closeData->conn, virObjectUnref);
 }
 
 /**
@@ -218,71 +217,56 @@ void virConnectCloseCallbackDataRegister(virConnectCloseCallbackData *closeData,
                                          void *opaque,
                                          virFreeCallback freecb)
 {
-    virObjectLock(closeData);
+    VIR_LOCK_GUARD lock = virObjectLockGuard(closeData);
 
     if (closeData->callback != NULL) {
-        VIR_WARN("Attempt to register callback on armed"
-                 " close callback object %p", closeData);
-        goto cleanup;
+        VIR_WARN("Attempt to register callback on armed close callback object %p",
+                 closeData);
+        return;
     }
 
     closeData->conn = virObjectRef(conn);
     closeData->callback = cb;
     closeData->opaque = opaque;
     closeData->freeCallback = freecb;
-
- cleanup:
-
-    virObjectUnlock(closeData);
 }
 
 void virConnectCloseCallbackDataUnregister(virConnectCloseCallbackData *closeData,
                                            virConnectCloseFunc cb)
 {
-    virObjectLock(closeData);
+    VIR_LOCK_GUARD lock = virObjectLockGuard(closeData);
 
     if (closeData->callback != cb) {
-        VIR_WARN("Attempt to unregister different callback on "
-                 " close callback object %p", closeData);
-        goto cleanup;
+        VIR_WARN("Attempt to unregister different callback on  close callback object %p",
+                 closeData);
+        return;
     }
 
     virConnectCloseCallbackDataReset(closeData);
     closeData->callback = NULL;
-
- cleanup:
-
-    virObjectUnlock(closeData);
 }
 
 void virConnectCloseCallbackDataCall(virConnectCloseCallbackData *closeData,
                                      int reason)
 {
-    virObjectLock(closeData);
+    VIR_LOCK_GUARD lock = virObjectLockGuard(closeData);
 
     if (!closeData->conn)
-        goto exit;
+        return;
 
     VIR_DEBUG("Triggering connection close callback %p reason=%d, opaque=%p",
               closeData->callback, reason, closeData->opaque);
     closeData->callback(closeData->conn, reason, closeData->opaque);
 
     virConnectCloseCallbackDataReset(closeData);
-
- exit:
-    virObjectUnlock(closeData);
 }
 
 virConnectCloseFunc
 virConnectCloseCallbackDataGetCallback(virConnectCloseCallbackData *closeData)
 {
-    virConnectCloseFunc cb;
+    VIR_LOCK_GUARD lock = virObjectLockGuard(closeData);
 
-    virObjectLock(closeData);
-    cb = closeData->callback;
-    virObjectUnlock(closeData);
-
-    return cb;
+    return closeData->callback;
 }
 
 /**
@@ -1129,10 +1113,9 @@ static void
 virAdmConnectCloseCallbackDataDispose(void *obj)
 {
     virAdmConnectCloseCallbackData *cb_data = obj;
+    VIR_LOCK_GUARD lock = virObjectLockGuard(cb_data);
 
-    virObjectLock(cb_data);
     virAdmConnectCloseCallbackDataReset(cb_data);
-    virObjectUnlock(cb_data);
 }
 
 void
@@ -1141,8 +1124,7 @@ virAdmConnectCloseCallbackDataReset(virAdmConnectCloseCallbackData *cbdata)
     if (cbdata->freeCallback)
         cbdata->freeCallback(cbdata->opaque);
 
-    virObjectUnref(cbdata->conn);
-    cbdata->conn = NULL;
+    g_clear_pointer(&cbdata->conn, virObjectUnref);
     cbdata->freeCallback = NULL;
     cbdata->callback = NULL;
     cbdata->opaque = NULL;
@@ -1152,20 +1134,16 @@ int
 virAdmConnectCloseCallbackDataUnregister(virAdmConnectCloseCallbackData *cbdata,
                                          virAdmConnectCloseFunc cb)
 {
-    int ret = -1;
+    VIR_LOCK_GUARD lock = virObjectLockGuard(cbdata);
 
-    virObjectLock(cbdata);
     if (cbdata->callback != cb) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("A different callback was requested"));
-        goto cleanup;
+        return -1;
     }
 
     virAdmConnectCloseCallbackDataReset(cbdata);
-    ret = 0;
- cleanup:
-    virObjectUnlock(cbdata);
-    return ret;
+    return 0;
 }
 
 int
@@ -1175,14 +1153,12 @@ virAdmConnectCloseCallbackDataRegister(virAdmConnectCloseCallbackData *cbdata,
                                        void *opaque,
                                        virFreeCallback freecb)
 {
-    int ret = -1;
-
-    virObjectLock(cbdata);
+    VIR_LOCK_GUARD lock = virObjectLockGuard(cbdata);
 
     if (cbdata->callback) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("A close callback is already registered"));
-        goto cleanup;
+        return -1;
     }
 
     cbdata->conn = virObjectRef(conn);
@@ -1190,10 +1166,7 @@ virAdmConnectCloseCallbackDataRegister(virAdmConnectCloseCallbackData *cbdata,
     cbdata->opaque = opaque;
     cbdata->freeCallback = freecb;
 
-    ret = 0;
- cleanup:
-    virObjectUnlock(conn->closeCallback);
-    return ret;
+    return 0;
 }
 
 virAdmServerPtr

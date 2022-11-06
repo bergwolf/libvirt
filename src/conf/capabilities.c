@@ -37,7 +37,6 @@
 #include "virlog.h"
 #include "virnuma.h"
 #include "virstring.h"
-#include "virtypedparam.h"
 #include "viruuid.h"
 #include "virenum.h"
 #include "virutil.h"
@@ -417,8 +416,7 @@ virCapabilitiesFreeMachines(virCapsGuestMachine **machines,
     if (!machines)
         return;
     for (i = 0; i < nmachines && machines[i]; i++) {
-        virCapabilitiesFreeGuestMachine(machines[i]);
-        machines[i] = NULL;
+        g_clear_pointer(&machines[i], virCapabilitiesFreeGuestMachine);
     }
     g_free(machines);
 }
@@ -1491,15 +1489,14 @@ virCapabilitiesGetNUMADistances(int node,
                                 virNumaDistance **distancesRet,
                                 int *ndistancesRet)
 {
-    virNumaDistance *tmp = NULL;
+    g_autofree virNumaDistance *tmp = NULL;
     int tmp_size = 0;
-    int ret = -1;
-    int *distances = NULL;
+    g_autofree int *distances = NULL;
     int ndistances = 0;
     size_t i;
 
     if (virNumaGetDistances(node, &distances, &ndistances) < 0)
-        goto cleanup;
+        return -1;
 
     if (!distances) {
         *distancesRet = NULL;
@@ -1523,11 +1520,8 @@ virCapabilitiesGetNUMADistances(int node,
     *ndistancesRet = tmp_size;
     *distancesRet = g_steal_pointer(&tmp);
     tmp_size = 0;
-    ret = 0;
- cleanup:
-    VIR_FREE(distances);
-    VIR_FREE(tmp);
-    return ret;
+
+    return 0;
 }
 
 static int
@@ -1535,13 +1529,12 @@ virCapabilitiesGetNUMAPagesInfo(int node,
                                 virCapsHostNUMACellPageInfo **pageinfo,
                                 int *npageinfo)
 {
-    int ret = -1;
-    unsigned int *pages_size = NULL;
-    unsigned long long *pages_avail = NULL;
+    g_autofree unsigned int *pages_size = NULL;
+    g_autofree unsigned long long *pages_avail = NULL;
     size_t npages, i;
 
     if (virNumaGetPages(node, &pages_size, &pages_avail, NULL, &npages) < 0)
-        goto cleanup;
+        return -1;
 
     *pageinfo = g_new0(virCapsHostNUMACellPageInfo, npages);
     *npageinfo = npages;
@@ -1551,12 +1544,7 @@ virCapabilitiesGetNUMAPagesInfo(int node,
         (*pageinfo)[i].avail = pages_avail[i];
     }
 
-    ret = 0;
-
- cleanup:
-    VIR_FREE(pages_avail);
-    VIR_FREE(pages_size);
-    return ret;
+    return 0;
 }
 
 
@@ -2036,22 +2024,18 @@ virCapabilitiesHostNUMANewHost(void)
 int
 virCapabilitiesInitPages(virCaps *caps)
 {
-    int ret = -1;
-    unsigned int *pages_size = NULL;
+    g_autofree unsigned int *pages_size = NULL;
     size_t npages;
 
     if (virNumaGetPages(-1 /* Magic constant for overall info */,
                         &pages_size, NULL, NULL, &npages) < 0)
-        goto cleanup;
+        return -1;
 
     caps->host.pagesSize = g_steal_pointer(&pages_size);
     caps->host.nPagesSize = npages;
     npages = 0;
 
-    ret = 0;
- cleanup:
-    VIR_FREE(pages_size);
-    return ret;
+    return 0;
 }
 
 
@@ -2132,8 +2116,7 @@ virCapabilitiesInitResctrlMemory(virCaps *caps)
 
             VIR_APPEND_ELEMENT(caps->host.memBW.nodes, caps->host.memBW.nnodes, node);
         }
-        virCapsHostMemBWNodeFree(node);
-        node = NULL;
+        g_clear_pointer(&node, virCapsHostMemBWNodeFree);
     }
 
     if (virResctrlInfoGetMonitorPrefix(caps->host.resctrl, prefix,
@@ -2252,8 +2235,7 @@ virCapabilitiesInitCaches(virCaps *caps)
                 VIR_APPEND_ELEMENT(caps->host.cache.banks, caps->host.cache.nbanks, bank);
             }
 
-            virCapsHostCacheBankFree(bank);
-            bank = NULL;
+            g_clear_pointer(&bank, virCapsHostCacheBankFree);
         }
         if (rv < 0)
             goto cleanup;

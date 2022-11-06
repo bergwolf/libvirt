@@ -23,8 +23,6 @@
 
 #include "viralloc.h"
 #include "virerror.h"
-#include "virstring.h"
-#include "virfile.h"
 #include "virnetdevmacvlan.h"
 #include "virnetworkportdef.h"
 #include "network_conf.h"
@@ -254,56 +252,19 @@ virNetworkPortDefParseXML(xmlXPathContextPtr ctxt)
 
 
 virNetworkPortDef *
-virNetworkPortDefParseNode(xmlDocPtr xml,
-                           xmlNodePtr root)
-{
-    g_autoptr(xmlXPathContext) ctxt = NULL;
-
-    if (STRNEQ((const char *)root->name, "networkport")) {
-        virReportError(VIR_ERR_XML_ERROR,
-                       "%s",
-                       _("unknown root element for network port"));
-        return NULL;
-    }
-
-    if (!(ctxt = virXMLXPathContextNew(xml)))
-        return NULL;
-
-    ctxt->node = root;
-    return virNetworkPortDefParseXML(ctxt);
-}
-
-
-static virNetworkPortDef *
 virNetworkPortDefParse(const char *xmlStr,
                        const char *filename,
                        unsigned int flags)
 {
-    virNetworkPortDef *def = NULL;
     g_autoptr(xmlDoc) xml = NULL;
+    g_autoptr(xmlXPathContext) ctxt = NULL;
+    bool validate = flags & VIR_NETWORK_PORT_CREATE_VALIDATE;
 
-    if ((xml = virXMLParse(filename, xmlStr, _("(networkport_definition)"),
-                           "networkport.rng",
-                           flags & VIR_NETWORK_PORT_CREATE_VALIDATE))) {
-        def = virNetworkPortDefParseNode(xml, xmlDocGetRootElement(xml));
-    }
+    if (!(xml = virXMLParse(filename, xmlStr, _("(networkport_definition)"),
+                            "networkport", &ctxt, "networkport.rng", validate)))
+        return NULL;
 
-    return def;
-}
-
-
-virNetworkPortDef *
-virNetworkPortDefParseString(const char *xmlStr,
-                             unsigned int flags)
-{
-    return virNetworkPortDefParse(xmlStr, NULL, flags);
-}
-
-
-virNetworkPortDef *
-virNetworkPortDefParseFile(const char *filename)
-{
-    return virNetworkPortDefParse(NULL, filename, 0);
+    return virNetworkPortDefParseXML(ctxt);
 }
 
 
@@ -384,8 +345,11 @@ virNetworkPortDefFormatBuf(virBuffer *buf,
             break;
 
         case VIR_NETWORK_PORT_PLUG_TYPE_HOSTDEV_PCI:
-            virBufferAsprintf(buf, " managed='%s'>\n",
-                              def->plug.hostdevpci.managed ? "yes" : "no");
+            if (def->plug.hostdevpci.managed) {
+                virBufferAsprintf(buf, " managed='%s'",
+                                  virTristateBoolTypeToString(def->plug.hostdevpci.managed));
+            }
+            virBufferAddLit(buf, ">\n");
             virBufferAdjustIndent(buf, 2);
             if (def->plug.hostdevpci.driver)
                 virBufferEscapeString(buf, "<driver name='%s'/>\n",

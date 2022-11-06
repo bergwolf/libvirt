@@ -34,19 +34,14 @@
 #include "qemu_namespace.h"
 #include "qemu_security.h"
 #include "viruuid.h"
-#include "virbuffer.h"
 #include "virconf.h"
 #include "viralloc.h"
-#include "datatypes.h"
 #include "virxml.h"
 #include "virlog.h"
 #include "cpu/cpu.h"
 #include "domain_driver.h"
-#include "domain_nwfilter.h"
 #include "virfile.h"
-#include "virsocket.h"
 #include "virstring.h"
-#include "storage_conf.h"
 #include "virutil.h"
 #include "configmake.h"
 #include "security/security_util.h"
@@ -71,6 +66,14 @@ VIR_LOG_INIT("qemu.qemu_conf");
 #define QEMU_MIGRATION_PORT_MIN 49152
 #define QEMU_MIGRATION_PORT_MAX 49215
 
+VIR_ENUM_IMPL(virQEMUSchedCore,
+              QEMU_SCHED_CORE_LAST,
+              "none",
+              "vcpus",
+              "emulator",
+              "full");
+
+
 static virClass *virQEMUDriverConfigClass;
 static void virQEMUDriverConfigDispose(void *obj);
 
@@ -84,17 +87,6 @@ static int virQEMUConfigOnceInit(void)
 
 VIR_ONCE_GLOBAL_INIT(virQEMUConfig);
 
-
-static void
-qemuDriverLock(virQEMUDriver *driver)
-{
-    virMutexLock(&driver->lock);
-}
-static void
-qemuDriverUnlock(virQEMUDriver *driver)
-{
-    virMutexUnlock(&driver->lock);
-}
 
 #ifndef DEFAULT_LOADER_NVRAM
 # define DEFAULT_LOADER_NVRAM \
@@ -645,6 +637,7 @@ virQEMUDriverConfigLoadProcessEntry(virQEMUDriverConfig *cfg,
     g_auto(GStrv) hugetlbfs = NULL;
     g_autofree char *stdioHandler = NULL;
     g_autofree char *corestr = NULL;
+    g_autofree char *schedCore = NULL;
     size_t i;
 
     if (virConfGetValueStringList(conf, "hugetlbfs_mount", true,
@@ -720,6 +713,35 @@ virQEMUDriverConfigLoadProcessEntry(virQEMUDriverConfig *cfg,
                            stdioHandler);
             return -1;
         }
+    }
+
+    if (virConfGetValueString(conf, "sched_core", &schedCore) < 0)
+        return -1;
+    if (schedCore) {
+        int val = virQEMUSchedCoreTypeFromString(schedCore);
+
+        if (val < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Unknown sched_core value %s"),
+                           schedCore);
+            return -1;
+        }
+
+        if (val != QEMU_SCHED_CORE_NONE) {
+            int rv = virProcessSchedCoreAvailable();
+
+            if (rv < 0) {
+                virReportSystemError(errno, "%s",
+                                     _("Unable to detect SCHED_CORE"));
+                return -1;
+            } else if (rv == 0) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("SCHED_CORE not supported by kernel"));
+                return -1;
+            }
+        }
+
+        cfg->schedCore = val;
     }
 
     return 0;
@@ -1279,40 +1301,40 @@ virQEMUDriverConfigSetDefaults(virQEMUDriverConfig *cfg)
 
 virQEMUDriverConfig *virQEMUDriverGetConfig(virQEMUDriver *driver)
 {
-    virQEMUDriverConfig *conf;
-    qemuDriverLock(driver);
-    conf = virObjectRef(driver->config);
-    qemuDriverUnlock(driver);
-    return conf;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&driver->lock);
+
+    return virObjectRef(driver->config);
 }
 
 virDomainXMLOption *
 virQEMUDriverCreateXMLConf(virQEMUDriver *driver,
                            const char *defsecmodel)
 {
+    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
+
     virQEMUDriverDomainDefParserConfig.priv = driver;
     virQEMUDriverDomainDefParserConfig.defSecModel = defsecmodel;
+    virQEMUDriverDomainJobConfig.maxQueuedJobs = cfg->maxQueuedJobs;
+
     return virDomainXMLOptionNew(&virQEMUDriverDomainDefParserConfig,
                                  &virQEMUDriverPrivateDataCallbacks,
                                  &virQEMUDriverDomainXMLNamespace,
                                  &virQEMUDriverDomainABIStability,
-                                 &virQEMUDriverDomainSaveCookie);
+                                 &virQEMUDriverDomainSaveCookie,
+                                 &virQEMUDriverDomainJobConfig);
 }
 
 
 virCPUDef *
 virQEMUDriverGetHostCPU(virQEMUDriver *driver)
 {
-    virCPUDef *hostcpu;
+    virCPUDef *hostcpu = NULL;
 
-    qemuDriverLock(driver);
-
-    if (!driver->hostcpu)
-        driver->hostcpu = virCPUProbeHost(virArchFromHost());
-
-    hostcpu = driver->hostcpu;
-
-    qemuDriverUnlock(driver);
+    VIR_WITH_MUTEX_LOCK_GUARD(&driver->lock) {
+        if (!driver->hostcpu)
+            driver->hostcpu = virCPUProbeHost(virArchFromHost());
+        hostcpu = driver->hostcpu;
+    }
 
     if (hostcpu)
         virCPUDefRef(hostcpu);
@@ -1389,32 +1411,27 @@ virCaps *virQEMUDriverCreateCapabilities(virQEMUDriver *driver)
  * Returns: a reference to a virCaps *instance or NULL
  */
 virCaps *virQEMUDriverGetCapabilities(virQEMUDriver *driver,
-                                        bool refresh)
+                                      bool refresh)
 {
-    virCaps *ret = NULL;
     if (refresh) {
         virCaps *caps = NULL;
         if ((caps = virQEMUDriverCreateCapabilities(driver)) == NULL)
             return NULL;
 
-        qemuDriverLock(driver);
-        virObjectUnref(driver->caps);
-        driver->caps = caps;
-    } else {
-        qemuDriverLock(driver);
-
-        if (driver->caps == NULL ||
-            driver->caps->nguests == 0) {
-            VIR_DEBUG("Capabilities didn't detect any guests. Forcing a "
-                      "refresh.");
-            qemuDriverUnlock(driver);
-            return virQEMUDriverGetCapabilities(driver, true);
+        VIR_WITH_MUTEX_LOCK_GUARD(&driver->lock) {
+            virObjectUnref(driver->caps);
+            driver->caps = caps;
+            return virObjectRef(driver->caps);
         }
     }
 
-    ret = virObjectRef(driver->caps);
-    qemuDriverUnlock(driver);
-    return ret;
+    VIR_WITH_MUTEX_LOCK_GUARD(&driver->lock) {
+        if (driver->caps && driver->caps->nguests > 0)
+            return virObjectRef(driver->caps);
+    }
+
+    VIR_DEBUG("Capabilities didn't detect any guests. Forcing a refresh.");
+    return virQEMUDriverGetCapabilities(driver, true);
 }
 
 
@@ -1595,5 +1612,32 @@ qemuGetMemoryBackingPath(virQEMUDriver *driver,
         return -1;
 
     *memPath = g_strdup_printf("%s/%s", domainPath, alias);
+    return 0;
+}
+
+
+int
+qemuHugepageMakeBasedir(virQEMUDriver *driver,
+                        virHugeTLBFS *hugepage)
+{
+
+    g_autofree char *hugepagePath = NULL;
+
+    hugepagePath = qemuGetBaseHugepagePath(driver, hugepage);
+
+    if (!hugepagePath)
+        return -1;
+
+    if (g_mkdir_with_parents(hugepagePath, 0777) < 0) {
+        virReportSystemError(errno,
+                             _("unable to create hugepage path %s"),
+                             hugepagePath);
+        return -1;
+    }
+
+    if (driver->privileged &&
+        virFileUpdatePerm(hugepage->mnt_dir, 0, S_IXGRP | S_IXOTH) < 0)
+        return -1;
+
     return 0;
 }

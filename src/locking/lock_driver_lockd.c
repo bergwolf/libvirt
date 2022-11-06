@@ -34,7 +34,6 @@
 #include "lock_protocol.h"
 #include "configmake.h"
 #include "virstoragefile.h"
-#include "virstring.h"
 #include "virutil.h"
 
 #include "lock_driver_lockd.h"
@@ -372,8 +371,7 @@ static void virLockManagerLockDaemonFree(virLockManager *lock)
     if (!lock)
         return;
 
-    virLockManagerLockDaemonPrivateFree(lock->privateData);
-    lock->privateData = NULL;
+    g_clear_pointer(&lock->privateData, virLockManagerLockDaemonPrivateFree);
 }
 
 

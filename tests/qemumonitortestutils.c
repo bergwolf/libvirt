@@ -30,12 +30,10 @@
 #include "qemu/qemu_processpriv.h"
 #include "qemu/qemu_monitor.h"
 #include "qemu/qemu_agent.h"
-#include "qemu/qemu_qapi.h"
 #include "rpc/virnetsocket.h"
 #include "viralloc.h"
 #include "virlog.h"
 #include "virerror.h"
-#include "virstring.h"
 #include "vireventthread.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
@@ -253,12 +251,11 @@ qemuMonitorTestIO(virNetSocket *sock,
 {
     qemuMonitorTest *test = opaque;
     bool err = false;
+    VIR_LOCK_GUARD lock = virLockGuardLock(&test->lock);
 
-    virMutexLock(&test->lock);
-    if (test->quit) {
-        virMutexUnlock(&test->lock);
+    if (test->quit)
         return;
-    }
+
     if (events & VIR_EVENT_HANDLE_WRITABLE) {
         ssize_t ret;
         if ((ret = virNetSocketWrite(sock,
@@ -327,8 +324,7 @@ qemuMonitorTestIO(virNetSocket *sock,
     if (err) {
         virNetSocketRemoveIOCallback(sock);
         virNetSocketClose(sock);
-        virObjectUnref(test->client);
-        test->client = NULL;
+        g_clear_pointer(&test->client, virObjectUnref);
     } else {
         events = VIR_EVENT_HANDLE_READABLE;
 
@@ -337,7 +333,6 @@ qemuMonitorTestIO(virNetSocket *sock,
 
         virNetSocketUpdateIOCallback(sock, events);
     }
-    virMutexUnlock(&test->lock);
 }
 
 
@@ -346,24 +341,22 @@ qemuMonitorTestWorker(void *opaque)
 {
     qemuMonitorTest *test = opaque;
 
-    virMutexLock(&test->lock);
-
-    while (!test->quit) {
-        virMutexUnlock(&test->lock);
-
-        if (virEventRunDefaultImpl() < 0) {
-            virMutexLock(&test->lock);
-            test->quit = true;
-            break;
+    while (true) {
+        VIR_WITH_MUTEX_LOCK_GUARD(&test->lock) {
+            if (test->quit) {
+                test->running = false;
+                return;
+            }
         }
 
-        virMutexLock(&test->lock);
+        if (virEventRunDefaultImpl() < 0) {
+            VIR_WITH_MUTEX_LOCK_GUARD(&test->lock) {
+                test->quit = true;
+                test->running = false;
+                return;
+            }
+        }
     }
-
-    test->running = false;
-
-    virMutexUnlock(&test->lock);
-    return;
 }
 
 
@@ -384,13 +377,13 @@ qemuMonitorTestFree(qemuMonitorTest *test)
     if (!test)
         return;
 
-    virMutexLock(&test->lock);
-    if (test->running) {
-        test->quit = true;
-        /* HACK: Add a dummy timeout to break event loop */
-        timer = virEventAddTimeout(0, qemuMonitorTestFreeTimer, NULL, NULL);
+    VIR_WITH_MUTEX_LOCK_GUARD(&test->lock) {
+        if (test->running) {
+            test->quit = true;
+            /* HACK: Add a dummy timeout to break event loop */
+            timer = virEventAddTimeout(0, qemuMonitorTestFreeTimer, NULL, NULL);
+        }
     }
-    virMutexUnlock(&test->lock);
 
     if (test->client) {
         virNetSocketRemoveIOCallback(test->client);
@@ -464,9 +457,9 @@ qemuMonitorTestAddHandler(qemuMonitorTest *test,
     item->freecb = freecb;
     item->opaque = opaque;
 
-    virMutexLock(&test->lock);
-    VIR_APPEND_ELEMENT(test->items, test->nitems, item);
-    virMutexUnlock(&test->lock);
+    VIR_WITH_MUTEX_LOCK_GUARD(&test->lock) {
+        VIR_APPEND_ELEMENT(test->items, test->nitems, item);
+    }
 
     return 0;
 }
@@ -958,16 +951,14 @@ qemuMonitorTestAddItemExpect(qemuMonitorTest *test,
 
 static void
 qemuMonitorTestEOFNotify(qemuMonitor *mon G_GNUC_UNUSED,
-                         virDomainObj *vm G_GNUC_UNUSED,
-                         void *opaque G_GNUC_UNUSED)
+                         virDomainObj *vm G_GNUC_UNUSED)
 {
 }
 
 
 static void
 qemuMonitorTestErrorNotify(qemuMonitor *mon G_GNUC_UNUSED,
-                           virDomainObj *vm G_GNUC_UNUSED,
-                           void *opaque G_GNUC_UNUSED)
+                           virDomainObj *vm G_GNUC_UNUSED)
 {
 }
 
@@ -1073,16 +1064,11 @@ qemuMonitorCommonTestInit(qemuMonitorTest *test)
                                   NULL) < 0)
         return -1;
 
-    virMutexLock(&test->lock);
-    if (virThreadCreate(&test->thread,
-                        true,
-                        qemuMonitorTestWorker,
-                        test) < 0) {
-        virMutexUnlock(&test->lock);
-        return -1;
+    VIR_WITH_MUTEX_LOCK_GUARD(&test->lock) {
+        if (virThreadCreate(&test->thread, true, qemuMonitorTestWorker, test) < 0)
+            return -1;
+        test->started = test->running = true;
     }
-    test->started = test->running = true;
-    virMutexUnlock(&test->lock);
 
     return 0;
 }
@@ -1106,7 +1092,6 @@ qemuMonitorCommonTestInit(qemuMonitorTest *test)
 qemuMonitorTest *
 qemuMonitorTestNew(virDomainXMLOption *xmlopt,
                    virDomainObj *vm,
-                   virQEMUDriver *driver,
                    const char *greeting,
                    GHashTable *schema)
 {
@@ -1124,11 +1109,8 @@ qemuMonitorTestNew(virDomainXMLOption *xmlopt,
     test->qapischema = schema;
     if (!(test->mon = qemuMonitorOpen(test->vm,
                                       &src,
-                                      true,
-                                      0,
                                       virEventThreadGetContext(test->eventThread),
-                                      &qemuMonitorTestCallbacks,
-                                      driver)))
+                                      &qemuMonitorTestCallbacks)))
         goto error;
 
     virObjectLock(test->mon);
@@ -1200,7 +1182,7 @@ qemuMonitorTestNewFromFile(const char *fileName,
                     return NULL;
             } else {
                 /* Create new mocked monitor with our greeting */
-                if (!(test = qemuMonitorTestNew(xmlopt, NULL, NULL,
+                if (!(test = qemuMonitorTestNew(xmlopt, NULL,
                                                 singleReply, NULL)))
                     return NULL;
             }
@@ -1400,8 +1382,7 @@ qemuMonitorTestNewFromFileFull(const char *fileName,
     if (virTestLoadFile(fileName, &jsonstr) < 0)
         return NULL;
 
-    if (!(ret = qemuMonitorTestNew(driver->xmlopt, vm, driver, NULL,
-                                   qmpschema)))
+    if (!(ret = qemuMonitorTestNew(driver->xmlopt, vm, NULL, qmpschema)))
         return NULL;
 
     if (qemuMonitorTestProcessFileEntries(jsonstr, fileName, &items, &nitems) < 0)

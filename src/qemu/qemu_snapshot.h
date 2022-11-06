@@ -19,7 +19,6 @@
 #pragma once
 
 #include "virconftypes.h"
-#include "datatypes.h"
 #include "qemu_conf.h"
 #include "qemu_domainjob.h"
 
@@ -61,7 +60,7 @@ typedef struct _qemuSnapshotDiskContext qemuSnapshotDiskContext;
 qemuSnapshotDiskContext *
 qemuSnapshotDiskContextNew(size_t ndisks,
                            virDomainObj *vm,
-                           qemuDomainAsyncJob asyncJob);
+                           virDomainAsyncJob asyncJob);
 
 void
 qemuSnapshotDiskContextCleanup(qemuSnapshotDiskContext *snapctxt);

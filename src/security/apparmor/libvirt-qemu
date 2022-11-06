@@ -78,15 +78,15 @@
   /var/lib/dbus/machine-id r,
 
   # access to firmware's etc
-  /usr/share/AAVMF/** r,
+  /usr/share/AAVMF/** rk,
   /usr/share/bochs/** r,
-  /usr/share/edk2-ovmf/** r,
+  /usr/share/edk2-ovmf/** rk,
   /usr/share/kvm/** r,
   /usr/share/misc/sgabios.bin r,
   /usr/share/openbios/** r,
   /usr/share/openhackware/** r,
-  /usr/share/OVMF/** r,
-  /usr/share/ovmf/** r,
+  /usr/share/OVMF/** rk,
+  /usr/share/ovmf/** rk,
   /usr/share/proll/** r,
   /usr/share/qemu-efi/** r,
   /usr/share/qemu-kvm/** r,
@@ -180,7 +180,7 @@
   audit deny /{var/,}run/qemu/*/*.so w,
 
   # swtpm
-  /{usr/,}bin/swtpm rmix,
+  /{usr/,}bin/swtpm rmpix,
   /usr/{lib,lib64}/libswtpm_libtpms.so mr,
   /usr/lib/@{multiarch}/libswtpm_libtpms.so mr,
 
@@ -226,6 +226,7 @@
   unix (send, receive) type=stream addr=none peer=(label=libvirtd),
   unix (send, receive) type=stream addr=none peer=(label=/usr/sbin/libvirtd),
   unix (send, receive) type=stream addr=none peer=(label=virtqemud),
+  unix (send, receive) type=stream addr=none peer=(label=swtpm),
 
   # for gathering information about available host resources
   /sys/devices/system/cpu/ r,
@@ -248,3 +249,7 @@
   # /sys/bus/nd/devices
   / r, # harmless on any lsb compliant system
   /sys/bus/nd/devices/{,**/} r,
+
+  # required for QEMU accessing UEFI nvram variables
+  owner /var/lib/libvirt/qemu/nvram/*_VARS.fd rwk,
+  owner /var/lib/libvirt/qemu/nvram/*_VARS.ms.fd rwk,
