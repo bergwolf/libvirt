@@ -301,9 +301,15 @@ virDomainObjListAddLocked(virDomainObjList *doms,
                 goto error;
             }
             if (!vm->persistent) {
-                virReportError(VIR_ERR_OPERATION_INVALID,
-                               _("domain '%1$s' is already being started"),
-                               vm->def->name);
+                if (vm->job->asyncJob == VIR_ASYNC_JOB_MIGRATION_OUT) {
+                    virReportError(VIR_ERR_OPERATION_INVALID,
+                                   _("domain '%1$s' is being migrated out"),
+                                   vm->def->name);
+                } else {
+                    virReportError(VIR_ERR_OPERATION_INVALID,
+                                   _("domain '%1$s' is already being started"),
+                                   vm->def->name);
+                }
                 goto error;
             }
         }
@@ -481,29 +487,34 @@ virDomainObjListLoadConfig(virDomainObjList *doms,
 {
     g_autofree char *configFile = NULL;
     g_autofree char *autostartLink = NULL;
+    g_autofree char *autostartOnceLink = NULL;
     g_autoptr(virDomainDef) def = NULL;
     virDomainObj *dom;
     int autostart;
+    int autostartOnce;
     g_autoptr(virDomainDef) oldDef = NULL;
 
-    if ((configFile = virDomainConfigFile(configDir, name)) == NULL)
-        return NULL;
+    configFile = virDomainConfigFile(configDir, name);
     if (!(def = virDomainDefParseFile(configFile, xmlopt, NULL,
                                       VIR_DOMAIN_DEF_PARSE_INACTIVE |
                                       VIR_DOMAIN_DEF_PARSE_SKIP_VALIDATE |
                                       VIR_DOMAIN_DEF_PARSE_ALLOW_POST_PARSE_FAIL)))
         return NULL;
 
-    if ((autostartLink = virDomainConfigFile(autostartDir, name)) == NULL)
-        return NULL;
+    autostartLink = virDomainConfigFile(autostartDir, name);
+    autostartOnceLink = g_strdup_printf("%s.once", autostartLink);
 
-    if ((autostart = virFileLinkPointsTo(autostartLink, configFile)) < 0)
-        return NULL;
+    autostart = virFileLinkPointsTo(autostartLink, configFile);
+    autostartOnce = virFileLinkPointsTo(autostartOnceLink, configFile);
 
     if (!(dom = virDomainObjListAddLocked(doms, &def, xmlopt, 0, &oldDef)))
         return NULL;
 
     dom->autostart = autostart;
+    dom->autostartOnce = autostartOnce;
+
+    if (autostartOnce)
+        dom->autostartOnceLink = g_steal_pointer(&autostartOnceLink);
 
     if (notify)
         (*notify)(dom, oldDef == NULL, opaque);
@@ -524,15 +535,15 @@ virDomainObjListLoadStatus(virDomainObjList *doms,
     virDomainObj *obj = NULL;
     char uuidstr[VIR_UUID_STRING_BUFLEN];
 
-    if ((statusFile = virDomainConfigFile(statusDir, name)) == NULL)
-        goto error;
+    statusFile = virDomainConfigFile(statusDir, name);
 
     if (!(obj = virDomainObjParseFile(statusFile, xmlopt,
                                       VIR_DOMAIN_DEF_PARSE_STATUS |
                                       VIR_DOMAIN_DEF_PARSE_ACTUAL_NET |
                                       VIR_DOMAIN_DEF_PARSE_PCI_ORIG_STATES |
                                       VIR_DOMAIN_DEF_PARSE_SKIP_VALIDATE |
-                                      VIR_DOMAIN_DEF_PARSE_ALLOW_POST_PARSE_FAIL)))
+                                      VIR_DOMAIN_DEF_PARSE_ALLOW_POST_PARSE_FAIL |
+                                      VIR_DOMAIN_DEF_PARSE_VOLUME_TRANSLATED)))
         goto error;
 
     virUUIDFormat(obj->def->uuid, uuidstr);

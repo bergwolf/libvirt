@@ -55,7 +55,7 @@ struct guest_arch {
 
 #define XEN_CAP_REGEX "(xen|hvm)-[[:digit:]]+\\.[[:digit:]]+-(aarch64|armv7l|x86_32|x86_64|ia64|powerpc64)(p|be)?"
 
-static int
+static void
 libxlCapsAddCPUID(virCPUData *data, virCPUx86CPUID *cpuid, ssize_t ncaps)
 {
     virCPUx86DataItem item = { 0 };
@@ -65,14 +65,8 @@ libxlCapsAddCPUID(virCPUData *data, virCPUx86CPUID *cpuid, ssize_t ncaps)
     for (i = 0; i < ncaps; i++) {
         item.data.cpuid = cpuid[i];
 
-        if (virCPUx86DataAdd(data, &item) < 0) {
-            VIR_DEBUG("Failed to add CPUID(%x,%x)",
-                      cpuid[i].eax_in, cpuid[i].ecx_in);
-            return -1;
-        }
+        virCPUx86DataAdd(data, &item);
     }
-
-    return 0;
 }
 
 /*
@@ -119,8 +113,7 @@ libxlCapsNodeData(virCPUDef *cpu, libxl_hwcap hwcap)
         return NULL;
 
     ncaps = G_N_ELEMENTS(cpuid);
-    if (libxlCapsAddCPUID(cpudata, cpuid, ncaps) < 0)
-        return NULL;
+    libxlCapsAddCPUID(cpudata, cpuid, ncaps);
 
     return g_steal_pointer(&cpudata);
 }
@@ -159,6 +152,7 @@ libxlCapsInitCPU(virCaps *caps, libxl_physinfo *phy_info)
     cpu->cores = phy_info->cores_per_socket;
     cpu->threads = phy_info->threads_per_core;
     cpu->dies = 1;
+    cpu->clusters = 1;
     cpu->sockets = phy_info->nr_cpus / (cpu->cores * cpu->threads);
 
     if (!(data = libxlCapsNodeData(cpu, phy_info->hw_cap)) ||
@@ -328,10 +322,8 @@ libxlCapsInitGuests(libxl_ctx *ctx, virCaps *caps)
     char *saveptr = NULL;
     size_t i;
 
-    struct guest_arch guest_archs[32];
+    struct guest_arch guest_archs[32] = { 0 };
     int nr_guest_archs = 0;
-
-    memset(guest_archs, 0, sizeof(guest_archs));
 
     if ((ver_info = libxl_get_version_info(ctx)) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
@@ -520,7 +512,7 @@ libxlCapsInitGuests(libxl_ctx *ctx, virCaps *caps)
     return 0;
 }
 
-static int
+static void
 libxlMakeDomainOSCaps(const char *machine,
                       virDomainCapsOS *os,
                       virFirmware **firmwares,
@@ -535,7 +527,7 @@ libxlMakeDomainOSCaps(const char *machine,
     capsLoader->readonly.report = true;
 
     if (STREQ(machine, "xenpv") || STREQ(machine, "xenpvh"))
-        return 0;
+        return;
 
     capsLoader->supported = VIR_TRISTATE_BOOL_YES;
     capsLoader->values.values = g_new0(char *, nfirmwares);
@@ -550,11 +542,9 @@ libxlMakeDomainOSCaps(const char *machine,
                              VIR_DOMAIN_LOADER_TYPE_PFLASH);
     VIR_DOMAIN_CAPS_ENUM_SET(capsLoader->readonly,
                              VIR_TRISTATE_BOOL_YES);
-
-    return 0;
 }
 
-static int
+static void
 libxlMakeDomainDeviceDiskCaps(virDomainCapsDeviceDisk *dev)
 {
     dev->supported = VIR_TRISTATE_BOOL_YES;
@@ -570,11 +560,9 @@ libxlMakeDomainDeviceDiskCaps(virDomainCapsDeviceDisk *dev)
                              VIR_DOMAIN_DISK_BUS_IDE,
                              VIR_DOMAIN_DISK_BUS_SCSI,
                              VIR_DOMAIN_DISK_BUS_XEN);
-
-    return 0;
 }
 
-static int
+static void
 libxlMakeDomainDeviceGraphicsCaps(virDomainCapsDeviceGraphics *dev)
 {
     dev->supported = VIR_TRISTATE_BOOL_YES;
@@ -584,11 +572,9 @@ libxlMakeDomainDeviceGraphicsCaps(virDomainCapsDeviceGraphics *dev)
                              VIR_DOMAIN_GRAPHICS_TYPE_SDL,
                              VIR_DOMAIN_GRAPHICS_TYPE_VNC,
                              VIR_DOMAIN_GRAPHICS_TYPE_SPICE);
-
-    return 0;
 }
 
-static int
+static void
 libxlMakeDomainDeviceVideoCaps(virDomainCapsDeviceVideo *dev)
 {
     dev->supported = VIR_TRISTATE_BOOL_YES;
@@ -598,11 +584,9 @@ libxlMakeDomainDeviceVideoCaps(virDomainCapsDeviceVideo *dev)
                              VIR_DOMAIN_VIDEO_TYPE_VGA,
                              VIR_DOMAIN_VIDEO_TYPE_CIRRUS,
                              VIR_DOMAIN_VIDEO_TYPE_XEN);
-
-    return 0;
 }
 
-static int
+static void
 libxlMakeDomainDeviceHostdevCaps(virDomainCapsDeviceHostdev *dev)
 {
     dev->supported = VIR_TRISTATE_BOOL_YES;
@@ -632,9 +616,24 @@ libxlMakeDomainDeviceHostdevCaps(virDomainCapsDeviceHostdev *dev)
     virDomainCapsEnumClear(&dev->capsType);
 
     virDomainCapsEnumClear(&dev->pciBackend);
-    VIR_DOMAIN_CAPS_ENUM_SET(dev->pciBackend,
-                             VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN);
-    return 0;
+    VIR_DOMAIN_CAPS_ENUM_SET(dev->pciBackend, VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN);
+}
+
+static void
+libxlMakeDomainDeviceConsoleCaps(virDomainCapsDeviceConsole *console)
+{
+    console->supported = VIR_TRISTATE_BOOL_YES;
+    console->type.report = true;
+    VIR_DOMAIN_CAPS_ENUM_SET(console->type,
+                             VIR_DOMAIN_CHR_TYPE_DEV,
+                             VIR_DOMAIN_CHR_TYPE_FILE,
+                             VIR_DOMAIN_CHR_TYPE_PIPE,
+                             VIR_DOMAIN_CHR_TYPE_PTY,
+                             VIR_DOMAIN_CHR_TYPE_STDIO,
+                             VIR_DOMAIN_CHR_TYPE_TCP,
+                             VIR_DOMAIN_CHR_TYPE_UDP,
+                             VIR_DOMAIN_CHR_TYPE_UNIX,
+                             VIR_DOMAIN_CHR_TYPE_VC);
 }
 
 virCaps *
@@ -681,20 +680,22 @@ libxlMakeDomainCapabilities(virDomainCaps *domCaps,
     virDomainCapsDeviceGraphics *graphics = &domCaps->graphics;
     virDomainCapsDeviceVideo *video = &domCaps->video;
     virDomainCapsDeviceHostdev *hostdev = &domCaps->hostdev;
+    virDomainCapsDeviceConsole *console = &domCaps->console;
 
     if (STREQ(domCaps->machine, "xenfv"))
         domCaps->maxvcpus = HVM_MAX_VCPUS;
     else
         domCaps->maxvcpus = PV_MAX_VCPUS;
 
-    if (libxlMakeDomainOSCaps(domCaps->machine, os, firmwares, nfirmwares) < 0 ||
-        libxlMakeDomainDeviceDiskCaps(disk) < 0 ||
-        libxlMakeDomainDeviceGraphicsCaps(graphics) < 0 ||
-        libxlMakeDomainDeviceVideoCaps(video) < 0)
-        return -1;
-    if (STRNEQ(domCaps->machine, "xenpvh") &&
-        libxlMakeDomainDeviceHostdevCaps(hostdev) < 0)
-        return -1;
+    libxlMakeDomainOSCaps(domCaps->machine, os, firmwares, nfirmwares);
+    libxlMakeDomainDeviceDiskCaps(disk);
+    libxlMakeDomainDeviceGraphicsCaps(graphics);
+    libxlMakeDomainDeviceVideoCaps(video);
+    libxlMakeDomainDeviceConsoleCaps(console);
+
+    if (STRNEQ(domCaps->machine, "xenpvh")) {
+        libxlMakeDomainDeviceHostdevCaps(hostdev);
+    }
 
     domCaps->features[VIR_DOMAIN_CAPS_FEATURE_IOTHREADS] = VIR_TRISTATE_BOOL_NO;
     domCaps->features[VIR_DOMAIN_CAPS_FEATURE_VMCOREINFO] = VIR_TRISTATE_BOOL_NO;

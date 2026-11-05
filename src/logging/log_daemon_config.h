@@ -32,14 +32,14 @@ struct _virLogDaemonConfig {
     unsigned int admin_max_clients;
 
     size_t max_backups;
-    size_t max_size;
+    unsigned long long max_size;
 
     char *log_root;
     size_t max_age_days;
 };
 
 
-int virLogDaemonConfigFilePath(bool privileged, char **configfile);
+void virLogDaemonConfigFilePath(bool privileged, char **configfile);
 virLogDaemonConfig *virLogDaemonConfigNew(bool privileged);
 void virLogDaemonConfigFree(virLogDaemonConfig *data);
 int virLogDaemonConfigLoadFile(virLogDaemonConfig *data,

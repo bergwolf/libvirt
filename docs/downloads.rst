@@ -261,7 +261,7 @@ The core libvirt module follows a time based plan, with releases made once a
 month on the 1st of each month give or take a few days. The only exception is at
 the start of the year where there are two 6 weeks gaps (first release in the
 middle of Jan, then skip the Feb release), giving a total of 11 releases a year.
-The Python and Perl modules will aim to release at the same time as the core
+The Python, Perl and Go modules will aim to release at the same time as the core
 libvirt module. Other modules have independent ad-hoc releases with no fixed
 time schedule.
 
@@ -326,17 +326,11 @@ repositories on GitHub:
 
 ::
 
-   https://github.com/libvirt/
-
-And there are also read-only mirrors on libvirt.org:
-
-::
-
-   git clone https://libvirt.org/git/[module name].git
+   git clone https://github.com/libvirt/[module name].git
 
 Note that for most repositories, development happens via merge requests
 on GitLab. However, for the main `libvirt.git` repository all patch review and
-discussion only occurs on the `libvir-list <contact.html>`__ mailing list.
+discussion only occurs on the `devel <contact.html>`__ mailing list.
 
 The GitHub repository is read-only and pull requests and issues there are ignored.
 

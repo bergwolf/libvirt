@@ -12,6 +12,7 @@ function install_buildenv() {
             augeas-lenses \
             augeas-tools \
             bash-completion \
+            black \
             ca-certificates \
             ccache \
             codespell \
@@ -23,30 +24,24 @@ function install_buildenv() {
             gettext \
             git \
             grep \
-            iproute2 \
-            iptables \
-            kmod \
-            libc-dev-bin \
+            libclang-rt-dev \
+            libnbd-dev \
             libxml2-utils \
             locales \
-            lvm2 \
             make \
             meson \
-            nfs-common \
             ninja-build \
-            numad \
-            open-iscsi \
             perl-base \
             pkgconf \
-            policykit-1 \
             python3 \
             python3-docutils \
+            python3-pytest \
             qemu-utils \
-            scrub \
             sed \
             xsltproc
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen
     dpkg-reconfigure locales
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
     export DEBIAN_FRONTEND=noninteractive
     dpkg --add-architecture armhf
     apt-get update
@@ -63,29 +58,26 @@ function install_buildenv() {
             libcap-ng-dev:armhf \
             libcurl4-gnutls-dev:armhf \
             libdevmapper-dev:armhf \
-            libfuse-dev:armhf \
+            libfuse3-dev:armhf \
             libglib2.0-dev:armhf \
-            libglusterfs-dev:armhf \
             libgnutls28-dev:armhf \
             libiscsi-dev:armhf \
+            libjson-c-dev:armhf \
             libnl-3-dev:armhf \
             libnl-route-3-dev:armhf \
             libnuma-dev:armhf \
             libparted-dev:armhf \
             libpcap0.8-dev:armhf \
             libpciaccess-dev:armhf \
-            librbd-dev:armhf \
             libreadline-dev:armhf \
             libsanlock-dev:armhf \
             libsasl2-dev:armhf \
-            libselinux1-dev:armhf \
-            libssh-gcrypt-dev:armhf \
+            libselinux-dev:armhf \
+            libssh-dev:armhf \
             libssh2-1-dev:armhf \
             libtirpc-dev:armhf \
             libudev-dev:armhf \
-            libxen-dev:armhf \
             libxml2-dev:armhf \
-            libyajl-dev:armhf \
             systemtap-sdt-dev:armhf
     mkdir -p /usr/local/share/meson/cross
     printf "[binaries]\n\

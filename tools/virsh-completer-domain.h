@@ -21,6 +21,7 @@
 #pragma once
 
 #include "vsh.h"
+#include <libxml/xpath.h>
 
 char **
 virshDomainNameCompleter(vshControl *ctl,
@@ -40,6 +41,19 @@ char **
 virshDomainDiskTargetCompleter(vshControl *ctl,
                                const vshCmd *cmd,
                                unsigned int flags);
+
+char **
+virshGetThrottleGroupNames(xmlXPathContext *ctxt);
+
+char **
+virshDomainThrottleGroupCompleter(vshControl *ctl,
+                                  const vshCmd *cmd,
+                                  unsigned int flags);
+
+char **
+virshDomainThrottleGroupsCompleter(vshControl *ctl,
+                                   const vshCmd *cmd,
+                                   unsigned int flags);
 
 char **
 virshDomainInterfaceStateCompleter(vshControl *ctl,
@@ -185,3 +199,48 @@ char **
 virshDomainDirtyRateCalcModeCompleter(vshControl *ctl,
                                       const vshCmd *cmd,
                                       unsigned int flags);
+
+char **
+virshDomainNetTypeCompleter(vshControl *ctl,
+                            const vshCmd *cmd,
+                            unsigned int flags);
+
+char **
+virshDomainDisplayTypeCompleter(vshControl *ctl,
+                                const vshCmd *cmd,
+                                unsigned int flags);
+
+char **
+virshDomainXMLNativeFormatCompleter(vshControl *ctl,
+                                    const vshCmd *cmd,
+                                    unsigned int flags);
+
+char **
+virshDomainDiskBusCompleter(vshControl *ctl,
+                            const vshCmd *cmd,
+                            unsigned int flags);
+
+char **
+virshDomainDiskDeviceTypeCompleter(vshControl *ctl,
+                                   const vshCmd *cmd,
+                                   unsigned int flags);
+
+char **
+virshDomainDiskCacheCompleter(vshControl *ctl,
+                              const vshCmd *cmd,
+                              unsigned int flags);
+
+char **
+virshDomainDiskIoCompleter(vshControl *ctl,
+                           const vshCmd *cmd,
+                           unsigned int flags);
+
+char **
+virshDomainAttachDiskModeCompleter(vshControl *ctl,
+                                   const vshCmd *cmd,
+                                   unsigned int flags);
+
+char **
+virshDomainAttachDiskSourceTypeCompleter(vshControl *ctl,
+                                         const vshCmd *cmd,
+                                         unsigned int flags);

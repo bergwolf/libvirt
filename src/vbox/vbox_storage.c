@@ -396,7 +396,7 @@ vboxStorageVolCreateXML(virStoragePoolPtr pool,
     struct _vboxDriver *data = pool->conn->privateData;
     PRUnichar *hddFormatUtf16 = NULL;
     PRUnichar *hddNameUtf16 = NULL;
-    virStoragePoolDef poolDef;
+    virStoragePoolDef poolDef = { 0 };
     nsresult rc;
     vboxIID hddIID;
     unsigned char uuid[VIR_UUID_BUFLEN];
@@ -424,7 +424,6 @@ vboxStorageVolCreateXML(virStoragePoolPtr pool,
      * so just assign it for now, change the behaviour
      * when vbox supports pools.
      */
-    memset(&poolDef, 0, sizeof(poolDef));
     poolDef.type = VIR_STORAGE_POOL_DIR;
 
     if ((def = virStorageVolDefParse(&poolDef, xml, NULL, parseFlags)) == NULL)
@@ -446,7 +445,7 @@ vboxStorageVolCreateXML(virStoragePoolPtr pool,
 
     /* If target.path isn't given, use default path ~/.VirtualBox/image_name */
     if (!def->target.path) {
-        homedir = virGetUserDirectory();
+        homedir = virGetUserHomeDirectory();
         def->target.path = g_strdup_printf("%s/.VirtualBox/%s", homedir, def->name);
     }
     VBOX_UTF8_TO_UTF16(def->target.path, &hddNameUtf16);
@@ -720,8 +719,8 @@ static char *vboxStorageVolGetXMLDesc(virStorageVolPtr vol, unsigned int flags)
     char *hddFormatUtf8 = NULL;
     PRUint64 hddLogicalSize = 0;
     PRUint64 hddActualSize = 0;
-    virStoragePoolDef pool;
-    virStorageVolDef def;
+    virStoragePoolDef pool = { 0 };
+    virStorageVolDef def = { 0 };
     vboxIID hddIID;
     PRUint32 hddstate;
     nsresult rc;
@@ -731,9 +730,6 @@ static char *vboxStorageVolGetXMLDesc(virStorageVolPtr vol, unsigned int flags)
         return ret;
 
     virCheckFlags(0, NULL);
-
-    memset(&pool, 0, sizeof(pool));
-    memset(&def, 0, sizeof(def));
 
     if (virUUIDParse(vol->key, uuid) < 0) {
         virReportError(VIR_ERR_INVALID_ARG,
@@ -881,9 +877,7 @@ virStorageDriver *vboxGetStorageDriver(uint32_t uVersion)
     /* Install gVBoxAPI according to the vbox API version.
      * Return -1 for unsupported version.
      */
-    if (uVersion >= 6000051 && uVersion < 6001051) {
-        vbox61InstallUniformedAPI(&gVBoxAPI);
-    } else if (uVersion >= 7000000 && uVersion < 7000004) {
+    if (uVersion >= 7000000 && uVersion < 7000004) {
         vbox70InstallUniformedAPI(&gVBoxAPI);
     } else {
         return NULL;

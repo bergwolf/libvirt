@@ -73,14 +73,23 @@ virXPathLongLong(const char *xpath,
                  xmlXPathContextPtr ctxt,
                  long long *value);
 
+int
+virXPathTristateSwitch(const char *xpath,
+                       xmlXPathContextPtr ctxt,
+                       virTristateSwitch *value);
+
+int
+virXPathTristateBool(const char *xpath,
+                     xmlXPathContextPtr ctxt,
+                     virTristateBool *value);
+
 xmlNodePtr
 virXMLNodeGetSubelement(xmlNodePtr node,
                         const char *name);
 
-size_t
+GPtrArray *
 virXMLNodeGetSubelementList(xmlNodePtr node,
-                            const char *name,
-                            xmlNodePtr **list);
+                            const char *name);
 
 xmlNodePtr
 virXPathNode(const char *xpath,
@@ -199,7 +208,8 @@ virXMLParseHelper(int domcode,
                   const char *rootelement,
                   xmlXPathContextPtr *ctxt,
                   const char *schemafile,
-                  bool validate);
+                  bool validate,
+                  bool keepindent);
 
 const char *
 virXMLPickShellSafeComment(const char *str1,
@@ -219,7 +229,17 @@ virXMLPickShellSafeComment(const char *str1,
  * Return the parsed document object, or NULL on failure.
  */
 #define virXMLParse(filename, xmlStr, url, rootelement, ctxt, schemafile, validate) \
-    virXMLParseHelper(VIR_FROM_THIS, filename, xmlStr, url, rootelement, ctxt, schemafile, validate)
+    virXMLParseHelper(VIR_FROM_THIS, filename, xmlStr, url, rootelement, ctxt, schemafile, validate, false)
+
+/**
+ * virXMLParseWithIndent:
+ *
+ * Just like virXMLParse, except indentation is preserved. Should be used when
+ * facing an user provided XML which may be formatted back and keeping verbatim
+ * spacing is necessary (e.g. due to <metadata/>).
+ */
+#define virXMLParseWithIndent(filename, xmlStr, url, rootelement, ctxt, schemafile, validate) \
+    virXMLParseHelper(VIR_FROM_THIS, filename, xmlStr, url, rootelement, ctxt, schemafile, validate, true)
 
 /**
  * virXMLParseStringCtxt:
@@ -233,7 +253,17 @@ virXMLPickShellSafeComment(const char *str1,
  * Return the parsed document object, or NULL on failure.
  */
 #define virXMLParseStringCtxt(xmlStr, url, pctxt) \
-    virXMLParseHelper(VIR_FROM_THIS, NULL, xmlStr, url, NULL, pctxt, NULL, false)
+    virXMLParseHelper(VIR_FROM_THIS, NULL, xmlStr, url, NULL, pctxt, NULL, false, false)
+
+/**
+ * virXMLParseStringCtxtWithIndent:
+ *
+ * Just like virXMLParseStringCtxt, except indentation is preserved.  Should be
+ * used when facing an user provided XML which may be formatted back and
+ * keeping verbatim spacing is necessary (e.g. due to <metadata/>).
+ */
+#define virXMLParseStringCtxtWithIndent(xmlStr, url, pctxt) \
+    virXMLParseHelper(VIR_FROM_THIS, NULL, xmlStr, url, NULL, pctxt, NULL, false, true)
 
 /**
  * virXMLParseFileCtxt:
@@ -246,7 +276,7 @@ virXMLPickShellSafeComment(const char *str1,
  * Return the parsed document object, or NULL on failure.
  */
 #define virXMLParseFileCtxt(filename, pctxt) \
-    virXMLParseHelper(VIR_FROM_THIS, filename, NULL, NULL, NULL, pctxt, NULL, false)
+    virXMLParseHelper(VIR_FROM_THIS, filename, NULL, NULL, NULL, pctxt, NULL, false, false)
 
 int
 virXMLSaveFile(const char *path,
@@ -313,13 +343,6 @@ virXMLValidatorFree(virXMLValidator *validator);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virXMLValidator, virXMLValidatorFree);
 
 void
-virXMLFormatElementInternal(virBuffer *buf,
-                            const char *name,
-                            virBuffer *attrBuf,
-                            virBuffer *childBuf,
-                            bool allowEmpty,
-                            bool childNewline);
-void
 virXMLFormatElement(virBuffer *buf,
                     const char *name,
                     virBuffer *attrBuf,
@@ -330,6 +353,12 @@ virXMLFormatElementEmpty(virBuffer *buf,
                          const char *name,
                          virBuffer *attrBuf,
                          virBuffer *childBuf);
+
+void
+virXMLFormatElementDirect(virBuffer *buf,
+                          const char *name,
+                          virBuffer *attrBuf,
+                          virBuffer *childBuf);
 
 int
 virXMLFormatMetadata(virBuffer *buf,

@@ -48,10 +48,13 @@ if conf.has('WITH_VZ')
 
   virt_daemon_units += {
     'service': 'virtvzd',
-    'service_in': files('virtvzd.service.in'),
-    'name': 'Libvirt vz',
-    'sockprefix': 'virtvzd',
-    'sockets': [ 'main', 'ro', 'admin' ],
+    'name': 'vz',
+    'service_extra_in': [
+      files('virtvzd.service.extra.in'),
+    ],
+    'socket_extra_in': [
+      files('virtvzd.socket.extra.in'),
+    ],
   }
 
   openrc_init_files += {

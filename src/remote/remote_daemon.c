@@ -97,6 +97,7 @@ static int daemonErrorLogFilter(virErrorPtr err, int priority)
     case VIR_ERR_NO_STORAGE_VOL:
     case VIR_ERR_NO_NODE_DEVICE:
     case VIR_ERR_NO_INTERFACE:
+    case VIR_ERR_MULTIPLE_INTERFACES:
     case VIR_ERR_NO_NWFILTER:
     case VIR_ERR_NO_NWFILTER_BINDING:
     case VIR_ERR_NO_SECRET:
@@ -106,6 +107,8 @@ static int daemonErrorLogFilter(virErrorPtr err, int priority)
     case VIR_ERR_NO_SERVER:
     case VIR_ERR_NO_CLIENT:
     case VIR_ERR_NO_HOSTNAME:
+    case VIR_ERR_NO_NETWORK_METADATA:
+    case VIR_ERR_NO_SUPPORT:
         return VIR_LOG_DEBUG;
     }
 
@@ -218,8 +221,7 @@ daemonSetupNetworking(virNetServer *srv,
 #ifdef WITH_IP
 # ifdef LIBVIRTD
     if (act && ipsock) {
-        VIR_ERROR(_("--listen parameter not permitted with systemd activation "
-                    "sockets, see 'man libvirtd' for further guidance"));
+        VIR_ERROR(_("--listen parameter not permitted with systemd activation sockets, see 'man libvirtd' for further guidance"));
         return -1;
     }
 # else /* ! LIBVIRTD */
@@ -323,29 +325,31 @@ daemonSetupNetworking(virNetServer *srv,
         virNetTLSContext *ctxt = NULL;
 
         if (config->ca_file ||
-            config->cert_file ||
-            config->key_file) {
+            config->cert_files ||
+            config->key_files) {
+            g_autofree char *certs = g_strjoinv(", ", config->cert_files);
+            g_autofree char *keys = g_strjoinv(", ", config->key_files);
             if (!config->ca_file) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("No CA certificate path set to match server key/cert"));
+                               _("No CA certificate path set to match server key(s)/cert(s)"));
                 return -1;
             }
-            if (!config->cert_file) {
+            if (!config->cert_files) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("No server certificate path set to match server key"));
+                               _("No server certificate path(s) set to match server key(s)"));
                 return -1;
             }
-            if (!config->key_file) {
+            if (!config->key_files) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("No server key path set to match server cert"));
+                               _("No server key path(s) set to match server cert(s)"));
                 return -1;
             }
-            VIR_DEBUG("Using CA='%s' cert='%s' key='%s'",
-                      config->ca_file, config->cert_file, config->key_file);
+            VIR_DEBUG("Using CA='%s' certs='%s' keys='%s'",
+                      config->ca_file, certs, keys);
             if (!(ctxt = virNetTLSContextNewServer(config->ca_file,
                                                    config->crl_file,
-                                                   config->cert_file,
-                                                   config->key_file,
+                                                   (const char *const*)config->cert_files,
+                                                   (const char *const*)config->key_files,
                                                    (const char *const*)config->tls_allowed_dn_list,
                                                    config->tls_priority,
                                                    config->tls_no_sanity_certificate ? false : true,
@@ -451,9 +455,11 @@ static void daemonReloadHandlerThread(void *opaque G_GNUC_UNUSED)
     virHookCall(VIR_HOOK_DRIVER_DAEMON, "-",
                 VIR_HOOK_DAEMON_OP_RELOAD, SIGHUP, "SIGHUP", NULL, NULL);
 
+    virSystemdNotifyReload();
     if (virStateReload() < 0) {
         VIR_WARN("Error while reloading drivers");
     }
+    virSystemdNotifyReady();
 
     /* Drivers are initialized again. */
     g_atomic_int_set(&driversInitialized, 1);
@@ -511,41 +517,6 @@ static void daemonInhibitCallback(bool inhibit, void *opaque)
 static GDBusConnection *sessionBus;
 static GDBusConnection *systemBus;
 
-static void daemonStopWorker(void *opaque)
-{
-    virNetDaemon *dmn = opaque;
-
-    VIR_DEBUG("Begin stop dmn=%p", dmn);
-
-    ignore_value(virStateStop());
-
-    VIR_DEBUG("Completed stop dmn=%p", dmn);
-
-    /* Exit daemon cleanly */
-    virNetDaemonQuit(dmn);
-}
-
-
-/* We do this in a thread to not block the main loop */
-static void daemonStop(virNetDaemon *dmn)
-{
-    virThread *thr;
-    virObjectRef(dmn);
-
-    thr = g_new0(virThread, 1);
-
-    if (virThreadCreateFull(thr, true,
-                            daemonStopWorker,
-                            "daemon-stop", false, dmn) < 0) {
-        virObjectUnref(dmn);
-        g_free(thr);
-        return;
-    }
-
-    virNetDaemonSetStateStopWorkerThread(dmn, &thr);
-}
-
-
 static GDBusMessage *
 handleSessionMessageFunc(GDBusConnection *connection G_GNUC_UNUSED,
                          GDBusMessage *message,
@@ -558,8 +529,10 @@ handleSessionMessageFunc(GDBusConnection *connection G_GNUC_UNUSED,
 
     if (virGDBusMessageIsSignal(message,
                                 "org.freedesktop.DBus.Local",
-                                "Disconnected"))
-        daemonStop(dmn);
+                                "Disconnected")) {
+        virNetDaemonStop(dmn);
+        virNetDaemonQuit(dmn);
+    }
 
     return message;
 }
@@ -578,7 +551,7 @@ handleSystemMessageFunc(GDBusConnection *connection G_GNUC_UNUSED,
 
     VIR_DEBUG("dmn=%p", dmn);
 
-    daemonStop(dmn);
+    virNetDaemonStop(dmn);
 }
 
 
@@ -621,18 +594,25 @@ static void daemonRunStateInit(void *opaque)
 
     g_atomic_int_set(&driversInitialized, 1);
 
-    virNetDaemonSetShutdownCallbacks(dmn,
-                                     virStateShutdownPrepare,
-                                     virStateShutdownWait);
+    virNetDaemonSetLifecycleCallbacks(dmn,
+                                      virStateStop,
+                                      virStateShutdownPrepare,
+                                      virStateShutdownWait);
 
-    /* Tie the non-privileged daemons to the session/shutdown lifecycle */
+    /* Signal for VM shutdown when desktop session is terminated, in
+     * unprivileged daemons */
     if (!virNetDaemonIsPrivileged(dmn)) {
+        if (virGDBusHasSessionBus()) {
+            sessionBus = virGDBusGetSessionBus();
+            if (sessionBus != NULL)
+                g_dbus_connection_add_filter(sessionBus,
+                                             handleSessionMessageFunc, dmn, NULL);
+        }
+    }
 
-        sessionBus = virGDBusGetSessionBus();
-        if (sessionBus != NULL)
-            g_dbus_connection_add_filter(sessionBus,
-                                         handleSessionMessageFunc, dmn, NULL);
-
+    if (virGDBusHasSystemBus()) {
+        /* Signal for VM shutdown when host OS shutdown is requested, in
+         * both privileged and unprivileged daemons */
         systemBus = virGDBusGetSystemBus();
         if (systemBus != NULL)
             g_dbus_connection_signal_subscribe(systemBus,
@@ -1062,10 +1042,7 @@ int main(int argc, char **argv) {
         ret = VIR_DAEMON_ERR_INIT;
         goto cleanup;
     }
-    if (virNetServerAddProgram(srv, remoteProgram) < 0) {
-        ret = VIR_DAEMON_ERR_INIT;
-        goto cleanup;
-    }
+    virNetServerAddProgram(srv, remoteProgram);
 
     if (!(lxcProgram = virNetServerProgramNew(LXC_PROGRAM,
                                               LXC_PROTOCOL_VERSION,
@@ -1074,10 +1051,7 @@ int main(int argc, char **argv) {
         ret = VIR_DAEMON_ERR_INIT;
         goto cleanup;
     }
-    if (virNetServerAddProgram(srv, lxcProgram) < 0) {
-        ret = VIR_DAEMON_ERR_INIT;
-        goto cleanup;
-    }
+    virNetServerAddProgram(srv, lxcProgram);
 
     if (!(qemuProgram = virNetServerProgramNew(QEMU_PROGRAM,
                                                QEMU_PROTOCOL_VERSION,
@@ -1086,10 +1060,7 @@ int main(int argc, char **argv) {
         ret = VIR_DAEMON_ERR_INIT;
         goto cleanup;
     }
-    if (virNetServerAddProgram(srv, qemuProgram) < 0) {
-        ret = VIR_DAEMON_ERR_INIT;
-        goto cleanup;
-    }
+    virNetServerAddProgram(srv, qemuProgram);
 
     if (!(srvAdm = virNetServerNew("admin", 1,
                                    config->admin_min_workers,
@@ -1119,10 +1090,7 @@ int main(int argc, char **argv) {
         ret = VIR_DAEMON_ERR_INIT;
         goto cleanup;
     }
-    if (virNetServerAddProgram(srvAdm, adminProgram) < 0) {
-        ret = VIR_DAEMON_ERR_INIT;
-        goto cleanup;
-    }
+    virNetServerAddProgram(srvAdm, adminProgram);
 
     if (timeout > 0) {
         if (virNetDaemonAutoShutdown(dmn, timeout) < 0)

@@ -932,4 +932,33 @@ LIBVIRT_9.0.0 {
         virDomainFDAssociate;
 } LIBVIRT_8.5.0;
 
+LIBVIRT_9.7.0 {
+    global:
+        virNetworkGetMetadata;
+        virNetworkSetMetadata;
+} LIBVIRT_9.0.0;
+
+LIBVIRT_10.1.0 {
+    global:
+        virNodeDeviceUpdate;
+} LIBVIRT_9.7.0;
+
+LIBVIRT_10.2.0 {
+    global:
+        virDomainGraphicsReload;
+} LIBVIRT_10.1.0;
+
+LIBVIRT_11.2.0 {
+    global:
+        virDomainGetAutostartOnce;
+        virDomainSetAutostartOnce;
+        virDomainSetThrottleGroup;
+        virDomainDelThrottleGroup;
+} LIBVIRT_10.2.0;
+
+LIBVIRT_12.5.0 {
+    global:
+        virDomainAnnounceInterface;
+} LIBVIRT_11.2.0;
+
 # .... define new API here using predicted next version number ....

@@ -33,10 +33,14 @@
 #include "virscsivhost.h"
 #include "virtpm.h"
 #include "virutil.h"
+#include "virfile.h"
 #include "qemu/qemu_interface.h"
 #include "qemu/qemu_command.h"
+#include "domain_interface.h"
 #include <unistd.h>
 #include <fcntl.h>
+
+#include "testutils.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
@@ -101,17 +105,36 @@ virNetDevTapCreate(char **ifname,
 {
     size_t i;
 
-    for (i = 0; i < tapfdSize; i++)
-        tapfd[i] = STDERR_FILENO + 1 + i;
-
-    if (STREQ_NULLABLE(*ifname, "mytap0")) {
-        return 0;
-    } else {
+    if (STRNEQ_NULLABLE(*ifname, "mytap0")) {
         VIR_FREE(*ifname);
         *ifname = g_strdup("vnet0");
-        return 0;
     }
+
+    for (i = 0; i < tapfdSize; i++)
+        tapfd[i] = virTestMakeDummyFD(g_strdup_printf("@tap-%s-fd@", *ifname));
+
+    return 0;
 }
+
+
+int
+virDomainInterfaceBridgeConnect(virDomainDef *def G_GNUC_UNUSED,
+                                virDomainNetDef *net,
+                                int *tapfd,
+                                size_t *tapfdSize,
+                                bool privileged G_GNUC_UNUSED,
+                                ebtablesContext *ebtables G_GNUC_UNUSED,
+                                bool macFilter G_GNUC_UNUSED,
+                                const char *bridgeHelperName G_GNUC_UNUSED)
+{
+    size_t i;
+
+    for (i = 0; i < *tapfdSize; i++)
+        tapfd[i] = virTestMakeDummyFD(g_strdup_printf("@iface-%s-fd@", net->info.alias));
+
+    return 0;
+}
+
 
 int
 virNetDevSetMAC(const char *ifname G_GNUC_UNUSED,
@@ -158,24 +181,35 @@ virHostGetDRMRenderNode(void)
 
 static void (*real_virCommandPassFD)(virCommand *cmd, int fd, unsigned int flags);
 
-static const int testCommandPassSafeFDs[] = { 1730, 1731, 1732 };
 
 void
 virCommandPassFD(virCommand *cmd,
                  int fd,
                  unsigned int flags)
 {
-    size_t i;
-
-    for (i = 0; i < G_N_ELEMENTS(testCommandPassSafeFDs); i++) {
-        if (testCommandPassSafeFDs[i] == fd) {
-            if (!real_virCommandPassFD)
-                VIR_MOCK_REAL_INIT(virCommandPassFD);
-
-            real_virCommandPassFD(cmd, fd, flags);
-            return;
-        }
+    /* Test cases run in the context of the test program, so attempting to use
+     * the STDIO fds with virCommand could break/close them and thus break
+     * output of the test itself. */
+    if (fd == STDIN_FILENO ||
+        fd == STDOUT_FILENO ||
+        fd == STDERR_FILENO) {
+        virTestDummyFDContextMarkError(g_strdup("test case tried to pass stdio FDs to virCommandPassFD"));
+        return;
     }
+
+    /* Some test scenarios pass invalid FDs to virCommand. We want to skip
+     * operations on those since they cause errors in e.g. valgrind.
+     */
+    if (fcntl(fd, F_GETFD) == -1) {
+        virTestDummyFDContextMarkError(g_strdup_printf("test case tried to pass invalid FD '%d' to virCommandPassFD",
+                                                       fd));
+        return;
+    }
+
+    if (!real_virCommandPassFD)
+        VIR_MOCK_REAL_INIT(virCommandPassFD);
+
+    real_virCommandPassFD(cmd, fd, flags);
 }
 
 int
@@ -188,7 +222,7 @@ virNetDevOpenvswitchGetVhostuserIfname(const char *path G_GNUC_UNUSED,
 }
 
 int
-qemuInterfaceOpenVhostNet(virDomainObj *vm G_GNUC_UNUSED,
+qemuInterfaceOpenVhostNet(virDomainObj *vm,
                           virDomainNetDef *net)
 {
     qemuDomainNetworkPrivate *netpriv = QEMU_DOMAIN_NETWORK_PRIVATE(net);
@@ -198,12 +232,18 @@ qemuInterfaceOpenVhostNet(virDomainObj *vm G_GNUC_UNUSED,
     if (!vhostfdSize)
          vhostfdSize = 1;
 
+    if ((vm->def->virtType != VIR_DOMAIN_VIRT_KVM &&
+         vm->def->virtType != VIR_DOMAIN_VIRT_HYPERV) ||
+        net->driver.virtio.name == VIR_DOMAIN_NET_DRIVER_TYPE_QEMU) {
+        return 0;
+    }
+
     if (!virDomainNetIsVirtioModel(net))
         return 0;
 
     for (i = 0; i < vhostfdSize; i++) {
         g_autofree char *name = g_strdup_printf("vhostfd-%s%zu", net->info.alias, i);
-        int fd = STDERR_FILENO + 42 + i;
+        int fd = virTestMakeDummyFD(g_strdup_printf("@vhostfd-%s-fd@", net->info.alias));
 
         netpriv->vhostfds = g_slist_prepend(netpriv->vhostfds, qemuFDPassDirectNew(name, &fd));
     }
@@ -215,33 +255,12 @@ qemuInterfaceOpenVhostNet(virDomainObj *vm G_GNUC_UNUSED,
 
 
 int
-qemuOpenChrChardevUNIXSocket(const virDomainChrSourceDef *dev G_GNUC_UNUSED)
-
-{
-    /* We need to return an FD number for a UNIX listener socket,
-     * which will be given to QEMU via a CLI arg. We need a fixed
-     * number to get stable tests. This is obviously not a real
-     * FD number, so when virCommand closes the FD in the parent
-     * it will get EINVAL, but that's (hopefully) not going to
-     * be a problem....
-     */
-    if (fcntl(1729, F_GETFD) != -1)
-        abort();
-    return 1729;
-}
-
-
-int
-qemuBuildTPMOpenBackendFDs(const char *tpmdev G_GNUC_UNUSED,
+qemuBuildTPMOpenBackendFDs(const char *tpmdev,
                            int *tpmfd,
                            int *cancelfd)
 {
-    if (fcntl(1730, F_GETFD) != -1 ||
-        fcntl(1731, F_GETFD) != -1)
-        abort();
-
-    *tpmfd = 1730;
-    *cancelfd = 1731;
+    *tpmfd = virTestMakeDummyFD(g_strdup_printf("@tpm-%s-fd@", tpmdev));
+    *cancelfd = virTestMakeDummyFD(g_strdup_printf("@tpm-%s-cancelfd@", tpmdev));
     return 0;
 }
 
@@ -255,15 +274,55 @@ virNetDevBandwidthSetRootQDisc(const char *ifname G_GNUC_UNUSED,
 
 
 int
-qemuInterfaceVDPAConnect(virDomainNetDef *net G_GNUC_UNUSED)
+qemuVDPAConnect(const char *devicepath)
 {
-    if (fcntl(1732, F_GETFD) != -1)
-        abort();
-    return 1732;
+    return virTestMakeDummyFD(g_strdup_printf("@vdpa-%s-fd@", devicepath));
 }
 
 char *
 virIdentityEnsureSystemToken(void)
 {
     return g_strdup("3de80bcbf22d4833897f1638e01be9b2");
+}
+
+
+int
+virNetDevSetMTU(const char *ifname G_GNUC_UNUSED,
+                int mtu G_GNUC_UNUSED)
+{
+    return 0;
+}
+
+static char *(*real_virFileCanonicalizePath)(const char *path);
+
+char *
+virFileCanonicalizePath(const char *path)
+{
+    size_t i;
+    const char *fws[] = {
+        /* These are locations from our firmware descriptors
+         * stored in qemufirmwaredata/. */
+        "/usr/share/edk2/",
+        "/usr/share/OVMF/",
+        "/usr/share/AAVMF/",
+        "/usr/share/seabios/",
+
+        /* These are 'random' locations from domain XMLs stored
+         * in qemuxmlconfdata/. */
+        "/path/to/OVMF_CODE.fd",
+        "/path/to/guest_BOTH.fd",
+        "/path/to/OVMF_VARS.fd",
+    };
+
+    for (i = 0; i < G_N_ELEMENTS(fws); i++) {
+        if (STRPREFIX(path, fws[i])) {
+            return g_strdup(path);
+        }
+    }
+
+    if (!real_virFileCanonicalizePath) {
+        VIR_MOCK_REAL_INIT(virFileCanonicalizePath);
+    }
+
+    return real_virFileCanonicalizePath(path);
 }

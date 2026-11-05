@@ -478,6 +478,14 @@ typedef int
 (*virDrvDomainSetAutostart)(virDomainPtr domain,
                             int autostart);
 
+typedef int
+(*virDrvDomainGetAutostartOnce)(virDomainPtr domain,
+                                int *autostart);
+
+typedef int
+(*virDrvDomainSetAutostartOnce)(virDomainPtr domain,
+                                int autostart);
+
 typedef char *
 (*virDrvDomainGetSchedulerType)(virDomainPtr domain,
                                 int *nparams);
@@ -576,7 +584,7 @@ typedef int
                               char **uri_out,
                               unsigned long flags,
                               const char *dname,
-                              unsigned long resource);
+                              unsigned long bandwidth);
 
 typedef int
 (*virDrvDomainMigratePerform)(virDomainPtr domain,
@@ -585,7 +593,7 @@ typedef int
                               const char *uri,
                               unsigned long flags,
                               const char *dname,
-                              unsigned long resource);
+                              unsigned long bandwidth);
 
 typedef virDomainPtr
 (*virDrvDomainMigrateFinish)(virConnectPtr dconn,
@@ -636,7 +644,7 @@ typedef int
                                char **uri_out,
                                unsigned long flags,
                                const char *dname,
-                               unsigned long resource,
+                               unsigned long bandwidth,
                                const char *dom_xml);
 
 typedef virDomainPtr
@@ -667,7 +675,7 @@ typedef int
                                     virStreamPtr st,
                                     unsigned long flags,
                                     const char *dname,
-                                    unsigned long resource,
+                                    unsigned long bandwidth,
                                     const char *dom_xml);
 
 typedef int
@@ -973,7 +981,7 @@ typedef char *
                              int *cookieoutlen,
                              unsigned long flags,
                              const char *dname,
-                             unsigned long resource);
+                             unsigned long bandwidth);
 
 typedef int
 (*virDrvDomainMigratePrepare3)(virConnectPtr dconn,
@@ -985,7 +993,7 @@ typedef int
                                char **uri_out,
                                unsigned long flags,
                                const char *dname,
-                               unsigned long resource,
+                               unsigned long bandwidth,
                                const char *dom_xml);
 
 typedef int
@@ -997,7 +1005,7 @@ typedef int
                                      int *cookieoutlen,
                                      unsigned long flags,
                                      const char *dname,
-                                     unsigned long resource,
+                                     unsigned long bandwidth,
                                      const char *dom_xml);
 
 
@@ -1012,7 +1020,7 @@ typedef int
                                const char *uri,
                                unsigned long flags,
                                const char *dname,
-                               unsigned long resource);
+                               unsigned long bandwidth);
 
 typedef virDomainPtr
 (*virDrvDomainMigrateFinish3)(virConnectPtr dconn,
@@ -1448,6 +1456,30 @@ typedef int
                            int *fds,
                            unsigned int flags);
 
+typedef int
+(*virDrvDomainGraphicsReload)(virDomainPtr domain,
+                              unsigned int type,
+                              unsigned int flags);
+
+typedef int
+(*virDrvDomainSetThrottleGroup)(virDomainPtr dom,
+                                const char *groupname,
+                                virTypedParameterPtr params,
+                                int nparams,
+                                unsigned int flags);
+
+typedef int
+(*virDrvDomainDelThrottleGroup)(virDomainPtr dom,
+                                const char *groupname,
+                                unsigned int flags);
+
+typedef int
+(*virDrvDomainAnnounceInterface)(virDomainPtr dom,
+                                 const char *device,
+                                 virTypedParameterPtr params,
+                                 int nparams,
+                                 unsigned int flags);
+
 typedef struct _virHypervisorDriver virHypervisorDriver;
 
 /**
@@ -1559,6 +1591,8 @@ struct _virHypervisorDriver {
     virDrvDomainDetachDeviceAlias domainDetachDeviceAlias;
     virDrvDomainGetAutostart domainGetAutostart;
     virDrvDomainSetAutostart domainSetAutostart;
+    virDrvDomainGetAutostartOnce domainGetAutostartOnce;
+    virDrvDomainSetAutostartOnce domainSetAutostartOnce;
     virDrvDomainGetSchedulerType domainGetSchedulerType;
     virDrvDomainGetSchedulerParameters domainGetSchedulerParameters;
     virDrvDomainGetSchedulerParametersFlags domainGetSchedulerParametersFlags;
@@ -1720,4 +1754,8 @@ struct _virHypervisorDriver {
     virDrvDomainGetMessages domainGetMessages;
     virDrvDomainStartDirtyRateCalc domainStartDirtyRateCalc;
     virDrvDomainFDAssociate domainFDAssociate;
+    virDrvDomainGraphicsReload domainGraphicsReload;
+    virDrvDomainSetThrottleGroup domainSetThrottleGroup;
+    virDrvDomainDelThrottleGroup domainDelThrottleGroup;
+    virDrvDomainAnnounceInterface domainAnnounceInterface;
 };

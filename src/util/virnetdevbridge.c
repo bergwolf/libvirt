@@ -30,9 +30,7 @@
 #endif
 
 #ifdef __linux__
-# if defined(WITH_LIBNL)
-#  include "virnetlink.h"
-# endif
+# include "virnetlink.h"
 # include <linux/sockios.h>
 # include <linux/param.h>     /* HZ                 */
 # include <linux/in6.h>
@@ -55,12 +53,11 @@ VIR_LOG_INIT("util.netdevbridge");
 static int virNetDevBridgeCmd(const char *brname,
                               u_long op,
                               void *arg,
-                              size_t argsize)
+                              size_t argsize,
+                              bool set)
 {
-    struct ifdrv ifd;
+    struct ifdrv ifd = { 0 };
     VIR_AUTOCLOSE s = -1;
-
-    memset(&ifd, 0, sizeof(ifd));
 
     if ((s = socket(AF_LOCAL, SOCK_DGRAM, 0)) < 0) {
         virReportSystemError(errno, "%s",
@@ -79,7 +76,7 @@ static int virNetDevBridgeCmd(const char *brname,
     ifd.ifd_len = argsize;
     ifd.ifd_data = arg;
 
-    return ioctl(s, SIOCSDRVSPEC, &ifd);
+    return ioctl(s, set ? SIOCSDRVSPEC : SIOCGDRVSPEC, &ifd);
 }
 #endif
 
@@ -292,27 +289,64 @@ virNetDevBridgePortSetUnicastFlood(const char *brname,
 }
 
 
-int
-virNetDevBridgePortGetIsolated(const char *brname,
-                               const char *ifname,
-                               bool *enable)
+static int
+virNetDevBridgeSetupVlans(const char *ifname, const virNetDevVlan *virtVlan)
 {
-    unsigned long value;
+    int error = 0;
+    unsigned short flags;
 
-    if (virNetDevBridgePortGet(brname, ifname, "isolated", &value) < 0)
-       return -1;
+    if (!virtVlan || !virtVlan->nTags)
+        return 0;
 
-    *enable = !!value;
+    /* The interface will have been automatically added to vlan 1, so remove it. */
+    if (virNetlinkBridgeVlanFilterDel(ifname, 1, &error) < 0) {
+        if (error != 0) {
+            virReportSystemError(-error,
+                                 _("error removing vlan filter from interface %1$s"),
+                                 ifname);
+        }
+        return -1;
+    }
+
+    /* If trunk mode, add the native VLAN then add the others, if any. */
+    if (virtVlan->trunk) {
+        size_t i;
+
+        if (virtVlan->nativeTag) {
+            flags = BRIDGE_VLAN_INFO_PVID;
+            if (virtVlan->nativeMode == VIR_NATIVE_VLAN_MODE_UNTAGGED ||
+                virtVlan->nativeMode == VIR_NATIVE_VLAN_MODE_DEFAULT) {
+                flags |= BRIDGE_VLAN_INFO_UNTAGGED;
+            }
+
+            if (virNetlinkBridgeVlanFilterSet(ifname, flags,
+                                              virtVlan->nativeTag, &error) < 0) {
+                goto error;
+            }
+        }
+
+        for (i = 0; i < virtVlan->nTags; i++) {
+            if (virtVlan->tag[i] != virtVlan->nativeTag)
+                if (virNetlinkBridgeVlanFilterSet(ifname, 0,
+                                                  virtVlan->tag[i], &error) < 0) {
+                    goto error;
+                }
+        }
+    } else {
+        /* In native mode, add the single VLAN as pvid untagged. */
+        flags = BRIDGE_VLAN_INFO_PVID | BRIDGE_VLAN_INFO_UNTAGGED;
+        if (virNetlinkBridgeVlanFilterSet(ifname, flags,
+                                          virtVlan->tag[0], &error) < 0) {
+            goto error;
+        }
+    }
+
     return 0;
-}
 
-
-int
-virNetDevBridgePortSetIsolated(const char *brname,
-                               const char *ifname,
-                               bool enable)
-{
-    return virNetDevBridgePortSet(brname, ifname, "isolated", enable ? 1 : 0);
+ error:
+    if (error != 0)
+        virReportSystemError(-error, _("error adding vlan filter to interface %1$s"), ifname);
+    return -1;
 }
 
 
@@ -359,8 +393,123 @@ virNetDevBridgePortSetUnicastFlood(const char *brname G_GNUC_UNUSED,
                          _("Unable to set bridge port unicast_flood on this platform"));
     return -1;
 }
+#endif
+
+#if defined(__linux__)
+int
+virNetDevBridgePortGetIsolated(const char *brname,
+                               const char *ifname,
+                               bool *enable)
+{
+    unsigned long value;
+
+    if (virNetDevBridgePortGet(brname, ifname, "isolated", &value) < 0)
+       return -1;
+
+    *enable = !!value;
+    return 0;
+}
 
 
+int
+virNetDevBridgePortSetIsolated(const char *brname,
+                               const char *ifname,
+                               bool enable)
+{
+    return virNetDevBridgePortSet(brname, ifname, "isolated", enable ? 1 : 0);
+}
+
+#elif defined(WITH_BSD_BRIDGE_MGMT) && defined(IFBIF_PRIVATE)
+static int
+virNetDevBridgePortGet(const char *brname,
+                       const char *ifname,
+                       uint32_t flag,
+                       unsigned long *value)
+{
+    struct ifbreq req = { 0 };
+
+    if (virStrcpyStatic(req.ifbr_ifsname, ifname) < 0) {
+        virReportSystemError(ERANGE,
+                             _("Network interface name '%1$s' is too long"),
+                             ifname);
+        return -1;
+    }
+
+    if (virNetDevBridgeCmd(brname, BRDGGIFFLGS, &req, sizeof(req), false) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to get bridge %1$s port %2$s flags"),
+                             brname, ifname);
+        return -1;
+    }
+
+    *value = req.ifbr_ifsflags & flag;
+
+    return 0;
+}
+
+
+static int
+virNetDevBridgePortSet(const char *brname,
+                       const char *ifname,
+                       uint32_t flag,
+                       unsigned long value)
+{
+    struct ifbreq req = { 0 };
+
+    if (virStrcpyStatic(req.ifbr_ifsname, ifname) < 0) {
+        virReportSystemError(ERANGE,
+                             _("Network interface name '%1$s' is too long"),
+                             ifname);
+        return -1;
+    }
+
+    if (virNetDevBridgeCmd(brname, BRDGGIFFLGS, &req, sizeof(req), false) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to get bridge %1$s port %2$s flags"),
+                             brname, ifname);
+        return -1;
+    }
+
+    if (value)
+        req.ifbr_ifsflags |= flag;
+    else
+        req.ifbr_ifsflags &= ~flag;
+
+    if (virNetDevBridgeCmd(brname, BRDGSIFFLGS, &req, sizeof(req), true) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to set bridge %1$s port %2$s flags"),
+                             brname, ifname);
+        return -1;
+    }
+
+    return 0;
+}
+
+
+int
+virNetDevBridgePortGetIsolated(const char *brname,
+                               const char *ifname,
+                               bool *enable)
+{
+    unsigned long value;
+
+    if (virNetDevBridgePortGet(brname, ifname, IFBIF_PRIVATE, &value) < 0)
+       return -1;
+
+    *enable = !!value;
+    return 0;
+}
+
+
+int
+virNetDevBridgePortSetIsolated(const char *brname,
+                               const char *ifname,
+                               bool enable)
+{
+    return virNetDevBridgePortSet(brname, ifname, IFBIF_PRIVATE, enable);
+}
+
+#else
 int
 virNetDevBridgePortGetIsolated(const char *brname G_GNUC_UNUSED,
                                const char *ifname G_GNUC_UNUSED,
@@ -595,7 +744,8 @@ int virNetDevBridgeDelete(const char *brname G_GNUC_UNUSED)
  */
 #if defined(WITH_STRUCT_IFREQ) && defined(SIOCBRADDIF)
 int virNetDevBridgeAddPort(const char *brname,
-                           const char *ifname)
+                           const char *ifname,
+                           const virNetDevVlan *virtVlan)
 {
     struct ifreq ifr;
     VIR_AUTOCLOSE fd = -1;
@@ -615,15 +765,58 @@ int virNetDevBridgeAddPort(const char *brname,
         return -1;
     }
 
-    return 0;
+    return virNetDevBridgeSetupVlans(ifname, virtVlan);
 }
 #elif defined(WITH_BSD_BRIDGE_MGMT)
 int virNetDevBridgeAddPort(const char *brname,
-                           const char *ifname)
+                           const char *ifname,
+                           const virNetDevVlan *virtVlan)
 {
-    struct ifbreq req;
+    struct ifbreq req = { 0 };
+# if defined(BRDG_VLAN_OP_SET)
+    struct ifbif_vlan_req vlreq = { 0 };
+# endif
 
-    memset(&req, 0, sizeof(req));
+    if (virtVlan &&
+        virtVlan->nativeMode == VIR_NATIVE_VLAN_MODE_TAGGED) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("native tagged VLAN mode is not supported on this platform"));
+        return -1;
+    }
+
+    if (virtVlan) {
+# if defined(BRDG_VLAN_OP_SET)
+        size_t i;
+
+        for (i = 0; i < virtVlan->nTags; i++) {
+            if (virtVlan->tag[i] < DOT1Q_VID_MIN ||
+                virtVlan->tag[i] > DOT1Q_VID_MAX) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                               _("VLAN tag %1$u is not supported on this platform"),
+                               virtVlan->tag[i]);
+                return -1;
+            }
+        }
+
+        if (virtVlan->trunk) {
+            for (i = 0; i < virtVlan->nTags; i++) {
+                vlreq.bv_op = BRDG_VLAN_OP_SET;
+                strlcpy(vlreq.bv_ifname, ifname, sizeof(vlreq.bv_ifname));
+
+                if (virtVlan->tag[i] != virtVlan->nativeTag)
+                    BRVLAN_SET(&vlreq.bv_set, virtVlan->tag[i]);
+                else
+                    req.ifbr_pvid = virtVlan->tag[i];
+            }
+        } else {
+            req.ifbr_pvid = virtVlan->tag[0];
+        }
+# else
+        virReportSystemError(ENOSYS, "%s", _("Not supported on this platform"));
+        return -1;
+# endif /* defined(BRDG_VLAN_OP_SET) */
+    }
+
     if (virStrcpyStatic(req.ifbr_ifsname, ifname) < 0) {
         virReportSystemError(ERANGE,
                              _("Network interface name '%1$s' is too long"),
@@ -631,17 +824,34 @@ int virNetDevBridgeAddPort(const char *brname,
         return -1;
     }
 
-    if (virNetDevBridgeCmd(brname, BRDGADD, &req, sizeof(req)) < 0) {
+    if (virNetDevBridgeCmd(brname, BRDGADD, &req, sizeof(req), true) < 0) {
         virReportSystemError(errno,
                              _("Unable to add bridge %1$s port %2$s"), brname, ifname);
         return -1;
     }
 
+# if defined(BRDG_VLAN_OP_SET)
+    if (req.ifbr_pvid != 0 &&
+        virNetDevBridgeCmd(brname, BRDGSIFPVID, &req, sizeof(req), true) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to set VLAN for bridge %1$s port %2$s"), brname, ifname);
+        return -1;
+    }
+
+    if (vlreq.bv_op != 0 &&
+        virNetDevBridgeCmd(brname, BRDGSIFVLANSET, &vlreq, sizeof(vlreq), true) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to set VLAN for bridge %1$s port %2$s"), brname, ifname);
+        return -1;
+    }
+# endif /* defined(BRDG_VLAN_OP_SET) */
+
     return 0;
 }
 #else
 int virNetDevBridgeAddPort(const char *brname,
-                           const char *ifname)
+                           const char *ifname,
+                           const virNetDevVlan *virtVlan G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS,
                          _("Unable to add bridge %1$s port %2$s"), brname, ifname);
@@ -687,9 +897,8 @@ int virNetDevBridgeRemovePort(const char *brname,
 int virNetDevBridgeRemovePort(const char *brname,
                               const char *ifname)
 {
-    struct ifbreq req;
+    struct ifbreq req = { 0 };
 
-    memset(&req, 0, sizeof(req));
     if (virStrcpyStatic(req.ifbr_ifsname, ifname) < 0) {
         virReportSystemError(ERANGE,
                              _("Network interface name '%1$s' is too long"),
@@ -697,7 +906,7 @@ int virNetDevBridgeRemovePort(const char *brname,
         return -1;
     }
 
-    if (virNetDevBridgeCmd(brname, BRDGDEL, &req, sizeof(req)) < 0) {
+    if (virNetDevBridgeCmd(brname, BRDGDEL, &req, sizeof(req), true) < 0) {
         virReportSystemError(errno,
                              _("Unable to remove bridge %1$s port %2$s"), brname, ifname);
        return -1;
@@ -821,7 +1030,7 @@ int virNetDevBridgeSetSTPDelay(const char *brname,
     delay_seconds = delay_seconds < 4 ? 4 : delay_seconds;
     param.ifbrp_fwddelay = delay_seconds & 0xff;
 
-    if (virNetDevBridgeCmd(brname, BRDGSFD, &param, sizeof(param)) < 0) {
+    if (virNetDevBridgeCmd(brname, BRDGSFD, &param, sizeof(param), true) < 0) {
         virReportSystemError(errno,
                              _("Unable to set STP delay on %1$s"), brname);
         return -1;
@@ -931,6 +1140,51 @@ virNetDevBridgeSetVlanFiltering(const char *brname,
                                 bool enable)
 {
     return virNetDevBridgeSet(brname, "vlan_filtering", enable ? 1 : 0, -1, NULL);
+}
+
+
+#elif defined(WITH_BSD_BRIDGE_MGMT) && defined(IFBRF_VLANFILTER)
+int
+virNetDevBridgeGetVlanFiltering(const char *brname,
+                                bool *enable)
+{
+    struct ifbrparam req;
+
+    if (virNetDevBridgeCmd(brname, BRDGGFLAGS, &req, sizeof(req), false) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to get bridge %1$s flags"), brname);
+        return -1;
+    }
+
+    *enable = !!(req.ifbrp_flags & IFBRF_VLANFILTER);
+    return 0;
+}
+
+
+int
+virNetDevBridgeSetVlanFiltering(const char *brname,
+                                bool enable)
+{
+    struct ifbrparam req;
+
+    if (virNetDevBridgeCmd(brname, BRDGGFLAGS, &req, sizeof(req), false) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to get bridge %1$s flag"), brname);
+        return -1;
+    }
+
+    if (enable)
+        req.ifbrp_flags |= IFBRF_VLANFILTER;
+    else
+        req.ifbrp_flags &= ~IFBRF_VLANFILTER;
+
+    if (virNetDevBridgeCmd(brname, BRDGSFLAGS, &req, sizeof(req), true) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to set bridge %1$s flag"), brname);
+        return -1;
+    }
+
+    return 0;
 }
 
 

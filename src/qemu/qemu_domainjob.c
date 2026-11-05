@@ -95,9 +95,9 @@ qemuDomainAsyncJobPhaseFromString(virDomainAsyncJob job,
 
 
 void
-qemuDomainEventEmitJobCompleted(virQEMUDriver *driver,
-                                virDomainObj *vm)
+qemuDomainEventEmitJobCompleted(virDomainObj *vm)
 {
+    qemuDomainObjPrivate *priv = vm->privateData;
     virObjectEvent *event;
     virTypedParameterPtr params = NULL;
     int nparams = 0;
@@ -113,7 +113,7 @@ qemuDomainEventEmitJobCompleted(virQEMUDriver *driver,
     }
 
     event = virDomainEventJobCompletedNewFromObj(vm, params, nparams);
-    virObjectEventStateQueue(driver->domainEventState, event);
+    virObjectEventStateQueue(priv->driver->domainEventState, event);
 }
 
 
@@ -412,6 +412,12 @@ qemuDomainMigrationJobDataToParams(virDomainJobData *jobData,
         virTypedParamsAddInt(&par, &npar, &maxpar,
                              VIR_DOMAIN_JOB_AUTO_CONVERGE_THROTTLE,
                              stats->cpu_throttle_percentage) < 0)
+        goto error;
+
+    if (stats->vfio_data_transferred &&
+        virTypedParamsAddULLong(&par, &npar, &maxpar,
+                                VIR_DOMAIN_JOB_VFIO_DATA_TRANSFERRED,
+                                stats->vfio_data_transferred) < 0)
         goto error;
 
  done:

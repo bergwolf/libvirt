@@ -26,7 +26,8 @@ foreach file : docs_logo_files
   # This hack enables us to view the web pages
   # from within the uninstalled build tree
   if meson.version().version_compare('>=0.64.0')
-    fs.copyfile(file)
+    logofile = fs.copyfile(file)
+    install_web_deps += logofile
   else
     configure_file(input: file, output: file, copy: true)
   endif
@@ -61,7 +62,9 @@ foreach data : html_xslt_gen
       '--stringparam', 'pagesrc', data.get('source', ''),
       '--stringparam', 'builddir', meson.project_build_root(),
       '--stringparam', 'timestamp', docs_timestamp,
-      '--stringparam', 'href_base', data.get('href_base', ''),
+      '--stringparam', 'link_href_base', data.get('href_base', ''),
+      '--stringparam', 'asset_href_base', data.get('href_base', ''),
+      '--stringparam', 'edit_href_base', 'https://gitlab.com/libvirt/libvirt/-/blob/master/',
       '--nonet',
       site_xsl,
       '@INPUT@',

@@ -70,8 +70,10 @@ static int
 fillQemuCaps(virDomainCaps *domCaps,
              const char *name,
              const char *arch,
+             const char *variant,
              const char *machine,
-             virQEMUDriverConfig *cfg)
+             virQEMUDriverConfig *cfg,
+             unsigned int flags)
 {
     g_autofree char *path = NULL;
     g_autoptr(virQEMUCaps) qemuCaps = NULL;
@@ -81,7 +83,7 @@ fillQemuCaps(virDomainCaps *domCaps,
     if (fakeHostCPU(domCaps->arch) < 0)
         return -1;
 
-    path = g_strdup_printf("%s/%s_%s.xml", TEST_QEMU_CAPS_PATH, name, arch);
+    path = g_strdup_printf("%s/%s_%s%s.xml", TEST_QEMU_CAPS_PATH, name, arch, variant);
     if (!(qemuCaps = qemuTestParseCapabilitiesArch(domCaps->arch, path)))
         return -1;
 
@@ -98,19 +100,10 @@ fillQemuCaps(virDomainCaps *domCaps,
     if (!domCaps->machine)
         domCaps->machine = g_strdup(virQEMUCapsGetPreferredMachine(qemuCaps, virtType));
 
-    if (virQEMUCapsFillDomainCaps(qemuCaps, domCaps->arch, domCaps,
-                                  false,
-                                  cfg->firmwares,
-                                  cfg->nfirmwares) < 0)
+    if (virQEMUCapsFillDomainCaps(cfg,
+                                  qemuCaps, domCaps->arch, domCaps,
+                                  false, flags) < 0)
         return -1;
-
-    /* The function above tries to query host's VFIO capabilities by calling
-     * qemuHostdevHostSupportsPassthroughVFIO() which, however, can't be
-     * successfully mocked as they are not exposed as internal APIs. Therefore,
-     * instead of mocking set the expected values here by hand. */
-    VIR_DOMAIN_CAPS_ENUM_SET(domCaps->hostdev.pciBackend,
-                             VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT,
-                             VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO);
 
     /* As of f05b6a918e28 we are expecting to see OVMF_CODE.fd file which
      * may not exists everywhere. */
@@ -118,9 +111,8 @@ fillQemuCaps(virDomainCaps *domCaps,
         VIR_FREE(loader->values.values[--loader->values.nvalues]);
 
     if (fillStringValues(&loader->values,
-                         "/usr/share/AAVMF/AAVMF_CODE.fd",
-                         "/usr/share/AAVMF/AAVMF32_CODE.fd",
-                         "/usr/share/OVMF/OVMF_CODE.fd",
+                         "/obviously/fake/firmware1.fd",
+                         "/obviously/fake/firmware2.fd",
                          NULL) < 0)
         return -1;
 
@@ -155,7 +147,7 @@ fillXenCaps(virDomainCaps *domCaps)
 # include "bhyve/bhyve_capabilities.h"
 
 static int
-fillBhyveCaps(virDomainCaps *domCaps, unsigned int *bhyve_caps)
+fillBhyveCaps(virDomainCaps *domCaps, virBitmap *bhyve_caps)
 {
     g_autofree virDomainCapsStringValues *firmwares = NULL;
 
@@ -164,7 +156,7 @@ fillBhyveCaps(virDomainCaps *domCaps, unsigned int *bhyve_caps)
     if (fillStringValues(firmwares, "/foo/bar", "/foo/baz", NULL) < 0)
         return -1;
 
-    if (virBhyveDomainCapsFill(domCaps, *bhyve_caps, firmwares) < 0)
+    if (virBhyveDomainCapsFill(domCaps, bhyve_caps, firmwares) < 0)
         return -1;
 
     return 0;
@@ -183,7 +175,9 @@ struct testData {
     const char *emulator;
     const char *machine;
     const char *arch;
+    const char *variant;
     virDomainVirtType type;
+    unsigned int flags;
     enum testCapsType capsType;
     const char *capsName;
     void *capsOpaque;
@@ -210,8 +204,8 @@ test_virDomainCapsFormat(const void *opaque)
 
     case CAPS_QEMU:
 #if WITH_QEMU
-        if (fillQemuCaps(domCaps, data->capsName, data->arch, data->machine,
-                         data->capsOpaque) < 0)
+        if (fillQemuCaps(domCaps, data->capsName, data->arch, data->variant,
+                         data->machine, data->capsOpaque, data->flags) < 0)
             return -1;
 #endif
         break;
@@ -248,19 +242,23 @@ doTestQemuInternal(const char *version,
                    const char *arch,
                    const char *variant,
                    virDomainVirtType type,
+                   unsigned int flags,
                    void *opaque)
 {
     g_autofree char *name = NULL;
     g_autofree char *capsName = g_strdup_printf("caps_%s", version);
     g_autofree char *emulator = g_strdup_printf("/usr/bin/qemu-system-%s", arch);
     const char *typestr = NULL;
+    const char *flag = NULL;
     g_autofree char *mach = NULL;
     int rc;
     struct testData data = {
         .emulator = emulator,
         .machine = machine,
         .arch = arch,
+        .variant = variant,
         .type = type,
+        .flags = flags,
         .capsType = CAPS_QEMU,
         .capsName = capsName,
         .capsOpaque = opaque,
@@ -289,18 +287,18 @@ doTestQemuInternal(const char *version,
     else
         mach = g_strdup("");
 
-    data.name = name = g_strdup_printf("qemu_%s%s%s.%s%s",
-                                       version, typestr, mach, arch, variant);
+    if (flags & VIR_CONNECT_GET_DOMAIN_CAPABILITIES_EXPAND_CPU_FEATURES)
+        flag = "-expanded";
+    else if (flags & VIR_CONNECT_GET_DOMAIN_CAPABILITIES_SUPPORTED_CPU_FEATURES)
+        flag = "-supported";
+    else
+        flag = "";
 
-    if (STRPREFIX(version, "3.") ||
-        STRPREFIX(version, "4.") ||
-        STRPREFIX(version, "5.")) {
-        g_setenv(TEST_TPM_ENV_VAR, TPM_VER_1_2, true);
-    } else if (STRPREFIX(version, "6.")) {
-        g_setenv(TEST_TPM_ENV_VAR, TPM_VER_1_2 TPM_VER_2_0, true);
-    } else {
-        g_setenv(TEST_TPM_ENV_VAR, TPM_VER_2_0, true);
-    }
+    data.name = name = g_strdup_printf("qemu_%s%s%s.%s%s%s",
+                                       version, typestr, mach, arch, variant,
+                                       flag);
+
+    g_setenv(TEST_TPM_ENV_VAR, TPM_VER_2_0, true);
 
     rc = virTestRun(name, test_virDomainCapsFormat, &data);
 
@@ -326,13 +324,11 @@ doTestQemu(const char *inputDir G_GNUC_UNUSED,
 
     if (STREQ(variant, "+hvf"))
         hvf = true;
-    else if (STRNEQ(variant, ""))
-        return 0;
 
     if (STREQ(arch, "x86_64")) {
         /* For x86_64 based on the test variant we test:
          *
-         *   '' (default) variant (KVM):
+         *   '' (default) variant or any other non-listed variant:
          *      - KVM with default machine
          *      - KVM with Q35 machine
          *  '+hvf' variant:
@@ -342,25 +338,38 @@ doTestQemu(const char *inputDir G_GNUC_UNUSED,
          */
         if (hvf) {
             if (doTestQemuInternal(version, NULL, arch, variant,
-                                   VIR_DOMAIN_VIRT_HVF, opaque) < 0)
+                                   VIR_DOMAIN_VIRT_HVF, 0, opaque) < 0)
                 ret = -1;
         } else {
             if (doTestQemuInternal(version, NULL, arch, variant,
-                                   VIR_DOMAIN_VIRT_KVM, opaque) < 0)
+                                   VIR_DOMAIN_VIRT_KVM, 0, opaque) < 0)
                 ret = -1;
 
             if (doTestQemuInternal(version, "q35", arch, variant,
-                                   VIR_DOMAIN_VIRT_KVM, opaque) < 0)
+                                   VIR_DOMAIN_VIRT_KVM, 0, opaque) < 0)
+                ret = -1;
+
+            if (doTestQemuInternal(version, "q35", arch, variant,
+                                   VIR_DOMAIN_VIRT_KVM,
+                                   VIR_CONNECT_GET_DOMAIN_CAPABILITIES_EXPAND_CPU_FEATURES,
+                                   opaque) < 0)
+                ret = -1;
+
+            if (doTestQemuInternal(version, "q35", arch, variant,
+                                   VIR_DOMAIN_VIRT_KVM,
+                                   VIR_CONNECT_GET_DOMAIN_CAPABILITIES_SUPPORTED_CPU_FEATURES,
+                                   opaque) < 0)
                 ret = -1;
         }
 
         if (doTestQemuInternal(version, NULL, arch, variant,
-                               VIR_DOMAIN_VIRT_QEMU, opaque) < 0)
+                               VIR_DOMAIN_VIRT_QEMU, 0, opaque) < 0)
             ret = -1;
+
     } else if (STREQ(arch, "aarch64")) {
         /* For aarch64 based on the test variant we test:
          *
-         *   '' (default) variant (KVM):
+         *   '' (default) variant or any other non-listed variant:
          *      - KVM with default machine
          *      - KVM with virt machine
          *
@@ -369,33 +378,34 @@ doTestQemu(const char *inputDir G_GNUC_UNUSED,
          */
         if (hvf) {
             if (doTestQemuInternal(version, NULL, arch, variant,
-                                   VIR_DOMAIN_VIRT_HVF, opaque) < 0)
+                                   VIR_DOMAIN_VIRT_HVF, 0, opaque) < 0)
                 ret = -1;
         } else {
             if (doTestQemuInternal(version, NULL, arch, variant,
-                                   VIR_DOMAIN_VIRT_KVM, opaque) < 0)
+                                   VIR_DOMAIN_VIRT_KVM, 0, opaque) < 0)
                 ret = -1;
 
             if (doTestQemuInternal(version, "virt", arch, variant,
-                                   VIR_DOMAIN_VIRT_KVM, opaque) < 0)
+                                   VIR_DOMAIN_VIRT_KVM, 0, opaque) < 0)
                 ret = -1;
         }
-    } else if (STRPREFIX(arch, "riscv")) {
-        /* For riscv64 we test two combinations:
+    } else if (STRPREFIX(arch, "riscv") || STRPREFIX(arch, "loongarch64")) {
+        /* For riscv64 or loongarch64 we test two combinations for any variant:
+         * ('+hvf' is not applicable for this case)
          *
          *   - KVM with virt machine
          *   - TCG with virt machine
          */
         if (doTestQemuInternal(version, "virt", arch, variant,
-                               VIR_DOMAIN_VIRT_KVM, opaque) < 0)
+                               VIR_DOMAIN_VIRT_KVM, 0, opaque) < 0)
             ret = -1;
 
         if (doTestQemuInternal(version, "virt", arch, variant,
-                               VIR_DOMAIN_VIRT_QEMU, opaque) < 0)
+                               VIR_DOMAIN_VIRT_QEMU, 0, opaque) < 0)
             ret = -1;
     } else {
         if (doTestQemuInternal(version, NULL, arch, variant,
-                               VIR_DOMAIN_VIRT_KVM, opaque) < 0)
+                               VIR_DOMAIN_VIRT_KVM, 0, opaque) < 0)
             ret = -1;
     }
 
@@ -410,7 +420,7 @@ mymain(void)
     int ret = 0;
 
 #if WITH_BHYVE
-    unsigned int bhyve_caps = 0;
+    g_autoptr(virBitmap) bhyve_caps = virBitmapNew(BHYVE_CAP_LAST);
 #endif
 
 #if WITH_QEMU
@@ -427,6 +437,7 @@ mymain(void)
             .emulator = Emulator, \
             .machine = Machine, \
             .arch = Arch, \
+            .variant = "", \
             .type = Type, \
             .capsType = CapsType, \
         }; \
@@ -441,6 +452,7 @@ mymain(void)
             .emulator = Emulator, \
             .machine = Machine, \
             .arch = Arch, \
+            .variant = "", \
             .type = Type, \
             .capsType = CAPS_LIBXL, \
         }; \
@@ -457,6 +469,7 @@ mymain(void)
             .name = name, \
             .emulator = Emulator, \
             .arch = "x86_64", \
+            .variant = "", \
             .type = Type, \
             .capsType = CAPS_BHYVE, \
             .capsOpaque = BhyveCaps, \
@@ -484,9 +497,8 @@ mymain(void)
      * Run "tests/qemucapsprobe /path/to/qemu/binary >foo.replies"
      * to generate updated or new *.replies data files.
      *
-     * If you manually edit replies files you can run
-     * VIR_TEST_REGENERATE_OUTPUT=1 tests/qemucapabilitiesnumbering
-     * to fix the replies ids.
+     * If you manually edit replies files or want to edit them programmaticaly
+     * use scripts/qemu-replies-tool --regenerate
      *
      * Once a replies file has been generated and tweaked if necessary,
      * you can drop it into tests/qemucapabilitiesdata/ (with a sensible
@@ -511,13 +523,16 @@ mymain(void)
 #endif /* WITH_LIBXL */
 
 #if WITH_BHYVE
-    DO_TEST_BHYVE("basic", "/usr/sbin/bhyve", &bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
+    DO_TEST_BHYVE("basic", "/usr/sbin/bhyve", bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
 
-    bhyve_caps |= BHYVE_CAP_LPC_BOOTROM;
-    DO_TEST_BHYVE("uefi", "/usr/sbin/bhyve", &bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
+    virBhyveCapsSet(bhyve_caps, BHYVE_CAP_LPC_BOOTROM);
+    DO_TEST_BHYVE("uefi", "/usr/sbin/bhyve", bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
 
-    bhyve_caps |= BHYVE_CAP_FBUF;
-    DO_TEST_BHYVE("fbuf", "/usr/sbin/bhyve", &bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
+    virBhyveCapsSet(bhyve_caps, BHYVE_CAP_FBUF);
+    DO_TEST_BHYVE("fbuf", "/usr/sbin/bhyve", bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
+
+    virBhyveCapsSet(bhyve_caps, BHYVE_CAP_LPC_TPM);
+    DO_TEST_BHYVE("tpm", "/usr/sbin/bhyve", bhyve_caps, VIR_DOMAIN_VIRT_BHYVE);
 #endif /* WITH_BHYVE */
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

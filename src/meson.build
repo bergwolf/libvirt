@@ -1,11 +1,7 @@
 src_inc_dir = include_directories('.')
 
 src_dep = declare_dependency(
-  compile_args: [
-    '-DIN_LIBVIRT',
-    '-Dabs_top_builddir="@0@"'.format(meson.project_build_root()),
-    '-Dabs_top_srcdir="@0@"'.format(meson.project_source_root()),
-  ] + coverage_flags + win32_flags,
+  compile_args: coverage_flags + win32_flags,
   dependencies: [
     glib_dep,
     libxml_dep,
@@ -18,6 +14,7 @@ src_dep = declare_dependency(
   link_args: (
     libvirt_relro
     + libvirt_no_indirect
+    + libvirt_no_warn_duplicate_libraries
     + coverage_flags
     + driver_modules_flags
     + win32_link_flags
@@ -124,6 +121,12 @@ else
   sym_files += 'libvirt_libssh2.syms'
 endif
 
+if conf.has('WITH_HYPERV')
+  used_sym_files += 'libvirt_hyperv.syms'
+else
+  sym_files += 'libvirt_hyperv.syms'
+endif
+
 # variables filled by subdirectories
 
 libvirt_libs = []
@@ -138,7 +141,7 @@ libvirt_libs = []
 #   * link_with - static libraries to link with (optional, default [])
 #   * link_whole - static libraries to include (optional, default [])
 #   * link_args - arguments for linker (optional, default [])
-#   * install_dir - installation directory (optional, default libdir / 'libvirt' / 'connection-driver'
+#   * install_dir - installation directory (optional, default connection_driver_install_dir)
 virt_modules = []
 
 # virt_daemons:
@@ -191,15 +194,24 @@ virt_test_aug_dir = datadir / 'augeas' / 'lenses' / 'tests'
 #   guest unit files to install
 guest_unit_files = []
 
+# systemd_*_extra_in:
+#   snippets that are shared by multiple units
+#   can be used in service_extra_in/socket_extra_in (see below)
+systemd_service_limitnofile_extra_in = files('virtd.service.limitnofile.extra.in')
+systemd_service_tasksmax_extra_in = files('virtd.service.tasksmax.extra.in')
+systemd_service_limitmemlock_extra_in = files('virtd.service.limitmemlock.extra.in')
+systemd_service_oomscoreadjust_extra_in = files('virtd.service.oomscoreadjust.extra.in')
+
 # virt_daemon_units:
 #   generate libvirt daemon systemd unit files
 #   * service - name of the service (required)
-#   * service_in - service source file (required)
 #   * name - socket description (required)
-#   * sockprefix - socket prefix name (required)
+#   * sockprefix - socket prefix name (optional, default unit['service'])
 #   * sockets - array of additional sockets (optional, default [ 'main', 'ro', 'admin' ])
-#   * socket_$name_in - additional socket source files (optional, default remote/libvirtd.socket.in )
-#   * deps - socket dependencies (optional, default '')
+#   * service_in - service source file (optional, default virtd.service.in)
+#   * socket_$name_in - additional socket source files (optional, default virtd.socket.in or virtd-$name.socket.in)
+#   * service_extra_in - units to merge with service_in (required)
+#   * socket_extra_in - units to merge with socket_$name_in (required)
 virt_daemon_units = []
 
 # openrc_init_files
@@ -272,6 +284,26 @@ subdir('test')
 subdir('vbox')
 subdir('vmware')
 subdir('vz')
+
+# Generate a logrotate configuration for every daemon built by this
+# configuration.  The driver-specific logrotate files for guest logs are
+# installed by src/remote/meson.build.
+foreach daemon : virt_daemons
+  daemon_logrotate_conf = configuration_data({
+    'daemon': daemon['name'],
+    'localstatedir': localstatedir,
+  })
+  daemon_logrotate = configure_file(
+    input: 'remote/libvirtd.logrotate.in',
+    output: '@0@.logrotate'.format(daemon['name']),
+    configuration: daemon_logrotate_conf,
+  )
+  install_data(
+    daemon_logrotate,
+    install_dir: sysconfdir / 'logrotate.d',
+    rename: [ daemon['name'] ],
+  )
+endforeach
 
 
 driver_sources = files(
@@ -542,13 +574,13 @@ if conf.has('WITH_REMOTE')
       capng_dep,
       devmapper_dep,
       gnutls_dep,
+      json_c_dep,
       libssh2_dep,
       libssh_dep,
       sasl_dep,
       src_dep,
       rpc_dep,
       xdr_dep,
-      yajl_dep,
     ],
     include_directories: [
       admin_inc_dir,
@@ -567,6 +599,8 @@ if conf.has('WITH_REMOTE')
 endif
 
 # build libvirt shared modules
+
+virt_module_deps = []
 
 foreach module : virt_modules
   mod = shared_module(
@@ -593,10 +627,11 @@ foreach module : virt_modules
       module.get('link_args', []),
     ],
     install: true,
-    install_dir: module.get('install_dir', libdir / 'libvirt' / 'connection-driver'),
+    install_dir: module.get('install_dir', connection_driver_install_dir),
     install_rpath: libvirt_rpath,
   )
   set_variable('@0@_module'.format(module['name'].underscorify()), mod)
+  virt_module_deps += mod
 endforeach
 
 
@@ -606,7 +641,11 @@ foreach daemon : virt_daemons
   bin = executable(
     daemon['name'],
     [
-      daemon.get('sources', [ remote_daemon_sources, remote_daemon_generated ]),
+      daemon.get('sources', [
+        remote_protocol_generated,
+        remote_daemon_sources,
+        remote_daemon_generated
+      ]),
       dtrace_gen_objects,
     ],
     c_args: [
@@ -640,6 +679,11 @@ foreach daemon : virt_daemons
     install_dir: sbindir,
     install_rpath: libvirt_rpath,
   )
+
+   # libvirtd_prog is needed by the test suite
+  if daemon['name'] == 'libvirtd'
+    libvirtd_prog = bin
+  endif
 endforeach
 
 
@@ -790,56 +834,75 @@ endforeach
 if conf.has('WITH_LIBVIRTD')
   # Generate systemd service and socket unit files
   if init_script == 'systemd'
-    systemd_unit_dir = prefix / 'lib' / 'systemd' / 'system'
-
     install_data(
       guest_unit_files,
-      install_dir: systemd_unit_dir,
+      install_dir: unitdir,
     )
 
-    foreach unit : virt_daemon_units
-      if conf.has('WITH_POLKIT')
-        mode = '0666'
-      else
-        mode = '0600'
-      endif
+    if conf.has('WITH_POLKIT')
+      sockmode = '0666'
+    else
+      sockmode = '0600'
+    endif
 
+    service_in_default = 'virtd.service.in'
+
+    foreach unit : virt_daemon_units
       unit_conf = configuration_data({
         'runstatedir': runstatedir,
         'sbindir': sbindir,
         'sysconfdir': sysconfdir,
         'initconfdir': initconfdir,
+        'localstatedir': localstatedir,
         'name': unit['name'],
         'service': unit['service'],
-        'sockprefix': unit['sockprefix'],
-        'deps': unit.get('deps', ''),
-        'mode': mode,
+        'SERVICE': unit['service'].to_upper(),
+        'sockprefix': unit.get('sockprefix', unit['service']),
+        'sockmode': sockmode,
       })
 
+      service_in = unit.get('service_in', service_in_default)
+      service_out = '@0@.service'.format(unit['service'])
+
+      service_in = configure_file(
+        input: [ service_in ] + unit['service_extra_in'],
+        output: '@0@.in'.format(service_out),
+        command: [ merge_systemd_units_prog, '@INPUT@' ],
+        capture: true,
+      )
+
       configure_file(
-        input: unit['service_in'],
-        output: '@0@.service'.format(unit['service']),
+        input: service_in,
+        output: service_out,
         configuration: unit_conf,
         install: true,
-        install_dir: systemd_unit_dir,
+        install_dir: unitdir,
       )
 
       foreach socket : unit.get('sockets', [ 'main', 'ro', 'admin' ])
         if socket == 'main'
-          socket_in_def = 'remote' / 'libvirtd.socket.in'
-          socket_in = unit.get('socket_in', socket_in_def)
+          socket_in_default = 'virtd.socket.in'
+          socket_in = unit.get('socket_in', socket_in_default)
           socket_out = '@0@.socket'.format(unit['service'])
         else
-          socket_in_def = 'remote' / 'libvirtd-@0@.socket.in'.format(socket)
-          socket_in = unit.get('socket_@0@_in'.format(socket), socket_in_def)
+          socket_in_default = 'virtd-@0@.socket.in'.format(socket)
+          socket_in = unit.get('socket_@0@_in'.format(socket), socket_in_default)
           socket_out = '@0@-@1@.socket'.format(unit['service'], socket)
         endif
+
+        socket_in = configure_file(
+          input: [ socket_in ] + unit['socket_extra_in'],
+          output: '@0@.in'.format(socket_out),
+          command: [ merge_systemd_units_prog, '@INPUT@' ],
+          capture: true,
+        )
+
         configure_file(
           input: socket_in,
           output: socket_out,
           configuration: unit_conf,
           install: true,
-          install_dir: systemd_unit_dir,
+          install_dir: unitdir,
         )
       endforeach
     endforeach
@@ -909,6 +972,15 @@ virt_install_dirs += [
   localstatedir / 'lib' / 'libvirt' / 'boot',
 ]
 
+if conf.has('WITH_LIBVIRTD')
+  virt_install_dirs += [
+    connection_driver_install_dir,
+    storage_backend_install_dir,
+    storage_file_install_dir,
+    lock_driver_install_dir,
+  ]
+endif
+
 meson.add_install_script(
   meson_python_prog.full_path(), python3_prog.full_path(), meson_install_dirs_prog.full_path(),
   virt_install_dirs,
@@ -917,117 +989,145 @@ meson.add_install_script(
 
 # Check driver files
 
-if host_machine.system() == 'linux'
+if tests_enabled[0]
+  if host_machine.system() == 'linux'
+    test(
+      'check-symfile',
+      python3_prog,
+      args: [ check_symfile_prog.full_path(), libvirt_syms, libvirt_lib ],
+      env: runutf8,
+      suite: 'script'
+    )
+
+    if conf.has('WITH_REMOTE')
+      test(
+        'check-admin-symfile',
+        python3_prog,
+        args: [ check_symfile_prog.full_path(), libvirt_admin_syms, libvirt_admin_lib ],
+        env: runutf8,
+        suite: 'script'
+      )
+    endif
+  endif
+
   test(
-    'check-symfile',
+    'check-symsorting',
     python3_prog,
-    args: [ check_symfile_prog.full_path(), libvirt_syms, libvirt_lib ],
+    args: [
+      check_symsorting_prog.full_path(),
+      meson.current_source_dir(),
+      files(sym_files, used_sym_files),
+    ],
     env: runutf8,
+    suite: 'script'
   )
 
-  if conf.has('WITH_REMOTE')
-    test(
-      'check-admin-symfile',
-      python3_prog,
-      args: [ check_symfile_prog.full_path(), libvirt_admin_syms, libvirt_admin_lib ],
-      env: runutf8,
-    )
+  test(
+    'check-admin-symsorting',
+    python3_prog,
+    args: [
+      check_symsorting_prog.full_path(),
+      meson.current_source_dir(),
+      libvirt_admin_private_syms,
+    ],
+    env: runutf8,
+    suite: 'script'
+  )
+
+  test(
+    'check-drivername',
+    python3_prog,
+    args: [
+      check_drivername_prog.full_path(), files(driver_headers),
+      files('libvirt_public.syms'), libvirt_qemu_syms, libvirt_lxc_syms,
+    ],
+    env: runutf8,
+    suite: 'script'
+  )
+
+  test(
+    'check-admin-drivername',
+    python3_prog,
+    args: [
+      check_drivername_prog.full_path(), libvirt_admin_public_syms,
+    ],
+    env: runutf8,
+    suite: 'script'
+  )
+
+  test(
+    'check-driverimpls',
+    python3_prog,
+    args: [ check_driverimpls_prog.full_path(), driver_source_files ],
+    env: runutf8,
+    suite: 'script'
+  )
+
+  test(
+    'check-aclrules',
+    python3_prog,
+    args: [ check_aclrules_prog.full_path(), files('remote/remote_protocol.x'), stateful_driver_source_files ],
+    env: runutf8,
+    suite: 'script'
+  )
+
+  if augparse_prog.found()
+    foreach data : augeas_test_data
+      test(
+        'check-augeas-@0@'.format(data['name']),
+        augparse_prog,
+        args: [
+          '-I', data['srcdir'],
+          '-I', data['builddir'],
+          data['file'].full_path(),
+        ],
+        suite: 'script',
+        depends: [data['file']]
+      )
+    endforeach
   endif
-endif
 
-test(
-  'check-symsorting',
-  python3_prog,
-  args: [
-    check_symsorting_prog.full_path(),
-    meson.current_source_dir(),
-    files(sym_files, used_sym_files),
-  ],
-  env: runutf8,
-)
+  if pdwtags_prog.found() and cc.get_id() != 'clang'
+    foreach proto : check_protocols
+      lib = proto['lib']
+      test(
+        'check-@0@'.format(proto['name']),
+        python3_prog,
+        args: [
+          check_remote_protocol_prog.full_path(),
+          proto['name'],
+          lib.name(),
+          lib.full_path(),
+          pdwtags_prog.full_path(),
+          files('@0@-structs'.format(proto['name'])),
+        ],
+        env: runutf8,
+        depends: [ lib ],
+        suite: 'script'
+      )
 
-test(
-  'check-admin-symsorting',
-  python3_prog,
-  args: [
-    check_symsorting_prog.full_path(),
-    meson.current_source_dir(),
-    libvirt_admin_private_syms,
-  ],
-  env: runutf8,
-)
-
-test(
-  'check-drivername',
-  python3_prog,
-  args: [
-    check_drivername_prog.full_path(), files(driver_headers),
-    files('libvirt_public.syms'), libvirt_qemu_syms, libvirt_lxc_syms,
-  ],
-  env: runutf8,
-)
-
-test(
-  'check-admin-drivername',
-  python3_prog,
-  args: [
-    check_drivername_prog.full_path(), libvirt_admin_public_syms,
-  ],
-  env: runutf8,
-)
-
-test(
-  'check-driverimpls',
-  python3_prog,
-  args: [ check_driverimpls_prog.full_path(), driver_source_files ],
-  env: runutf8,
-)
-
-test(
-  'check-aclrules',
-  python3_prog,
-  args: [ check_aclrules_prog.full_path(), files('remote/remote_protocol.x'), stateful_driver_source_files ],
-  env: runutf8,
-)
-
-if augparse_prog.found()
-  foreach data : augeas_test_data
-    test(
-      'check-augeas-@0@'.format(data['name']),
-      augparse_prog,
-      args: [
-        '-I', data['srcdir'],
-        '-I', data['builddir'],
-        data['file'].full_path(),
-      ],
-    )
-  endforeach
-endif
-
-if pdwtags_prog.found() and cc.get_id() != 'clang'
-  foreach proto : check_protocols
-    lib = proto['lib']
-    test(
-      'check-@0@'.format(proto['name']),
-      python3_prog,
-      args: [
-        check_remote_protocol_prog.full_path(),
-        proto['name'],
-        lib.name(),
-        lib.full_path(),
-        pdwtags_prog.full_path(),
-        files('@0@-structs'.format(proto['name'])),
-      ],
-      env: runutf8,
-      depends: [ lib ],
-    )
-  endforeach
+      run_target(
+          'regen-@0@'.format(proto['name']),
+          command: [python3_prog,
+                    check_remote_protocol_prog.full_path(),
+                    proto['name'],
+                    lib.name(),
+                    lib.full_path(),
+                    pdwtags_prog.full_path(),
+                    files('@0@-structs'.format(proto['name'])),
+                    '--regenerate',
+                   ],
+          env: runutf8,
+          depends: [ lib ])
+    endforeach
+  endif
 endif
 
 # configure pkg-config files for run script
 run_pkg_config_files = [
   'libvirt-lxc.pc.in',
   'libvirt-qemu.pc.in',
+  'libvirt-admin.pc.in',
   'libvirt.pc.in',
 ]
 

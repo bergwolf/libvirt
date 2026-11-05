@@ -34,8 +34,8 @@ int virHostValidateQEMU(void)
     bool hasHwVirt = false;
     bool hasVirtFlag = false;
     virArch arch = virArchFromHost();
-    const char *kvmhint = _("Check that CPU and firmware supports virtualization "
-                            "and kvm module is loaded");
+    const char *hwVirtName = NULL;
+    const char *kvmhint = _("Check that CPU and firmware supports virtualization and kvm module is loaded");
 
     if (!(flags = virHostValidateGetCPUFlags()))
         return -1;
@@ -44,20 +44,27 @@ int virHostValidateQEMU(void)
     case VIR_ARCH_I686:
     case VIR_ARCH_X86_64:
         hasVirtFlag = true;
-        kvmhint = _("Check that the 'kvm-intel' or 'kvm-amd' modules are "
-                    "loaded & the BIOS has enabled virtualization");
-        if (virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_SVM) ||
-            virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_VMX))
+        kvmhint = _("Check that the 'kvm-intel' or 'kvm-amd' modules are loaded & the BIOS has enabled virtualization");
+        if (virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_SVM)) {
+            hwVirtName = "SVM";
             hasHwVirt = true;
+        }
+        if (virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_VMX)) {
+            hwVirtName = "VMX";
+            hasHwVirt = true;
+        }
         break;
     case VIR_ARCH_S390:
     case VIR_ARCH_S390X:
         hasVirtFlag = true;
-        if (virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_SIE))
+        if (virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_SIE)) {
+            hwVirtName = "SIE";
             hasHwVirt = true;
+        }
         break;
     case VIR_ARCH_PPC64:
     case VIR_ARCH_PPC64LE:
+        hwVirtName = "LPCR";
         hasVirtFlag = true;
         hasHwVirt = true;
         break;
@@ -66,47 +73,44 @@ int virHostValidateQEMU(void)
     }
 
     if (hasVirtFlag) {
-        virHostMsgCheck("QEMU", "%s", _("for hardware virtualization"));
+        virValidateCheck("QEMU", "%s", _("Checking for hardware virtualization"));
         if (hasHwVirt) {
-            virHostMsgPass();
+            virValidatePassDetails(hwVirtName);
         } else {
-            virHostMsgFail(VIR_HOST_VALIDATE_FAIL,
-                           _("Host not compatible with KVM; HW virtualization CPU features not found. "
-                             "Only emulated CPUs are available; performance will be significantly limited"));
+            virValidateFail(VIR_VALIDATE_FAIL,
+                            _("Host not compatible with KVM; HW virtualization CPU features not found. Only emulated CPUs are available; performance will be significantly limited"));
             ret = -1;
         }
     }
 
     if (hasHwVirt || !hasVirtFlag) {
         if (virHostValidateDeviceExists("QEMU", "/dev/kvm",
-                                        VIR_HOST_VALIDATE_FAIL,
+                                        VIR_VALIDATE_FAIL,
                                         kvmhint) <0)
             ret = -1;
         else if (virHostValidateDeviceAccessible("QEMU", "/dev/kvm",
-                                                 VIR_HOST_VALIDATE_FAIL,
-                                                 _("Check /dev/kvm is world writable or you are in "
-                                                   "a group that is allowed to access it")) < 0)
+                                                 VIR_VALIDATE_FAIL,
+                                                 _("Check /dev/kvm is world writable or you are in a group that is allowed to access it")) < 0)
             ret = -1;
     }
 
     if (arch == VIR_ARCH_PPC64 || arch == VIR_ARCH_PPC64LE) {
-        virHostMsgCheck("QEMU", "%s", _("for PowerPC KVM module loaded"));
+        virValidateCheck("QEMU", "%s", _("Checking for PowerPC KVM module loaded"));
 
         if (!virHostKernelModuleIsLoaded("kvm_hv"))
-            virHostMsgFail(VIR_HOST_VALIDATE_WARN,
-                          _("Load kvm_hv for better performance"));
+            virValidateFail(VIR_VALIDATE_WARN,
+                            _("Load kvm_hv for better performance"));
         else
-            virHostMsgPass();
+            virValidatePass();
     }
 
     if (virHostValidateDeviceExists("QEMU", "/dev/vhost-net",
-                                    VIR_HOST_VALIDATE_WARN,
-                                    _("Load the 'vhost_net' module to improve performance "
-                                      "of virtio networking")) < 0)
+                                    VIR_VALIDATE_WARN,
+                                    _("Load the 'vhost_net' module to improve performance of virtio networking")) < 0)
         ret = -1;
 
     if (virHostValidateDeviceExists("QEMU", "/dev/net/tun",
-                                    VIR_HOST_VALIDATE_FAIL,
+                                    VIR_VALIDATE_FAIL,
                                     _("Load the 'tun' module to enable networking for QEMU guests")) < 0)
         ret = -1;
 
@@ -117,16 +121,16 @@ int virHostValidateQEMU(void)
                                          (1 << VIR_CGROUP_CONTROLLER_CPUSET) |
                                          (1 << VIR_CGROUP_CONTROLLER_DEVICES) |
                                          (1 << VIR_CGROUP_CONTROLLER_BLKIO),
-                                         VIR_HOST_VALIDATE_WARN) < 0) {
+                                         VIR_VALIDATE_WARN) < 0) {
         ret = -1;
     }
 
     if (virHostValidateIOMMU("QEMU",
-                             VIR_HOST_VALIDATE_WARN) < 0)
+                             VIR_VALIDATE_WARN) < 0)
         ret = -1;
 
     if (virHostValidateSecureGuests("QEMU",
-                                    VIR_HOST_VALIDATE_WARN) < 0)
+                                    VIR_VALIDATE_WARN) < 0)
         ret = -1;
 
     return ret;

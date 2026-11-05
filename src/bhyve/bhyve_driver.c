@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2014 Roman Bogorodskiy
  * Copyright (C) 2014-2015 Red Hat, Inc.
+ * Copyright (C) 2025 The FreeBSD Foundation
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,6 +24,9 @@
 
 #include <fcntl.h>
 #include <sys/utsname.h>
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <sys/user.h>
 
 #include "virerror.h"
 #include "datatypes.h"
@@ -49,11 +53,14 @@
 #include "virstring.h"
 #include "cpu/cpu.h"
 #include "viraccessapicheck.h"
+#include "viraccessapicheckqemu.h"
 #include "virhostcpu.h"
 #include "virhostmem.h"
 #include "virportallocator.h"
 #include "conf/domain_capabilities.h"
 #include "virutil.h"
+#include "domain_driver.h"
+#include "virnetdevtap.h"
 
 #include "bhyve_conf.h"
 #include "bhyve_device.h"
@@ -63,6 +70,7 @@
 #include "bhyve_domain.h"
 #include "bhyve_process.h"
 #include "bhyve_capabilities.h"
+#include "bhyve_rctl.h"
 
 #define VIR_FROM_THIS   VIR_FROM_BHYVE
 
@@ -70,43 +78,78 @@ VIR_LOG_INIT("bhyve.bhyve_driver");
 
 struct _bhyveConn *bhyve_driver = NULL;
 
-static int
+static void
 bhyveAutostartDomain(virDomainObj *vm, void *opaque)
 {
-    const struct bhyveAutostartData *data = opaque;
+    bhyveConn *driver = opaque;
     int ret = 0;
-    VIR_LOCK_GUARD lock = virObjectLockGuard(vm);
 
-    if (vm->autostart && !virDomainObjIsActive(vm)) {
-        virResetLastError();
-        ret = virBhyveProcessStart(data->conn, vm,
-                                   VIR_DOMAIN_RUNNING_BOOTED, 0);
-        if (ret < 0) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("Failed to autostart VM '%1$s': %2$s"),
-                           vm->def->name, virGetLastErrorMessage());
-        }
+    ret = virBhyveProcessStart(driver, NULL, vm,
+                               VIR_DOMAIN_RUNNING_BOOTED, 0);
+    if (ret < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Failed to autostart VM '%1$s': %2$s"),
+                       vm->def->name, virGetLastErrorMessage());
     }
-    return ret;
 }
+
+
+static qemuAgent *
+bhyveDomainObjEnterAgent(virDomainObj *obj)
+{
+    bhyveDomainObjPrivate *priv = obj->privateData;
+    qemuAgent *agent = priv->agent;
+
+    VIR_DEBUG("Entering agent (agent=%p vm=%p name=%s)",
+              priv->agent, obj, obj->def->name);
+
+    virObjectLock(agent);
+    virObjectRef(agent);
+    virObjectUnlock(obj);
+
+    return agent;
+}
+
 
 static void
-bhyveAutostartDomains(struct _bhyveConn *driver)
+bhyveDomainObjExitAgent(virDomainObj *obj, qemuAgent *agent)
 {
-    /* XXX: Figure out a better way todo this. The domain
-     * startup code needs a connection handle in order
-     * to lookup the bridge associated with a virtual
-     * network
-     */
-    virConnectPtr conn = virConnectOpen("bhyve:///system");
-    /* Ignoring NULL conn which is mostly harmless here */
+    virObjectUnlock(agent);
+    virObjectUnref(agent);
+    virObjectLock(obj);
 
-    struct bhyveAutostartData data = { driver, conn };
-
-    virDomainObjListForEach(driver->domains, false, bhyveAutostartDomain, &data);
-
-    virObjectUnref(conn);
+    VIR_DEBUG("Exited agent (agent=%p vm=%p name=%s)",
+              agent, obj, obj->def->name);
 }
+
+
+static int
+bhyveDomainEnsureAgent(virDomainObj *vm,
+                       bool reportError)
+{
+    bhyveDomainObjPrivate *priv = vm->privateData;
+
+    if (virDomainObjGetState(vm, NULL) != VIR_DOMAIN_RUNNING) {
+        if (reportError) {
+            virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                           _("domain is not running"));
+        }
+        return -1;
+    }
+
+    if (priv->agent)
+        return 0;
+
+    if (!priv->eventThread &&
+        virBhyveDomainObjStartWorker(vm) < 0)
+        return -1;
+
+    if (bhyveConnectAgent(NULL, vm) < 0)
+        return -1;
+
+    return 0;
+}
+
 
 /**
  * bhyveDriverGetCapabilities:
@@ -168,7 +211,8 @@ bhyveConnectURIProbe(char **uri)
     if (bhyve_driver == NULL)
         return 0;
 
-    *uri = g_strdup("bhyve:///system");
+    *uri = g_strdup(bhyve_driver->privileged ?
+                    "bhyve:///system" : "bhyve:///session");
     return 1;
 }
 
@@ -181,18 +225,16 @@ bhyveConnectOpen(virConnectPtr conn,
 {
     virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
 
-    if (STRNEQ(conn->uri->path, "/system")) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Unexpected bhyve URI path '%1$s', try bhyve:///system"),
-                       conn->uri->path);
-        return VIR_DRV_OPEN_ERROR;
-    }
-
     if (bhyve_driver == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        "%s", _("bhyve state driver is not active"));
         return VIR_DRV_OPEN_ERROR;
     }
+
+    if (!virConnectValidateURIPath(conn->uri->path,
+                                   "bhyve",
+                                   bhyve_driver->privileged))
+        return VIR_DRV_OPEN_ERROR;
 
     if (virConnectOpenEnsureACL(conn) < 0)
         return VIR_DRV_OPEN_ERROR;
@@ -344,10 +386,12 @@ bhyveDomainGetAutostart(virDomainPtr domain, int *autostart)
 static int
 bhyveDomainSetAutostart(virDomainPtr domain, int autostart)
 {
+    struct _bhyveConn *privconn = domain->conn->privateData;
     virDomainObj *vm;
     char *configFile = NULL;
     char *autostartLink = NULL;
     int ret = -1;
+    g_autoptr(virBhyveDriverConfig) cfg = NULL;
 
     if (!(vm = bhyveDomObjFromDomain(domain)))
         goto cleanup;
@@ -363,17 +407,17 @@ bhyveDomainSetAutostart(virDomainPtr domain, int autostart)
 
     autostart = (autostart != 0);
 
+    cfg = virBhyveDriverGetConfig(privconn);
+
     if (vm->autostart != autostart) {
-        if ((configFile = virDomainConfigFile(BHYVE_CONFIG_DIR, vm->def->name)) == NULL)
-            goto cleanup;
-        if ((autostartLink = virDomainConfigFile(BHYVE_AUTOSTART_DIR, vm->def->name)) == NULL)
-            goto cleanup;
+        configFile = virDomainConfigFile(cfg->configDir, vm->def->name);
+        autostartLink = virDomainConfigFile(cfg->autostartDir, vm->def->name);
 
         if (autostart) {
-            if (g_mkdir_with_parents(BHYVE_AUTOSTART_DIR, 0777) < 0) {
+            if (g_mkdir_with_parents(cfg->autostartDir, 0777) < 0) {
                 virReportSystemError(errno,
                                      _("cannot create autostart directory %1$s"),
-                                     BHYVE_AUTOSTART_DIR);
+                                     cfg->autostartDir);
                 goto cleanup;
             }
 
@@ -466,6 +510,7 @@ bhyveDomainGetXMLDesc(virDomainPtr domain, unsigned int flags)
 {
     struct _bhyveConn *privconn = domain->conn->privateData;
     virDomainObj *vm;
+    virDomainDef *def;
     char *ret = NULL;
 
     virCheckFlags(VIR_DOMAIN_XML_COMMON_FLAGS, NULL);
@@ -476,7 +521,12 @@ bhyveDomainGetXMLDesc(virDomainPtr domain, unsigned int flags)
     if (virDomainGetXMLDescEnsureACL(domain->conn, vm->def, flags) < 0)
         goto cleanup;
 
-    ret = virDomainDefFormat(vm->def, privconn->xmlopt,
+    if ((flags & VIR_DOMAIN_XML_INACTIVE) && vm->newDef)
+        def = vm->newDef;
+    else
+        def = vm->def;
+
+    ret = virDomainDefFormat(def, privconn->xmlopt,
                              virDomainDefFormatConvertXMLFlags(flags));
 
  cleanup:
@@ -494,7 +544,9 @@ bhyveDomainDefineXMLFlags(virConnectPtr conn, const char *xml, unsigned int flag
     virDomainObj *vm = NULL;
     virObjectEvent *event = NULL;
     g_autoptr(virCaps) caps = NULL;
-    unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
+    unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE |
+                               VIR_DOMAIN_DEF_PARSE_ABI_UPDATE;
 
     virCheckFlags(VIR_DOMAIN_DEFINE_VALIDATE, NULL);
 
@@ -505,14 +557,20 @@ bhyveDomainDefineXMLFlags(virConnectPtr conn, const char *xml, unsigned int flag
     if (!caps)
         return NULL;
 
+    /* Avoid parsing the whole domain definition for ACL checks */
+    if (!(def = virDomainDefIDsParseString(xml, privconn->xmlopt, parse_flags)))
+        return NULL;
+
+    if (virDomainDefineXMLFlagsEnsureACL(conn, def) < 0)
+        return NULL;
+
+    g_clear_pointer(&def, virDomainDefFree);
+
     if ((def = virDomainDefParseString(xml, privconn->xmlopt,
                                        NULL, parse_flags)) == NULL)
         goto cleanup;
 
     if (virXMLCheckIllegalChars("name", def->name, "\n") < 0)
-        goto cleanup;
-
-    if (virDomainDefineXMLFlagsEnsureACL(conn, def) < 0)
         goto cleanup;
 
     if (bhyveDomainAssignAddresses(def, NULL) < 0)
@@ -525,7 +583,7 @@ bhyveDomainDefineXMLFlags(virConnectPtr conn, const char *xml, unsigned int flag
     vm->persistent = 1;
 
     if (virDomainDefSave(vm->newDef ? vm->newDef : vm->def,
-                         privconn->xmlopt, BHYVE_CONFIG_DIR) < 0) {
+                         privconn->xmlopt, cfg->configDir) < 0) {
         virDomainObjListRemove(privconn->domains, vm);
         goto cleanup;
     }
@@ -557,9 +615,20 @@ bhyveDomainUndefineFlags(virDomainPtr domain, unsigned int flags)
     struct _bhyveConn *privconn = domain->conn->privateData;
     virObjectEvent *event = NULL;
     virDomainObj *vm;
+    g_autofree char *nvram_path = NULL;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
     int ret = -1;
 
-    virCheckFlags(0, -1);
+    virCheckFlags(VIR_DOMAIN_UNDEFINE_NVRAM |
+                  VIR_DOMAIN_UNDEFINE_KEEP_NVRAM, -1);
+
+    if ((flags & VIR_DOMAIN_UNDEFINE_NVRAM) &&
+        (flags & VIR_DOMAIN_UNDEFINE_KEEP_NVRAM)) {
+        virReportError(VIR_ERR_OPERATION_INVALID,
+                       "%s", _("cannot both keep and delete nvram"));
+        return -1;
+    }
+
     if (!(vm = bhyveDomObjFromDomain(domain)))
         goto cleanup;
 
@@ -572,8 +641,28 @@ bhyveDomainUndefineFlags(virDomainPtr domain, unsigned int flags)
         goto cleanup;
     }
 
-    if (virDomainDeleteConfig(BHYVE_CONFIG_DIR,
-                              BHYVE_AUTOSTART_DIR,
+    if (vm->def->os.loader && vm->def->os.loader->nvram &&
+        virStorageSourceIsLocalStorage(vm->def->os.loader->nvram)) {
+        nvram_path = g_strdup(vm->def->os.loader->nvram->path);
+    }
+
+    if (nvram_path && virFileExists(nvram_path)) {
+        if ((flags & VIR_DOMAIN_UNDEFINE_NVRAM)) {
+            if (unlink(nvram_path) < 0) {
+                virReportSystemError(errno,
+                                     _("failed to remove nvram: %1$s"),
+                                     nvram_path);
+                goto cleanup;
+            }
+        } else if (!(flags & VIR_DOMAIN_UNDEFINE_KEEP_NVRAM)) {
+            virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                           _("cannot undefine domain with nvram"));
+            goto cleanup;
+        }
+    }
+
+    if (virDomainDeleteConfig(cfg->configDir,
+                              cfg->autostartDir,
                               vm) < 0)
         goto cleanup;
 
@@ -677,7 +766,9 @@ bhyveConnectDomainXMLToNative(virConnectPtr conn,
     }
 
     if (!(def = virDomainDefParseString(xmlData, privconn->xmlopt,
-                                        NULL, VIR_DOMAIN_DEF_PARSE_INACTIVE)))
+                                        NULL,
+                                        VIR_DOMAIN_DEF_PARSE_INACTIVE |
+                                        VIR_DOMAIN_DEF_PARSE_ABI_UPDATE)))
         return NULL;
 
     if (bhyveDomainAssignAddresses(def, NULL) < 0)
@@ -692,10 +783,9 @@ bhyveConnectDomainXMLToNative(virConnectPtr conn,
             return NULL;
         }
 
-        if ((bhyveDriverGetBhyveCaps(privconn) & BHYVE_CAP_LPC_BOOTROM) == 0) {
+        if (!virBhyveCapsGet(bhyveDriverGetBhyveCaps(privconn), BHYVE_CAP_LPC_BOOTROM)) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("Installed bhyve binary does not support "
-                          "bootrom"));
+                           _("Installed bhyve binary does not support bootrom"));
             return NULL;
         }
     } else {
@@ -837,7 +927,7 @@ bhyveDomainCreateWithFlags(virDomainPtr dom,
         goto cleanup;
     }
 
-    ret = virBhyveProcessStart(dom->conn, vm,
+    ret = virBhyveProcessStart(privconn, dom->conn, vm,
                                VIR_DOMAIN_RUNNING_BOOTED,
                                start_flags);
 
@@ -869,7 +959,8 @@ bhyveDomainCreateXML(virConnectPtr conn,
     virDomainObj *vm = NULL;
     virObjectEvent *event = NULL;
     unsigned int start_flags = 0;
-    unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE;
+    unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE |
+                               VIR_DOMAIN_DEF_PARSE_ABI_UPDATE;
 
     virCheckFlags(VIR_DOMAIN_START_AUTODESTROY |
                   VIR_DOMAIN_START_VALIDATE, NULL);
@@ -879,11 +970,17 @@ bhyveDomainCreateXML(virConnectPtr conn,
     if (flags & VIR_DOMAIN_START_AUTODESTROY)
         start_flags |= VIR_BHYVE_PROCESS_START_AUTODESTROY;
 
-    if ((def = virDomainDefParseString(xml, privconn->xmlopt,
-                                       NULL, parse_flags)) == NULL)
-        goto cleanup;
+    /* Avoid parsing the whole domain definition for ACL checks */
+    if (!(def = virDomainDefIDsParseString(xml, privconn->xmlopt, parse_flags)))
+        return NULL;
 
     if (virDomainCreateXMLEnsureACL(conn, def) < 0)
+        return NULL;
+
+    g_clear_pointer(&def, virDomainDefFree);
+
+    if ((def = virDomainDefParseString(xml, privconn->xmlopt,
+                                       NULL, parse_flags)) == NULL)
         goto cleanup;
 
     if (bhyveDomainAssignAddresses(def, NULL) < 0)
@@ -895,7 +992,7 @@ bhyveDomainCreateXML(virConnectPtr conn,
                                    VIR_DOMAIN_OBJ_LIST_ADD_CHECK_LIVE, NULL)))
         goto cleanup;
 
-    if (virBhyveProcessStart(conn, vm,
+    if (virBhyveProcessStart(privconn, conn, vm,
                              VIR_DOMAIN_RUNNING_BOOTED,
                              start_flags) < 0) {
         /* If domain is not persistent, remove its data */
@@ -937,7 +1034,7 @@ bhyveDomainDestroyFlags(virDomainPtr dom, unsigned int flags)
     if (virDomainObjCheckActive(vm) < 0)
         goto cleanup;
 
-    ret = virBhyveProcessStop(privconn, vm, VIR_DOMAIN_SHUTOFF_DESTROYED);
+    ret = virBhyveProcessStop(privconn, vm, VIR_DOMAIN_SHUTOFF_DESTROYED, false);
     event = virDomainEventLifecycleNewFromObj(vm,
                                               VIR_DOMAIN_EVENT_STOPPED,
                                               VIR_DOMAIN_EVENT_STOPPED_DESTROYED);
@@ -958,15 +1055,81 @@ bhyveDomainDestroy(virDomainPtr dom)
 }
 
 static int
+bhyveDomainShutdownSignal(virDomainObj *vm,
+                          bool isReboot)
+{
+    bhyveDomainObjPrivate *priv;
+
+    if (isReboot) {
+        priv = vm->privateData;
+        bhyveMonitorSetReboot(priv->mon);
+    }
+
+    return virBhyveProcessShutdown(vm);
+}
+
+static int
+bhyveDomainShutdownFlagsAgent(virDomainObj *vm,
+                              bool isReboot,
+                              bool reportError)
+{
+    int ret = -1;
+    qemuAgent *agent;
+    int agentFlag = isReboot ? QEMU_AGENT_SHUTDOWN_REBOOT :
+        QEMU_AGENT_SHUTDOWN_POWERDOWN;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_MODIFY) < 0)
+        return -1;
+
+    if (virDomainObjGetState(vm, NULL) != VIR_DOMAIN_RUNNING) {
+        virReportError(VIR_ERR_OPERATION_INVALID,
+                       "%s", _("domain is not running"));
+        goto endjob;
+    }
+
+    if (bhyveDomainEnsureAgent(vm, reportError) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    qemuAgentShutdown(agent, agentFlag);
+    bhyveDomainObjExitAgent(vm, agent);
+    ret = 0;
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+    return ret;
+}
+
+static int
+bhyveDomainRebootAgent(virDomainObj *vm, bool isReboot, bool reportError)
+{
+    return bhyveDomainShutdownFlagsAgent(vm, isReboot, reportError);
+}
+
+static int
 bhyveDomainShutdownFlags(virDomainPtr dom, unsigned int flags)
 {
     virDomainObj *vm;
+    bhyveDomainObjPrivate *priv;
     int ret = -1;
+    bool isReboot = false;
+    bool useAgent = false;
+    bool agentRequested, signalRequested;
+    bool agentForced;
 
-    virCheckFlags(0, -1);
+    virCheckFlags(VIR_DOMAIN_SHUTDOWN_SIGNAL |
+                  VIR_DOMAIN_SHUTDOWN_GUEST_AGENT, -1);
 
     if (!(vm = bhyveDomObjFromDomain(dom)))
         goto cleanup;
+
+    priv = vm->privateData;
+    agentRequested = flags & VIR_DOMAIN_SHUTDOWN_GUEST_AGENT;
+    signalRequested = flags & VIR_DOMAIN_SHUTDOWN_SIGNAL;
+
+    /* Prefer agent unless we were requested to not to. */
+    if (agentRequested || !flags)
+        useAgent = true;
 
     if (virDomainShutdownFlagsEnsureACL(dom->conn, vm->def, flags) < 0)
         goto cleanup;
@@ -974,7 +1137,27 @@ bhyveDomainShutdownFlags(virDomainPtr dom, unsigned int flags)
     if (virDomainObjCheckActive(vm) < 0)
         goto cleanup;
 
-    ret = virBhyveProcessShutdown(vm);
+    agentForced = agentRequested && !signalRequested;
+    if (useAgent) {
+        ret = bhyveDomainShutdownFlagsAgent(vm, isReboot, agentForced);
+        if (((ret < 0) || (priv->agent != NULL)) && agentForced)
+            goto cleanup;
+    }
+
+    /* If we are not enforced to use just an agent, try signal
+     * shutdown as well in case agent did not succeed.
+     */
+    if (!useAgent || (((ret < 0) ||
+        (priv->agent != NULL)) && (signalRequested || !flags))) {
+        /* Even if agent failed, we have to check if guest went away
+         * by itself while our locks were down.  */
+        if (useAgent && !virDomainObjIsActive(vm)) {
+            ret = 0;
+            goto cleanup;
+        }
+
+        ret = bhyveDomainShutdownSignal(vm, isReboot);
+    }
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -994,11 +1177,24 @@ bhyveDomainReboot(virDomainPtr dom, unsigned int flags)
     virDomainObj *vm;
     bhyveDomainObjPrivate *priv;
     int ret = -1;
+    bool isReboot = true;
+    bool useAgent = false;
+    bool agentRequested, signalRequested;
+    bool agentForced;
 
-    virCheckFlags(VIR_DOMAIN_REBOOT_ACPI_POWER_BTN, -1);
+    virCheckFlags(VIR_DOMAIN_REBOOT_SIGNAL |
+                  VIR_DOMAIN_REBOOT_GUEST_AGENT, -1);
 
     if (!(vm = bhyveDomObjFromDomain(dom)))
         goto cleanup;
+
+    priv = vm->privateData;
+    agentRequested = flags & VIR_DOMAIN_REBOOT_GUEST_AGENT;
+    signalRequested = flags & VIR_DOMAIN_REBOOT_SIGNAL;
+
+    /* Prefer agent unless we were requested to not to. */
+    if (agentRequested || !flags)
+        useAgent = true;
 
     if (virDomainRebootEnsureACL(conn, vm->def, flags) < 0)
         goto cleanup;
@@ -1006,10 +1202,20 @@ bhyveDomainReboot(virDomainPtr dom, unsigned int flags)
     if (virDomainObjCheckActive(vm) < 0)
         goto cleanup;
 
-    priv = vm->privateData;
-    bhyveMonitorSetReboot(priv->mon);
+    agentForced = agentRequested && !signalRequested;
+    if (useAgent) {
+        ret = bhyveDomainRebootAgent(vm, isReboot, agentForced);
+        if (((ret < 0) || (priv->agent != NULL)) && agentForced)
+            goto cleanup;
+    }
 
-    ret = virBhyveProcessShutdown(vm);
+    /* If we are not enforced to use just an agent, try signal
+     * reboot as well in case agent did not succeed.
+     */
+    if (!useAgent || (((ret < 0) ||
+        (priv->agent != NULL)) && (signalRequested || !flags))) {
+        ret = bhyveDomainShutdownSignal(vm, isReboot);
+    }
 
  cleanup:
     virDomainObjEndAPI(&vm);
@@ -1067,6 +1273,7 @@ bhyveDomainSetMetadata(virDomainPtr dom,
     virConnectPtr conn = dom->conn;
     struct _bhyveConn *privconn = conn->privateData;
     virDomainObj *vm;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
     int ret = -1;
 
     virCheckFlags(VIR_DOMAIN_AFFECT_LIVE |
@@ -1079,8 +1286,8 @@ bhyveDomainSetMetadata(virDomainPtr dom,
         goto cleanup;
 
     ret = virDomainObjSetMetadata(vm, type, metadata, key, uri,
-                                  privconn->xmlopt, BHYVE_STATE_DIR,
-                                  BHYVE_CONFIG_DIR, flags);
+                                  privconn->xmlopt, cfg->stateDir,
+                                  cfg->configDir, flags);
 
     if (ret == 0) {
         virObjectEvent *ev = NULL;
@@ -1123,10 +1330,12 @@ bhyveNodeGetCPUStats(virConnectPtr conn,
                      int *nparams,
                      unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeGetCPUStatsEnsureACL(conn) < 0)
         return -1;
 
-    return virHostCPUGetStats(cpuNum, params, nparams, flags);
+    return virHostCPUGetStats(cpuNum, params, nparams);
 }
 
 static int
@@ -1136,10 +1345,12 @@ bhyveNodeGetMemoryStats(virConnectPtr conn,
                         int *nparams,
                         unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeGetMemoryStatsEnsureACL(conn) < 0)
         return -1;
 
-    return virHostMemGetStats(cellNum, params, nparams, flags);
+    return virHostMemGetStats(cellNum, params, nparams);
 }
 
 static int
@@ -1165,26 +1376,30 @@ bhyveStateCleanup(void)
     virObjectUnref(bhyve_driver->xmlopt);
     virSysinfoDefFree(bhyve_driver->hostsysinfo);
     virObjectUnref(bhyve_driver->domainEventState);
-    virObjectUnref(bhyve_driver->config);
     virPortAllocatorRangeFree(bhyve_driver->remotePorts);
+    virBitmapFree(bhyve_driver->bhyvecaps);
 
     if (bhyve_driver->lockFD != -1)
-        virPidFileRelease(BHYVE_STATE_DIR, "driver", bhyve_driver->lockFD);
+        virPidFileRelease(bhyve_driver->config->stateDir, "driver", bhyve_driver->lockFD);
 
     virMutexDestroy(&bhyve_driver->lock);
+    virObjectUnref(bhyve_driver->config);
+    VIR_FREE(bhyve_driver->pidfile);
     VIR_FREE(bhyve_driver);
 
     return 0;
 }
 
-static int
+static virDrvStateInitResult
 bhyveStateInitialize(bool privileged,
                      const char *root,
                      bool monolithic G_GNUC_UNUSED,
                      virStateInhibitCallback callback G_GNUC_UNUSED,
                      void *opaque G_GNUC_UNUSED)
 {
-    bool autostart = true;
+    virDomainDriverAutoStartConfig autostartCfg;
+    g_autofree char *configFile = NULL;
+    virBhyveDriverConfig *cfg;
 
     if (root != NULL) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
@@ -1192,13 +1407,9 @@ bhyveStateInitialize(bool privileged,
         return -1;
     }
 
-    if (!privileged) {
-        VIR_INFO("Not running privileged, disabling driver");
-        return VIR_DRV_STATE_INIT_SKIPPED;
-    }
-
     bhyve_driver = g_new0(bhyveConn, 1);
 
+    bhyve_driver->privileged = privileged;
     bhyve_driver->lockFD = -1;
     if (virMutexInit(&bhyve_driver->lock) < 0) {
         VIR_FREE(bhyve_driver);
@@ -1210,6 +1421,20 @@ bhyveStateInitialize(bool privileged,
 
     if (virBhyveProbeCaps(&bhyve_driver->bhyvecaps) < 0)
         goto cleanup;
+
+    if (!privileged &&
+        !virBhyveCapsGet(bhyveDriverGetBhyveCaps(bhyve_driver), BHYVE_CAP_MONITOR)) {
+        virReportError(VIR_ERR_INVALID_ARG, "%s",
+                       _("bhyve does not support monitor mode, cannot run unprivileged"));
+        goto cleanup;
+    }
+
+    if (!privileged &&
+        !virBhyveCapsGet(bhyveDriverGetBhyveCaps(bhyve_driver), BHYVE_CAP_GET_VMPID)) {
+        virReportError(VIR_ERR_INVALID_ARG, "%s",
+                       _("bhyvectl does not support querying the VM PID, cannot run unprivileged"));
+        goto cleanup;
+    }
 
     if (virBhyveProbeGrubCaps(&bhyve_driver->grubcaps) < 0)
         goto cleanup;
@@ -1229,51 +1454,60 @@ bhyveStateInitialize(bool privileged,
 
     bhyve_driver->hostsysinfo = virSysinfoRead();
 
-    if (!(bhyve_driver->config = virBhyveDriverConfigNew()))
+    if (!(bhyve_driver->config = cfg = virBhyveDriverConfigNew(privileged)))
         goto cleanup;
 
-    if (virBhyveLoadDriverConfig(bhyve_driver->config, SYSCONFDIR "/libvirt/bhyve.conf") < 0)
+    configFile = g_build_filename(cfg->configBaseDir, "bhyve.conf", NULL);
+    if (virBhyveLoadDriverConfig(cfg, configFile) < 0)
         goto cleanup;
 
-    if (g_mkdir_with_parents(BHYVE_LOG_DIR, 0777) < 0) {
+    if (g_mkdir_with_parents(cfg->logDir, 0777) < 0) {
         virReportSystemError(errno,
                              _("Failed to mkdir %1$s"),
-                             BHYVE_LOG_DIR);
+                             cfg->logDir);
         goto cleanup;
     }
 
-    if (g_mkdir_with_parents(BHYVE_STATE_DIR, 0777) < 0) {
+    if (g_mkdir_with_parents(cfg->stateDir, 0777) < 0) {
         virReportSystemError(errno,
                              _("Failed to mkdir %1$s"),
-                             BHYVE_STATE_DIR);
+                             cfg->stateDir);
+        goto cleanup;
+    }
+
+    if (g_mkdir_with_parents(cfg->nvramDir, 0777) < 0) {
+        virReportSystemError(errno,
+                             _("Failed to mkdir %1$s"),
+                             cfg->nvramDir);
         goto cleanup;
     }
 
     if ((bhyve_driver->lockFD =
-         virPidFileAcquire(BHYVE_STATE_DIR, "driver", getpid())) < 0)
+         virPidFileAcquire(cfg->stateDir, "driver", getpid())) < 0)
         goto cleanup;
 
     if (virDomainObjListLoadAllConfigs(bhyve_driver->domains,
-                                       BHYVE_STATE_DIR,
+                                       cfg->stateDir,
                                        NULL, true,
                                        bhyve_driver->xmlopt,
                                        NULL, NULL) < 0)
         goto cleanup;
 
     if (virDomainObjListLoadAllConfigs(bhyve_driver->domains,
-                                       BHYVE_CONFIG_DIR,
-                                       BHYVE_AUTOSTART_DIR, false,
+                                       cfg->configDir,
+                                       cfg->autostartDir, false,
                                        bhyve_driver->xmlopt,
                                        NULL, NULL) < 0)
         goto cleanup;
 
     virBhyveProcessReconnectAll(bhyve_driver);
 
-    if (virDriverShouldAutostart(BHYVE_STATE_DIR, &autostart) < 0)
-        goto cleanup;
-
-    if (autostart)
-        bhyveAutostartDomains(bhyve_driver);
+    autostartCfg = (virDomainDriverAutoStartConfig) {
+        .stateDir = cfg->stateDir,
+        .callback = bhyveAutostartDomain,
+        .opaque = bhyve_driver,
+    };
+    virDomainDriverAutoStart(bhyve_driver->domains, &autostartCfg);
 
     return VIR_DRV_STATE_INIT_COMPLETE;
 
@@ -1282,12 +1516,12 @@ bhyveStateInitialize(bool privileged,
     return VIR_DRV_STATE_INIT_ERROR;
 }
 
-unsigned
+virBitmap *
 bhyveDriverGetBhyveCaps(struct _bhyveConn *driver)
 {
     if (driver != NULL)
         return driver->bhyvecaps;
-    return 0;
+    return NULL;
 }
 
 unsigned
@@ -1336,10 +1570,12 @@ bhyveNodeGetCPUMap(virConnectPtr conn,
                    unsigned int *online,
                    unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeGetCPUMapEnsureACL(conn) < 0)
         return -1;
 
-    return virHostCPUGetMap(cpumap, online, flags);
+    return virHostCPUGetMap(cpumap, online);
 }
 
 static int
@@ -1348,10 +1584,12 @@ bhyveNodeGetMemoryParameters(virConnectPtr conn,
                              int *nparams,
                              unsigned int flags)
 {
+    virCheckFlags(VIR_TYPED_PARAM_STRING_OKAY, -1);
+
     if (virNodeGetMemoryParametersEnsureACL(conn) < 0)
         return -1;
 
-    return virHostMemGetParameters(params, nparams, flags);
+    return virHostMemGetParameters(params, nparams);
 }
 
 static int
@@ -1360,10 +1598,12 @@ bhyveNodeSetMemoryParameters(virConnectPtr conn,
                              int nparams,
                              unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeSetMemoryParametersEnsureACL(conn) < 0)
         return -1;
 
-    return virHostMemSetParameters(params, nparams, flags);
+    return virHostMemSetParameters(params, nparams);
 }
 
 static char *
@@ -1537,7 +1777,7 @@ bhyveConnectDomainXMLFromNative(virConnectPtr conn,
 {
     g_autoptr(virDomainDef) def = NULL;
     struct _bhyveConn *privconn = conn->privateData;
-    unsigned bhyveCaps = bhyveDriverGetBhyveCaps(privconn);
+    virBitmap *bhyveCaps = bhyveDriverGetBhyveCaps(privconn);
 
     virCheckFlags(0, NULL);
 
@@ -1598,7 +1838,7 @@ bhyveConnectGetDomainCapabilities(virConnectPtr conn,
         goto cleanup;
     }
 
-    if (!ARCH_IS_X86(arch)) {
+    if (!ARCH_IS_X86(arch) && !ARCH_IS_ARM(arch)) {
         virReportError(VIR_ERR_NO_SUPPORT,
                        _("unsupported architecture: %1$s"),
                        virArchToString(arch));
@@ -1618,6 +1858,1399 @@ bhyveConnectGetDomainCapabilities(virConnectPtr conn,
     virObjectUnref(caps);
     return ret;
 }
+
+static int
+bhyveDomainInterfaceStats(virDomainPtr domain,
+                          const char *device,
+                          virDomainInterfaceStatsPtr stats)
+{
+    virDomainObj *vm;
+    int ret = -1;
+    virDomainNetDef *net = NULL;
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainInterfaceStatsEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto cleanup;
+
+    if (!(net = virDomainNetFind(vm->def, device)))
+        goto cleanup;
+
+    if (virNetDevTapInterfaceStats(net->ifname, stats,
+                                   !virDomainNetTypeSharesHostView(net)) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+#define BHYVE_SET_MEMSTAT(TAG, VAL) \
+        if (i < nr_stats) { \
+            stats[i].tag = TAG; \
+            stats[i].val = VAL; \
+            i++; \
+        }
+
+static int
+bhyveDomainMemoryStats(virDomainPtr domain,
+                       virDomainMemoryStatPtr stats,
+                       unsigned int nr_stats,
+                       unsigned int flags)
+{
+    virDomainObj *vm;
+    unsigned maxmem;
+    unsigned long long rss;
+    size_t i = 0;
+    int ret = -1;
+    pid_t pid;
+
+    virCheckFlags(0, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto cleanup;
+
+    if (virDomainMemoryStatsEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if ((pid = virBhyveProcessGetBhyvePid(vm)) < 0)
+        goto cleanup;
+
+    if (virProcessGetStatInfo(NULL, NULL, NULL, NULL, &rss, pid, 0) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("cannot get RSS for domain"));
+    } else {
+        BHYVE_SET_MEMSTAT(VIR_DOMAIN_MEMORY_STAT_RSS, rss);
+    }
+
+    maxmem = virDomainDefGetMemoryTotal(vm->def);
+    BHYVE_SET_MEMSTAT(VIR_DOMAIN_MEMORY_STAT_AVAILABLE, maxmem);
+
+    ret = i;
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+#undef BHYVE_SET_MEMSTAT
+
+static struct kinfo_proc *bhyveDomainProcGetInfo(pid_t pid)
+{
+    int mib[4];
+    size_t len = 4;
+    struct kinfo_proc *p = g_malloc0(sizeof(struct kinfo_proc));
+
+    sysctlnametomib("kern.proc.pid", mib, &len);
+    len = sizeof(struct kinfo_proc);
+    mib[3] = pid;
+
+    if (sysctl(mib, 4, p, &len, NULL, 0) < 0) {
+        virReportSystemError(errno, "%s",
+                             _("Unable to query process stats"));
+        return NULL;
+    }
+
+    return p;
+}
+
+static int
+bhyveDomainBlockStats(virDomainPtr domain,
+                      const char *path G_GNUC_UNUSED,
+                      virDomainBlockStatsPtr stats)
+{
+    virDomainObj *vm;
+    int ret = -1;
+    g_autofree struct kinfo_proc *p = NULL;
+    pid_t pid;
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto cleanup;
+
+    if (virDomainBlockStatsEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if ((pid = virBhyveProcessGetBhyvePid(vm)) < 0)
+        goto cleanup;
+
+    if ((p = bhyveDomainProcGetInfo(pid)) == NULL)
+        goto cleanup;
+
+    stats->rd_req = p->ki_rusage.ru_inblock;
+    stats->wr_req = p->ki_rusage.ru_oublock;
+    stats->rd_bytes = -1;
+    stats->wr_bytes = -1;
+    stats->errs = -1;
+
+    ret = 0;
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainGetVcpusFlags(virDomainPtr domain, unsigned int flags)
+{
+    virDomainObj *vm;
+    virDomainDef *def;
+    int ret = -1;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE |
+                  VIR_DOMAIN_AFFECT_CONFIG |
+                  VIR_DOMAIN_VCPU_MAXIMUM, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainGetVcpusFlagsEnsureACL(domain->conn, vm->def, flags) < 0)
+        goto cleanup;
+
+    if (!(def = virDomainObjGetOneDef(vm, flags)))
+        goto cleanup;
+
+    if (flags & VIR_DOMAIN_VCPU_MAXIMUM)
+        ret = virDomainDefGetVcpusMax(def);
+    else
+        ret = virDomainDefGetVcpus(def);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainGetMaxVcpus(virDomainPtr domain)
+{
+    return bhyveDomainGetVcpusFlags(domain, (VIR_DOMAIN_AFFECT_LIVE |
+                                             VIR_DOMAIN_VCPU_MAXIMUM));
+}
+
+static int
+bhyveDomainGetVcpuPinInfo(virDomainPtr domain,
+                        int ncpumaps,
+                        unsigned char *cpumaps,
+                        int maplen,
+                        unsigned int flags)
+{
+    virDomainObj *vm;
+    virDomainDef *def;
+    g_autoptr(virBitmap) hostcpus = NULL;
+    int ret = -1;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE | VIR_DOMAIN_AFFECT_CONFIG, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainGetVcpuPinInfoEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (!(def = virDomainObjGetOneDef(vm, flags)))
+        goto cleanup;
+
+    if (!(hostcpus = virHostCPUGetAvailableCPUsBitmap()))
+        goto cleanup;
+
+    ret = virDomainDefGetVcpuPinInfoHelper(def, maplen, ncpumaps, cpumaps,
+                                           hostcpus, NULL);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+
+static int
+bhyveDomainInterfaceAddresses(virDomainPtr domain,
+                              virDomainInterfacePtr **ifaces,
+                              unsigned int source,
+                              unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent;
+    int ret = -1;
+
+    virCheckFlags(0, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainInterfaceAddressesEnsureACL(domain->conn, vm->def, source) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto cleanup;
+
+    switch (source) {
+    case VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT:
+        if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_QUERY) < 0)
+            goto cleanup;
+
+        if (bhyveDomainEnsureAgent(vm, true) < 0)
+            goto endjob;
+
+        agent = bhyveDomainObjEnterAgent(vm);
+        ret = qemuAgentGetInterfaces(agent, ifaces, true);
+        bhyveDomainObjExitAgent(vm, agent);
+
+    endjob:
+        virDomainObjEndAgentJob(vm);
+
+        break;
+
+    case VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_ARP:
+        ret = virDomainNetARPInterfaces(vm->def, ifaces);
+        break;
+
+    case VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE:
+        ret = virDomainNetDHCPInterfaces(vm->def, ifaces);
+        break;
+
+    default:
+        virReportError(VIR_ERR_ARGUMENT_UNSUPPORTED,
+                       _("Unknown IP address data source %1$d"),
+                       source);
+        break;
+    }
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+
+static int
+bhyveDomainGetHostnameAgent(virDomainObj *vm,
+                            char **hostname)
+{
+    qemuAgent *agent;
+    int ret = -1;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_QUERY) < 0)
+        return -1;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    ret = qemuAgentGetHostname(agent, hostname, true);
+    bhyveDomainObjExitAgent(vm, agent);
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+    return ret;
+}
+
+
+static char *
+bhyveDomainQemuAgentCommand(virDomainPtr domain,
+                            const char *cmd,
+                            int timeout,
+                            unsigned int flags)
+{
+    virDomainObj *vm;
+    int ret = -1;
+    char *result = NULL;
+    qemuAgent *agent;
+
+    virCheckFlags(0, NULL);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainQemuAgentCommandEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    ret = qemuAgentArbitraryCommand(agent, cmd, &result, timeout);
+    bhyveDomainObjExitAgent(vm, agent);
+    if (ret < 0)
+        VIR_FREE(result);
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return result;
+}
+
+
+static int
+bhyveDomainGetHostnameLease(virDomainObj *vm,
+                            char **hostname)
+{
+    char macaddr[VIR_MAC_STRING_BUFLEN];
+    g_autoptr(virConnect) conn = NULL;
+    virNetworkDHCPLeasePtr *leases = NULL;
+    int n_leases;
+    size_t i, j;
+    int ret = -1;
+
+    *hostname = NULL;
+
+    if (virDomainObjBeginJob(vm, VIR_JOB_QUERY) < 0)
+        return -1;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (!(conn = virGetConnectNetwork()))
+        goto endjob;
+
+    for (i = 0; i < vm->def->nnets; i++) {
+        g_autoptr(virNetwork) network = NULL;
+        virDomainNetDef *net = vm->def->nets[i];
+
+        if (net->type != VIR_DOMAIN_NET_TYPE_NETWORK)
+            continue;
+
+        virMacAddrFormat(&net->mac, macaddr);
+        network = virNetworkLookupByName(conn, net->data.network.name);
+
+        if (!network)
+            goto endjob;
+
+        if ((n_leases = virNetworkGetDHCPLeases(network, macaddr,
+                                                &leases, 0)) < 0)
+            goto endjob;
+
+        for (j = 0; j < n_leases; j++) {
+            virNetworkDHCPLeasePtr lease = leases[j];
+            if (lease->hostname && !*hostname)
+                *hostname = g_strdup(lease->hostname);
+
+            virNetworkDHCPLeaseFree(lease);
+        }
+
+        VIR_FREE(leases);
+
+        if (*hostname)
+            break;
+    }
+
+    ret = 0;
+ endjob:
+    virDomainObjEndJob(vm);
+    return ret;
+}
+
+static char *
+bhyveDomainGetHostname(virDomainPtr domain,
+                       unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    char *hostname = NULL;
+
+    virCheckFlags(VIR_DOMAIN_GET_HOSTNAME_LEASE |
+                  VIR_DOMAIN_GET_HOSTNAME_AGENT, NULL);
+
+    VIR_EXCLUSIVE_FLAGS_RET(VIR_DOMAIN_GET_HOSTNAME_LEASE,
+                            VIR_DOMAIN_GET_HOSTNAME_AGENT,
+                            NULL);
+
+    if (!(flags & VIR_DOMAIN_GET_HOSTNAME_AGENT))
+        flags |= VIR_DOMAIN_GET_HOSTNAME_LEASE;
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return NULL;
+
+    if (virDomainGetHostnameEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (flags & VIR_DOMAIN_GET_HOSTNAME_LEASE) {
+        if (bhyveDomainGetHostnameLease(vm, &hostname) < 0)
+            goto cleanup;
+    } else if (flags & VIR_DOMAIN_GET_HOSTNAME_AGENT) {
+        if (bhyveDomainGetHostnameAgent(vm, &hostname) < 0)
+            goto cleanup;
+    }
+
+    if (!hostname) {
+        virReportError(VIR_ERR_NO_HOSTNAME,
+                       _("no hostname found for domain %1$s"),
+                       vm->def->name);
+        goto cleanup;
+    }
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return hostname;
+}
+
+
+#define BHYVE_NB_MEM_PARAM  1
+#define BHYVE_ASSIGN_MEM_PARAM(index, name, value) \
+    if (index < *nparams && \
+        virTypedParameterAssign(&params[index], name, VIR_TYPED_PARAM_ULLONG, \
+                                value) < 0) \
+        goto cleanup
+
+static int
+bhyveDomainGetMemoryParameters(virDomainPtr domain,
+                               virTypedParameterPtr params,
+                               int *nparams,
+                               unsigned int flags)
+{
+    struct _bhyveConn *privconn = domain->conn->privateData;
+    virDomainObj *vm = NULL;
+    virDomainDef *persistentDef = NULL;
+    int ret = -1;
+    unsigned long long mem_hard_limit;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE |
+                  VIR_DOMAIN_AFFECT_CONFIG |
+                  VIR_TYPED_PARAM_STRING_OKAY, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainGetMemoryParametersEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (!privconn->privileged) {
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                       _("memory parameters are not supported in unprivileged mode"));
+        goto cleanup;
+    }
+
+    if (virDomainObjGetDefs(vm, flags, NULL, &persistentDef) < 0)
+        goto cleanup;
+
+    if ((*nparams) == 0) {
+        *nparams = BHYVE_NB_MEM_PARAM;
+        ret = 0;
+        goto cleanup;
+    }
+
+    if (persistentDef) {
+        mem_hard_limit = persistentDef->mem.hard_limit;
+    } else {
+        if (bhyveRctlGetMemoryHardLimit(vm->pid, &mem_hard_limit) < 0)
+            goto cleanup;
+    }
+
+    BHYVE_ASSIGN_MEM_PARAM(0, VIR_DOMAIN_MEMORY_HARD_LIMIT, mem_hard_limit);
+
+    if (BHYVE_NB_MEM_PARAM < *nparams)
+        *nparams = BHYVE_NB_MEM_PARAM;
+    ret = 0;
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+#undef BHYVE_ASSIGN_MEM_PARAM
+
+static int
+bhyveDomainSetMemoryParameters(virDomainPtr domain,
+                               virTypedParameterPtr params,
+                               int nparams,
+                               unsigned int flags)
+{
+    struct _bhyveConn *privconn = domain->conn->privateData;
+    virDomainDef *def = NULL;
+    virDomainDef *persistentDef = NULL;
+    virDomainObj *vm = NULL;
+    int ret = -1;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
+    unsigned long long hard_limit = 0;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE |
+                  VIR_DOMAIN_AFFECT_CONFIG, -1);
+
+    if (virTypedParamsValidate(params, nparams,
+                               VIR_DOMAIN_MEMORY_HARD_LIMIT,
+                               VIR_TYPED_PARAM_ULLONG,
+                               NULL) < 0)
+        return -1;
+
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainSetMemoryParametersEnsureACL(domain->conn, vm->def, flags) < 0)
+        goto cleanup;
+
+    if (!privconn->privileged) {
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                       _("memory parameters are not supported in unprivileged mode"));
+        goto cleanup;
+    }
+
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjGetDefs(vm, flags, &def, &persistentDef) < 0)
+        goto endjob;
+
+    if (virTypedParamsGetULLong(params, nparams, VIR_DOMAIN_MEMORY_HARD_LIMIT, &hard_limit) < 0)
+        return -1;
+
+    if (def) {
+        if (!virBhyveCapsGet(bhyveDriverGetBhyveCaps(privconn), BHYVE_CAP_RCTL)) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("Cannot set resource limits: RACCT/RCTL is either not supported or not enabled"));
+            goto endjob;
+        }
+
+        if (bhyveRctlSetMemoryHardLimit(vm->pid, hard_limit) < 0)
+            goto endjob;
+
+        def->mem.hard_limit = hard_limit;
+        if (virDomainObjSave(vm, privconn->xmlopt, cfg->stateDir) < 0)
+            VIR_WARN("Failed to save status on vm %s", vm->def->name);
+    }
+
+    if (persistentDef) {
+        persistentDef->mem.hard_limit = hard_limit;
+
+        if (virDomainDefSave(persistentDef, privconn->xmlopt, cfg->configDir) < 0)
+            goto endjob;
+    }
+
+    ret = 0;
+
+ endjob:
+    virDomainObjEndJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainGetFSInfoAgent(virDomainObj *vm,
+                          qemuAgentFSInfo ***info)
+{
+    int ret = -1;
+    qemuAgent *agent;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_QUERY) < 0)
+        return ret;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    ret = qemuAgentGetFSInfo(agent, info, true);
+    bhyveDomainObjExitAgent(vm, agent);
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+    return ret;
+}
+
+static int
+bhyveDomainGetFSInfo(virDomainPtr dom,
+                     virDomainFSInfoPtr **info,
+                     unsigned int flags)
+{
+    virDomainObj *vm;
+    qemuAgentFSInfo **agentinfo = NULL;
+    int ret = -1;
+    int nfs = 0;
+
+    virCheckFlags(0, ret);
+
+    if (!(vm = bhyveDomObjFromDomain(dom)))
+        return ret;
+
+    if (virDomainGetFSInfoEnsureACL(dom->conn, vm->def) < 0)
+        goto cleanup;
+
+    if ((nfs = bhyveDomainGetFSInfoAgent(vm, &agentinfo)) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginJob(vm, VIR_JOB_QUERY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    ret = qemuAgentFSInfoFormat(agentinfo, nfs, vm->def, info);
+
+ endjob:
+    virDomainObjEndJob(vm);
+
+ cleanup:
+    if (agentinfo) {
+        size_t i;
+        for (i = 0; i < nfs; i++)
+            qemuAgentFSInfoFree(agentinfo[i]);
+        g_free(agentinfo);
+    }
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainGetTime(virDomainPtr domain,
+                   long long *seconds,
+                   unsigned int *nseconds,
+                   unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent;
+    int ret = -1;
+    int rv;
+
+    virCheckFlags(0, ret);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return ret;
+
+    if (virDomainGetTimeEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_QUERY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    rv = qemuAgentGetTime(agent, seconds, nseconds);
+    bhyveDomainObjExitAgent(vm, agent);
+
+    if (rv < 0)
+        goto endjob;
+
+    ret = 0;
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainSetTime(virDomainPtr domain,
+                   long long seconds,
+                   unsigned int nseconds,
+                   unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent;
+    bool rtcSync = flags & VIR_DOMAIN_TIME_SYNC;
+    int ret = -1;
+    int rv;
+
+    virCheckFlags(VIR_DOMAIN_TIME_SYNC, ret);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return ret;
+
+    if (virDomainSetTimeEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    rv = qemuAgentSetTime(agent, seconds, nseconds, rtcSync);
+    bhyveDomainObjExitAgent(vm, agent);
+
+    if (rv < 0)
+        goto endjob;
+
+    ret = 0;
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainSetUserPassword(virDomainPtr domain,
+                           const char *user,
+                           const char *password,
+                           unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent;
+    int ret = -1;
+    int rv;
+
+    virCheckFlags(VIR_DOMAIN_PASSWORD_ENCRYPTED, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return ret;
+
+    if (virDomainSetUserPasswordEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    rv = qemuAgentSetUserPassword(agent, user, password,
+                                  flags & VIR_DOMAIN_PASSWORD_ENCRYPTED);
+    bhyveDomainObjExitAgent(vm, agent);
+
+    if (rv < 0)
+        goto endjob;
+
+    ret = 0;
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainAuthorizedSSHKeysGet(virDomainPtr domain,
+                                const char *user,
+                                char ***keys,
+                                unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent;
+    int rv = -1;
+
+    virCheckFlags(0, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainAuthorizedSshKeysGetEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_QUERY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    rv = qemuAgentSSHGetAuthorizedKeys(agent, user, keys);
+    bhyveDomainObjExitAgent(vm, agent);
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return rv;
+}
+
+static int
+bhyveDomainAuthorizedSSHKeysSet(virDomainPtr domain,
+                                const char *user,
+                                const char **keys,
+                                unsigned int nkeys,
+                                unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent;
+    const bool append = flags & VIR_DOMAIN_AUTHORIZED_SSH_KEYS_SET_APPEND;
+    const bool remove = flags & VIR_DOMAIN_AUTHORIZED_SSH_KEYS_SET_REMOVE;
+    int rv = -1;
+
+    virCheckFlags(VIR_DOMAIN_AUTHORIZED_SSH_KEYS_SET_APPEND |
+                  VIR_DOMAIN_AUTHORIZED_SSH_KEYS_SET_REMOVE, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainAuthorizedSshKeysSetEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto endjob;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+    if (remove)
+        rv = qemuAgentSSHRemoveAuthorizedKeys(agent, user, keys, nkeys);
+    else
+        rv = qemuAgentSSHAddAuthorizedKeys(agent, user, keys, nkeys, !append);
+    bhyveDomainObjExitAgent(vm, agent);
+
+ endjob:
+    virDomainObjEndAgentJob(vm);
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return rv;
+}
+
+static int
+bhyveDomainRenameCallback(virDomainObj *vm,
+                          const char *new_name,
+                          unsigned int flags,
+                          void *opaque)
+{
+    struct _bhyveConn *privconn = opaque;
+    virObjectEvent *event_new = NULL;
+    virObjectEvent *event_old = NULL;
+    int ret = -1;
+    virErrorPtr err = NULL;
+    g_autofree char *new_dom_name = NULL;
+    g_autofree char *old_dom_name = NULL;
+    g_autofree char *new_dom_cfg_file = NULL;
+    g_autofree char *new_dom_autostart_link = NULL;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
+
+    virCheckFlags(0, ret);
+
+    if (strchr(new_name, '/')) {
+        virReportError(VIR_ERR_XML_ERROR,
+                       _("name %1$s cannot contain '/'"), new_name);
+        return -1;
+    }
+
+    new_dom_name = g_strdup(new_name);
+
+    new_dom_cfg_file = virDomainConfigFile(cfg->configDir, new_dom_name);
+
+    if (bhyveDomainNamePathsCleanup(cfg, new_name, false) < 0)
+        goto cleanup;
+
+    if (vm->autostart) {
+        new_dom_autostart_link = virDomainConfigFile(cfg->autostartDir, new_dom_name);
+
+        if (symlink(new_dom_cfg_file, new_dom_autostart_link) < 0) {
+            virReportSystemError(errno,
+                                 _("Failed to create symlink '%1$s' to '%2$s'"),
+                                 new_dom_autostart_link, new_dom_cfg_file);
+            return -1;
+        }
+    }
+
+    /* Switch name in domain definition. */
+    old_dom_name = g_steal_pointer(&vm->def->name);
+    vm->def->name = g_steal_pointer(&new_dom_name);
+
+    if (virDomainDefSave(vm->def, privconn->xmlopt, cfg->configDir) < 0)
+        goto cleanup;
+
+    event_old = virDomainEventLifecycleNew(vm->def->id, old_dom_name, vm->def->uuid,
+                                           VIR_DOMAIN_EVENT_UNDEFINED,
+                                           VIR_DOMAIN_EVENT_UNDEFINED_RENAMED);
+    event_new = virDomainEventLifecycleNewFromObj(vm,
+                                                  VIR_DOMAIN_EVENT_DEFINED,
+                                                  VIR_DOMAIN_EVENT_DEFINED_RENAMED);
+    virObjectEventStateQueue(privconn->domainEventState, event_old);
+    virObjectEventStateQueue(privconn->domainEventState, event_new);
+    ret = 0;
+
+ cleanup:
+    if (ret < 0) {
+        if (old_dom_name) {
+            new_dom_name = vm->def->name;
+            vm->def->name = old_dom_name;
+            old_dom_name = NULL;
+        }
+
+        virErrorPreserveLast(&err);
+        bhyveDomainNamePathsCleanup(cfg, new_dom_name, true);
+    } else {
+        bhyveDomainNamePathsCleanup(cfg, old_dom_name, true);
+    }
+
+    virErrorRestore(&err);
+    return ret;
+}
+
+static int
+bhyveDomainRename(virDomainPtr domain,
+                  const char *new_name,
+                  unsigned int flags)
+{
+    struct _bhyveConn *privconn = domain->conn->privateData;
+    virDomainObj *vm = NULL;
+    int ret = -1;
+
+    virCheckFlags(0, ret);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainRenameEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (!vm->persistent) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("cannot rename a transient domain"));
+        goto endjob;
+    }
+
+    if (virDomainObjGetState(vm, NULL) != VIR_DOMAIN_SHUTOFF) {
+        virReportError(VIR_ERR_OPERATION_INVALID,
+                       "%s", _("domain has to be shutoff before renaming"));
+        goto endjob;
+    }
+
+    if (virDomainObjListRename(privconn->domains, vm, new_name, flags,
+                               bhyveDomainRenameCallback, privconn) < 0)
+        goto endjob;
+
+    /* Success, domain has been renamed. */
+    ret = 0;
+
+ endjob:
+    virDomainObjEndJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainSetLifecycleActionValidate(virDomainDef *def,
+                                      virDomainLifecycle type,
+                                      virDomainLifecycleAction action)
+{
+    virDomainLifecycleAction onPoweroff = def->onPoweroff;
+    virDomainLifecycleAction onReboot = def->onReboot;
+    virDomainLifecycleAction onCrash = def->onCrash;
+
+    switch (type) {
+    case VIR_DOMAIN_LIFECYCLE_POWEROFF:
+        onPoweroff = action;
+        break;
+    case VIR_DOMAIN_LIFECYCLE_REBOOT:
+        onReboot = action;
+        break;
+    case VIR_DOMAIN_LIFECYCLE_CRASH:
+        onCrash = action;
+        break;
+    case VIR_DOMAIN_LIFECYCLE_LAST:
+        break;
+    }
+
+    if (bhyveValidateLifecycleAction(onPoweroff, onReboot, onCrash) < 0)
+        return -1;
+
+    return 0;
+}
+
+static void
+bhyveDomainModifyLifecycleAction(virDomainDef *def,
+                                 virDomainLifecycle type,
+                                 virDomainLifecycleAction action)
+{
+    switch (type) {
+        case VIR_DOMAIN_LIFECYCLE_POWEROFF:
+            def->onPoweroff = action;
+            break;
+        case VIR_DOMAIN_LIFECYCLE_REBOOT:
+            def->onReboot = action;
+            break;
+        case VIR_DOMAIN_LIFECYCLE_CRASH:
+            def->onCrash = action;
+            break;
+        case VIR_DOMAIN_LIFECYCLE_LAST:
+            break;
+    }
+}
+
+static int
+bhyveDomainSetLifecycleAction(virDomainPtr domain,
+                              unsigned int type,
+                              unsigned int action,
+                              unsigned int flags)
+{
+    struct _bhyveConn *privconn = domain->conn->privateData;
+    virDomainObj *vm = NULL;
+    virDomainDef *def = NULL;
+    virDomainDef *persistentDef = NULL;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
+    int ret = -1;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE |
+                  VIR_DOMAIN_AFFECT_CONFIG, -1);
+
+    if (!virDomainDefLifecycleActionAllowed(type, action))
+        goto cleanup;
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainSetLifecycleActionEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjGetDefs(vm, flags, &def, &persistentDef) < 0)
+        goto endjob;
+
+    if ((def && bhyveDomainSetLifecycleActionValidate(def, type, action) < 0) ||
+         (persistentDef && bhyveDomainSetLifecycleActionValidate(persistentDef, type, action) < 0))
+        goto endjob;
+
+    if (def) {
+        bhyveDomainModifyLifecycleAction(def, type, action);
+
+        if (virDomainObjSave(vm, privconn->xmlopt,
+                             cfg->stateDir) < 0)
+            goto endjob;
+    }
+
+    if (persistentDef) {
+        bhyveDomainModifyLifecycleAction(persistentDef, type, action);
+
+        if (virDomainDefSave(persistentDef, privconn->xmlopt,
+                             cfg->configDir) < 0)
+            goto endjob;
+    }
+
+    ret = 0;
+
+ endjob:
+    virDomainObjEndJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static int
+bhyveDomainAgentSetResponseTimeout(virDomainPtr domain,
+                                   int timeout,
+                                   unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    bhyveDomainObjPrivate *priv = NULL;
+    struct _bhyveConn *privconn = domain->conn->privateData;
+    g_autoptr(virBhyveDriverConfig) cfg = virBhyveDriverGetConfig(privconn);
+    int ret = -1;
+
+    virCheckFlags(0, -1);
+
+    if (timeout < VIR_DOMAIN_QEMU_AGENT_COMMAND_MIN) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("guest agent timeout '%1$d' is less than the minimum '%2$d'"),
+                       timeout, VIR_DOMAIN_QEMU_AGENT_COMMAND_MIN);
+        return -1;
+    }
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainAgentSetResponseTimeoutEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    priv = vm->privateData;
+    if (priv->agent != NULL) {
+        virObjectLock(priv->agent);
+        qemuAgentSetResponseTimeout(priv->agent, timeout);
+        virObjectUnlock(priv->agent);
+    }
+
+    priv->agentTimeout = timeout;
+
+    if (virDomainObjIsActive(vm)) {
+        if (virDomainObjSave(vm, privconn->xmlopt, cfg->stateDir) < 0)
+            VIR_WARN("Failed to save status on vm %s", vm->def->name);
+    }
+
+    ret = 0;
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+static const unsigned int bhyveDomainGetGuestInfoSupportedTypes =
+    VIR_DOMAIN_GUEST_INFO_USERS |
+    VIR_DOMAIN_GUEST_INFO_OS |
+    VIR_DOMAIN_GUEST_INFO_TIMEZONE |
+    VIR_DOMAIN_GUEST_INFO_HOSTNAME |
+    VIR_DOMAIN_GUEST_INFO_FILESYSTEM |
+    VIR_DOMAIN_GUEST_INFO_DISKS |
+    VIR_DOMAIN_GUEST_INFO_INTERFACES |
+    VIR_DOMAIN_GUEST_INFO_LOAD |
+    VIR_DOMAIN_GUEST_INFO_DEVICES;
+
+static int
+bhyveDomainGetGuestInfoCheckSupport(unsigned int types,
+                                    unsigned int *supportedTypes)
+{
+    if (types == 0) {
+        *supportedTypes = bhyveDomainGetGuestInfoSupportedTypes;
+        return 0;
+    }
+
+    *supportedTypes = types & bhyveDomainGetGuestInfoSupportedTypes;
+
+    if (types != *supportedTypes) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("unsupported guest information types '0x%1$x'"),
+                       types & ~bhyveDomainGetGuestInfoSupportedTypes);
+        return -1;
+    }
+
+    return 0;
+}
+
+
+static int
+bhyveDomainGetGuestInfo(virDomainPtr domain,
+                        unsigned int types,
+                        virTypedParameterPtr *params,
+                        int *nparams,
+                        unsigned int flags)
+{
+    virDomainObj *vm = NULL;
+    qemuAgent *agent = NULL;
+    int ret = -1;
+    g_autofree char *hostname = NULL;
+    unsigned int supportedTypes;
+    bool report_unsupported = types != 0;
+    int rc;
+    size_t nfs = 0;
+    qemuAgentFSInfo **agentfsinfo = NULL;
+    size_t ndisks = 0;
+    qemuAgentDiskInfo **agentdiskinfo = NULL;
+    virDomainInterfacePtr *ifaces = NULL;
+    size_t nifaces = 0;
+    double load1m = 0;
+    double load5m = 0;
+    double load15m = 0;
+    bool format_load = false;
+    qemuAgentGuestDeviceInfo **devices = NULL;
+    size_t ndevices = 0;
+    size_t i;
+    g_autoptr(virTypedParamList) list = virTypedParamListNew();
+
+    if (bhyveDomainGetGuestInfoCheckSupport(types, &supportedTypes) < 0)
+        return -1;
+
+    virCheckFlags(0, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainGetGuestInfoEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjBeginAgentJob(vm, VIR_AGENT_JOB_QUERY) < 0)
+        goto cleanup;
+
+    if (bhyveDomainEnsureAgent(vm, true) < 0)
+        goto endagentjob;
+
+    agent = bhyveDomainObjEnterAgent(vm);
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_USERS &&
+        qemuAgentGetUsers(agent, list, report_unsupported) == -1)
+        goto exitagent;
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_OS &&
+        qemuAgentGetOSInfo(agent, list, report_unsupported) == -1)
+        goto exitagent;
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_TIMEZONE &&
+        qemuAgentGetTimezone(agent, list, report_unsupported) == -1)
+        goto exitagent;
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_HOSTNAME &&
+        qemuAgentGetHostname(agent, &hostname, report_unsupported) == -1)
+        goto exitagent;
+
+    if (hostname)
+        virTypedParamListAddString(list, hostname,
+                                   VIR_DOMAIN_GUEST_INFO_HOSTNAME_HOSTNAME);
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_FILESYSTEM) {
+        rc = qemuAgentGetFSInfo(agent, &agentfsinfo, report_unsupported);
+        if (rc == -1)
+            goto exitagent;
+        if (rc >= 0)
+            nfs = rc;
+    }
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_DISKS) {
+        rc = qemuAgentGetDisks(agent, &agentdiskinfo, report_unsupported);
+        if (rc == -1)
+            goto exitagent;
+        if (rc >= 0)
+            ndisks = rc;
+    }
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_INTERFACES) {
+        rc = qemuAgentGetInterfaces(agent, &ifaces, report_unsupported);
+        if (rc == -1)
+            goto exitagent;
+        if (rc >= 0)
+            nifaces = rc;
+    }
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_LOAD) {
+        rc = qemuAgentGetLoadAvg(agent, &load1m, &load5m, &load15m, report_unsupported);
+        if (rc == -1)
+            goto exitagent;
+        if (rc >= 0)
+            format_load = true;
+    }
+
+    if (supportedTypes & VIR_DOMAIN_GUEST_INFO_DEVICES) {
+        rc = qemuAgentGetGuestDeviceInfo(agent, &devices, report_unsupported);
+        if (rc == -1)
+            goto exitagent;
+        if (rc >= 0)
+            ndevices = rc;
+    }
+
+    bhyveDomainObjExitAgent(vm, agent);
+    virDomainObjEndAgentJob(vm);
+
+    if (nfs > 0 || ndisks > 0) {
+        if (virDomainObjBeginJob(vm, VIR_JOB_QUERY) < 0)
+            goto cleanup;
+
+        if (virDomainObjCheckActive(vm) < 0)
+            goto endjob;
+
+        /* we need to convert the agent fsinfo struct to parameters and match
+         * it to the vm disk target */
+        if (nfs > 0)
+            qemuAgentFSInfoFormatParams(agentfsinfo, nfs, vm->def, list);
+
+        if (ndisks > 0)
+            qemuAgentDiskInfoFormatParams(agentdiskinfo, ndisks, vm->def, list);
+
+ endjob:
+        virDomainObjEndJob(vm);
+    }
+
+    if (nifaces > 0) {
+        qemuAgentInterfaceFormatParams(ifaces, nifaces, list);
+    }
+
+    if (format_load) {
+        virTypedParamListAddDouble(list, load1m, VIR_DOMAIN_GUEST_INFO_LOAD_1M);
+        virTypedParamListAddDouble(list, load5m, VIR_DOMAIN_GUEST_INFO_LOAD_5M);
+        virTypedParamListAddDouble(list, load15m, VIR_DOMAIN_GUEST_INFO_LOAD_15M);
+    }
+
+    if (ndevices > 0) {
+        qemuAgentGuestDeviceInfoFormatParams(devices, ndevices, list);
+    }
+
+    if (virTypedParamListSteal(list, params, nparams) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    for (i = 0; i < nfs; i++)
+        qemuAgentFSInfoFree(agentfsinfo[i]);
+    g_free(agentfsinfo);
+    for (i = 0; i < ndisks; i++)
+        qemuAgentDiskInfoFree(agentdiskinfo[i]);
+    g_free(agentdiskinfo);
+    if (ifaces && nifaces > 0) {
+        for (i = 0; i < nifaces; i++)
+            virDomainInterfaceFree(ifaces[i]);
+    }
+    g_free(ifaces);
+    if (devices && ndevices > 0) {
+        for (i = 0; i < ndevices; i++) {
+            qemuAgentGuestDeviceInfoFree(devices[i]);
+        }
+        g_free(devices);
+    }
+
+    virDomainObjEndAPI(&vm);
+    return ret;
+
+ exitagent:
+    bhyveDomainObjExitAgent(vm, agent);
+
+ endagentjob:
+    virDomainObjEndAgentJob(vm);
+    goto cleanup;
+}
+
+
+static int
+bhyveDomainReset(virDomainPtr domain, unsigned int flags)
+{
+    virDomainObj *vm;
+    struct _bhyveConn *privconn = domain->conn->privateData;
+    int ret = -1;
+
+    virCheckFlags(0, -1);
+
+    if (!(vm = bhyveDomObjFromDomain(domain)))
+        goto cleanup;
+
+    if (virDomainResetEnsureACL(domain->conn, vm->def) < 0)
+        goto cleanup;
+
+    if (virDomainObjCheckActive(vm) < 0)
+        goto cleanup;
+
+    ret = virBhyveProcessReset(privconn, vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
 
 static virHypervisorDriver bhyveHypervisorDriver = {
     .name = "bhyve",
@@ -1679,6 +3312,28 @@ static virHypervisorDriver bhyveHypervisorDriver = {
     .connectIsEncrypted = bhyveConnectIsEncrypted, /* 1.3.5 */
     .connectDomainXMLFromNative = bhyveConnectDomainXMLFromNative, /* 2.1.0 */
     .connectGetDomainCapabilities = bhyveConnectGetDomainCapabilities, /* 2.1.0 */
+    .domainInterfaceStats = bhyveDomainInterfaceStats, /* 11.7.0 */
+    .domainMemoryStats = bhyveDomainMemoryStats, /* 11.7.0 */
+    .domainBlockStats = bhyveDomainBlockStats, /* 11.7.0 */
+    .domainGetVcpusFlags = bhyveDomainGetVcpusFlags, /* 12.1.0 */
+    .domainGetMaxVcpus = bhyveDomainGetMaxVcpus, /* 12.1.0 */
+    .domainGetVcpuPinInfo = bhyveDomainGetVcpuPinInfo, /* 12.1.0 */
+    .domainInterfaceAddresses = bhyveDomainInterfaceAddresses, /* 12.3.0 */
+    .domainGetHostname = bhyveDomainGetHostname, /* 12.3.0 */
+    .domainQemuAgentCommand = bhyveDomainQemuAgentCommand, /* 12.4.0 */
+    .domainGetMemoryParameters = bhyveDomainGetMemoryParameters, /* 12.4.0 */
+    .domainSetMemoryParameters = bhyveDomainSetMemoryParameters, /* 12.4.0 */
+    .domainGetFSInfo = bhyveDomainGetFSInfo, /* 12.5.0 */
+    .domainGetTime = bhyveDomainGetTime, /* 12.5.0 */
+    .domainSetTime = bhyveDomainSetTime, /* 12.5.0 */
+    .domainSetUserPassword = bhyveDomainSetUserPassword, /* 12.5.0 */
+    .domainAuthorizedSSHKeysGet = bhyveDomainAuthorizedSSHKeysGet, /* 12.5.0 */
+    .domainAuthorizedSSHKeysSet = bhyveDomainAuthorizedSSHKeysSet, /* 12.5.0 */
+    .domainRename = bhyveDomainRename, /* 12.6.0 */
+    .domainAgentSetResponseTimeout = bhyveDomainAgentSetResponseTimeout, /* 12.7.0 */
+    .domainGetGuestInfo = bhyveDomainGetGuestInfo, /* 12.7.0 */
+    .domainSetLifecycleAction = bhyveDomainSetLifecycleAction, /* 12.8.0 */
+    .domainReset = bhyveDomainReset, /* 12.9.0 */
 };
 
 

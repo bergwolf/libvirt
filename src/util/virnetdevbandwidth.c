@@ -46,6 +46,7 @@ virNetDevBandwidthCmdAddOptimalQuantum(virCommand *cmd,
                                        const virNetDevBandwidthRate *rate)
 {
     const unsigned long long mtu = 1500;
+    const unsigned long long r2q_limit = UINT32_MAX;
     unsigned long long r2q;
 
     /* When two or more classes compete for unused bandwidth they are each
@@ -59,6 +60,11 @@ virNetDevBandwidthCmdAddOptimalQuantum(virCommand *cmd,
     r2q = rate->average * 1024 / 8 / mtu;
     if (!r2q)
         r2q = 1;
+
+    /* But there's an internal limit in TC (well, kernel's implementation of
+     * HTB) for quantum: it has to fit into u32. Put a cap there. */
+    if (r2q > r2q_limit)
+        r2q = r2q_limit;
 
     virCommandAddArg(cmd, "quantum");
     virCommandAddArgFormat(cmd, "%llu", r2q);
@@ -120,7 +126,7 @@ virNetDevBandwidthManipulateFilter(const char *ifname,
     filter_id = g_strdup_printf("800::%u", 800 + id);
 
     if (remove_old) {
-        g_autoptr(virCommand) cmd = virCommandNew(TC);
+        g_autoptr(virCommand) cmd = virCommandNew("tc");
         int cmd_ret = 0;
 
         virCommandAddArgList(cmd, "filter", "del", "dev", ifname,
@@ -132,7 +138,7 @@ virNetDevBandwidthManipulateFilter(const char *ifname,
     }
 
     if (create_new) {
-        g_autoptr(virCommand) cmd = virCommandNew(TC);
+        g_autoptr(virCommand) cmd = virCommandNew("tc");
         virMacAddrGetRaw(ifmac_ptr, ifmac);
 
         mac[0] = g_strdup_printf("0x%02x%02x%02x%02x", ifmac[2],
@@ -163,34 +169,88 @@ virNetDevBandwidthManipulateFilter(const char *ifname,
 }
 
 
+static int
+virNetDevBandwidthClearRoot(const char *ifname)
+{
+    int ret = 0;
+    int dummy; /* for ignoring the exit status */
+    g_autoptr(virCommand) cmd = NULL;
+
+    cmd = virCommandNew("tc");
+    virCommandAddArgList(cmd, "qdisc", "del", "dev", ifname, "root", NULL);
+
+    if (virCommandRun(cmd, &dummy) < 0)
+        ret = -1;
+
+    return ret;
+}
+
+
+static int
+virNetDevBandwidthClearIngress(const char *ifname)
+{
+    int ret = 0;
+    int dummy; /* for ignoring the exit status */
+    g_autoptr(virCommand) cmd = NULL;
+
+    cmd = virCommandNew("tc");
+    virCommandAddArgList(cmd, "qdisc",  "del", "dev", ifname, "ingress", NULL);
+
+    if (virCommandRun(cmd, &dummy) < 0)
+        ret = -1;
+
+    return ret;
+}
+
+
 /**
  * virNetDevBandwidthSet:
  * @ifname: on which interface
  * @bandwidth: rates to set (may be NULL)
- * @hierarchical_class: whether to create hierarchical class
- * @swapped: true if IN/OUT should be set contrariwise
+ * @flags: bits indicating certain optional actions
  *
+
  * This function enables QoS on specified interface
  * and set given traffic limits for both, incoming
- * and outgoing traffic. Any previous setting get
- * overwritten. If @hierarchical_class is TRUE, create
- * hierarchical class. It is used to guarantee minimal
- * throughput ('floor' attribute in NIC).
+ * and outgoing traffic.
  *
- * If @swapped is set, the IN part of @bandwidth is set on
- * @ifname's TX, and vice versa. If it is not set, IN is set on
- * RX and OUT on TX. This is because for some types of interfaces
- * domain and the host live on the same side of the interface (so
- * domain's RX/TX is host's RX/TX), and for some it's swapped
- * (domain's RX/TX is hosts's TX/RX).
+ * @flags bits and their meanings:
+ *
+ *   VIR_NETDEV_BANDWIDTH_SET_HIERARCHICAL_CLASS
+ *     whether to create a hierarchical class
+ *     A hiearchical class structure is used to implement a minimal
+ *     throughput guarantee ('floor' attribute in NIC).
+ *
+ *   VIR_NETDEV_BANDWIDTH_SET_DIR_SWAPPED
+ *     set if IN/OUT should be set backwards from what's indicated in
+ *     the bandwidth, i.e. the IN part of @bandwidth is set on
+ *     @ifname's TX, and the OUT part of @bandwidth is set on
+ *     @ifname's RX.  This is needed because for some types of
+ *     interfaces the domain and the host live on the same side of the
+ *     interface (so domain's RX/TX is host's RX/TX), and for some
+ *     it's swapped (domain's RX/TX is hosts's TX/RX).
+ *
+ *   VIR_NETDEV_BANDWIDTH_SET_CLEAR_ALL
+ *     If VIR_NETDEV_BANDWIDTH_SET_CLEAR_ALL is set, then the root
+ *     qdisc is deleted before adding any new qdisc/class/filter,
+ *     which causes any pre-existing filters to also be deleted. If
+ *     not set, then it's assumed that there are no existing rules (or
+ *     that those already there need to be kept). The caller should
+ *     set this flag for an existing interface that is having its
+ *     bandwidth settings modified, but can leave it unset if the
+ *     interface was newly created and this is the first time
+ *     bandwidth has been set, but someone else might have already
+ *     added the qdisc (e.g. this is the case when the network driver
+ *     is setting bandwidth for a virtual network bridge device - the
+ *     nftables backend may have already added qdisc handle 1:0 and a
+ *     filter, and we don't want to delete them)
  *
  * Return 0 on success, -1 otherwise.
  */
 int
 virNetDevBandwidthSet(const char *ifname,
                       const virNetDevBandwidth *bandwidth,
-                      bool hierarchical_class,
-                      bool swapped)
+                      unsigned int flags)
 {
     int ret = -1;
     virNetDevBandwidthRate *rx = NULL; /* From domain POV */
@@ -199,6 +259,7 @@ virNetDevBandwidthSet(const char *ifname,
     char *average = NULL;
     char *peak = NULL;
     char *burst = NULL;
+    bool hierarchical_class = flags & VIR_NETDEV_BANDWIDTH_SET_HIERARCHICAL_CLASS;
 
     if (!bandwidth) {
         /* nothing to be enabled */
@@ -208,19 +269,17 @@ virNetDevBandwidthSet(const char *ifname,
 
     if (geteuid() != 0) {
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                       _("Network bandwidth tuning is not available"
-                         " in session mode"));
+                       _("Network bandwidth tuning is not available in session mode"));
         return -1;
     }
 
     if (!ifname) {
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                       _("Unable to set bandwidth for interface because "
-                         "device name is unknown"));
+                       _("Unable to set bandwidth for interface because device name is unknown"));
         return -1;
     }
 
-    if (swapped) {
+    if (flags & VIR_NETDEV_BANDWIDTH_SET_DIR_SWAPPED) {
         rx = bandwidth->out;
         tx = bandwidth->in;
     } else {
@@ -228,20 +287,20 @@ virNetDevBandwidthSet(const char *ifname,
         tx = bandwidth->out;
     }
 
-    virNetDevBandwidthClear(ifname);
-
     if (tx && tx->average) {
+        /* Only if the caller requests, clear the root qdisc and all filters
+         * before adding everything.
+         */
+        if (flags & VIR_NETDEV_BANDWIDTH_SET_CLEAR_ALL)
+            virNetDevBandwidthClearRoot(ifname);
+
         average = g_strdup_printf("%llukbps", tx->average);
         if (tx->peak)
             peak = g_strdup_printf("%llukbps", tx->peak);
         if (tx->burst)
             burst = g_strdup_printf("%llukb", tx->burst);
 
-        cmd = virCommandNew(TC);
-        virCommandAddArgList(cmd, "qdisc", "add", "dev", ifname, "root",
-                             "handle", "1:", "htb", "default",
-                             hierarchical_class ? "2" : "1", NULL);
-        if (virCommandRun(cmd, NULL) < 0)
+        if (virNetDevBandWidthAddTxFilterParentQdisc(ifname, hierarchical_class) < 0)
             goto cleanup;
 
         /* If we are creating a hierarchical class, all non guaranteed traffic
@@ -309,7 +368,7 @@ virNetDevBandwidthSet(const char *ifname,
          */
         if (hierarchical_class) {
             virCommandFree(cmd);
-            cmd = virCommandNew(TC);
+            cmd = virCommandNew("tc");
             virCommandAddArgList(cmd, "class", "add", "dev", ifname, "parent",
                                  "1:", "classid", "1:1", "htb", "rate", average,
                                  "ceil", peak ? peak : average, NULL);
@@ -318,7 +377,7 @@ virNetDevBandwidthSet(const char *ifname,
                 goto cleanup;
         }
         virCommandFree(cmd);
-        cmd = virCommandNew(TC);
+        cmd = virCommandNew("tc");
         virCommandAddArgList(cmd, "class", "add", "dev", ifname, "parent",
                              hierarchical_class ? "1:1" : "1:", "classid",
                              hierarchical_class ? "1:2" : "1:1", "htb",
@@ -334,7 +393,7 @@ virNetDevBandwidthSet(const char *ifname,
             goto cleanup;
 
         virCommandFree(cmd);
-        cmd = virCommandNew(TC);
+        cmd = virCommandNew("tc");
         virCommandAddArgList(cmd, "qdisc", "add", "dev", ifname, "parent",
                              hierarchical_class ? "1:2" : "1:1",
                              "handle", "2:", "sfq", "perturb",
@@ -344,7 +403,7 @@ virNetDevBandwidthSet(const char *ifname,
             goto cleanup;
 
         virCommandFree(cmd);
-        cmd = virCommandNew(TC);
+        cmd = virCommandNew("tc");
         virCommandAddArgList(cmd, "filter", "add", "dev", ifname, "parent",
                              "1:0", "protocol", "all", "prio", "1", "handle",
                              "1", "fw", "flowid", "1", NULL);
@@ -358,6 +417,12 @@ virNetDevBandwidthSet(const char *ifname,
     }
 
     if (rx) {
+        /* Only if the caller requests, clear the ingress qdisc and all
+         * filters before adding everything.
+         */
+        if (flags & VIR_NETDEV_BANDWIDTH_SET_CLEAR_ALL)
+            virNetDevBandwidthClearIngress(ifname);
+
         average = g_strdup_printf("%llukbps", rx->average);
 
         if (rx->burst) {
@@ -372,7 +437,7 @@ virNetDevBandwidthSet(const char *ifname,
         }
 
         virCommandFree(cmd);
-        cmd = virCommandNew(TC);
+        cmd = virCommandNew("tc");
             virCommandAddArgList(cmd, "qdisc", "add", "dev", ifname,
                                  "ingress", NULL);
 
@@ -380,7 +445,7 @@ virNetDevBandwidthSet(const char *ifname,
             goto cleanup;
 
         virCommandFree(cmd);
-        cmd = virCommandNew(TC);
+        cmd = virCommandNew("tc");
         /* Set filter to match all ingress traffic */
         virCommandAddArgList(cmd, "filter", "add", "dev", ifname, "parent",
                              "ffff:", "protocol", "all", "u32", "match", "u32",
@@ -415,27 +480,13 @@ virNetDevBandwidthSet(const char *ifname,
 int
 virNetDevBandwidthClear(const char *ifname)
 {
-    int ret = 0;
-    int dummy; /* for ignoring the exit status */
-    g_autoptr(virCommand) rootcmd = NULL;
-    g_autoptr(virCommand) ingresscmd = NULL;
-
     if (!ifname)
        return 0;
 
-    rootcmd = virCommandNew(TC);
-    virCommandAddArgList(rootcmd, "qdisc", "del", "dev", ifname, "root", NULL);
+    if (virNetDevBandwidthClearRoot(ifname) < 0)
+        return -1;
 
-    if (virCommandRun(rootcmd, &dummy) < 0)
-        ret = -1;
-
-    ingresscmd = virCommandNew(TC);
-    virCommandAddArgList(ingresscmd, "qdisc",  "del", "dev", ifname, "ingress", NULL);
-
-    if (virCommandRun(ingresscmd, &dummy) < 0)
-        ret = -1;
-
-    return ret;
+    return virNetDevBandwidthClearIngress(ifname);
 }
 
 /*
@@ -568,7 +619,7 @@ virNetDevBandwidthPlug(const char *brname,
                            net_bandwidth->in->peak :
                            net_bandwidth->in->average);
 
-    cmd1 = virCommandNew(TC);
+    cmd1 = virCommandNew("tc");
     virCommandAddArgList(cmd1, "class", "add", "dev", brname, "parent", "1:1",
                          "classid", class_id, "htb", "rate", floor,
                          "ceil", ceil, NULL);
@@ -577,7 +628,7 @@ virNetDevBandwidthPlug(const char *brname,
     if (virCommandRun(cmd1, NULL) < 0)
         return -1;
 
-    cmd2 = virCommandNew(TC);
+    cmd2 = virCommandNew("tc");
     virCommandAddArgList(cmd2, "qdisc", "add", "dev", brname, "parent",
                          class_id, "handle", qdisc_id, "sfq", "perturb",
                          "10", NULL);
@@ -619,7 +670,7 @@ virNetDevBandwidthUnplug(const char *brname,
     class_id = g_strdup_printf("1:%x", id);
     qdisc_id = g_strdup_printf("%x:", id);
 
-    cmd1 = virCommandNew(TC);
+    cmd1 = virCommandNew("tc");
     virCommandAddArgList(cmd1, "qdisc", "del", "dev", brname,
                          "handle", qdisc_id, NULL);
 
@@ -632,7 +683,7 @@ virNetDevBandwidthUnplug(const char *brname,
                                            NULL, true, false) < 0)
         return -1;
 
-    cmd2 = virCommandNew(TC);
+    cmd2 = virCommandNew("tc");
     virCommandAddArgList(cmd2, "class", "del", "dev", brname,
                          "classid", class_id, NULL);
 
@@ -673,7 +724,7 @@ virNetDevBandwidthUpdateRate(const char *ifname,
                            bandwidth->in->peak :
                            bandwidth->in->average);
 
-    cmd = virCommandNew(TC);
+    cmd = virCommandNew("tc");
     virCommandAddArgList(cmd, "class", "change", "dev", ifname,
                          "classid", class_id, "htb", "rate", rate,
                          "ceil", ceil, NULL);
@@ -747,7 +798,7 @@ virNetDevBandwidthSetRootQDisc(const char *ifname,
     /* Ideally, we would have a netlink implementation and just
      * call it here.  But honestly, I tried and failed miserably.
      * Fallback to spawning tc. */
-    cmd = virCommandNewArgList(TC, "qdisc", "add", "dev", ifname,
+    cmd = virCommandNewArgList("tc", "qdisc", "add", "dev", ifname,
                                "root", "handle", "0:", qdisc,
                                NULL);
 
@@ -761,6 +812,53 @@ virNetDevBandwidthSetRootQDisc(const char *ifname,
     if (status != 0) {
         VIR_DEBUG("Setting qdisc failed: output='%s' err='%s'", outbuf, errbuf);
         return -2;
+    }
+
+    return 0;
+}
+
+/**
+ * virNetDevBandwidthAddTxFilterParentQdisc:
+ * @ifname: name of interface that needs a qdisc to attach tx filters to
+ * @hierarchical_class: true if hierarchical classes will be used on this interface
+ *
+ * Add a root Qdisc (Queueing Discipline) for attaching Tx filters to
+ * @ifname.
+ *
+ * returns 0 on success, -1 on failure
+ */
+int
+virNetDevBandWidthAddTxFilterParentQdisc(const char *ifname,
+                                         bool hierarchical_class)
+{
+    g_autoptr(virCommand) testCmd = NULL;
+    g_autofree char *testResult = NULL;
+
+    /* first check it the qdisc with handle 1: was already added for
+     * this interface by someone else
+     */
+    testCmd = virCommandNew("tc");
+    virCommandAddArgList(testCmd, "qdisc", "show", "dev", ifname,
+                         "handle", "1:", NULL);
+    virCommandSetOutputBuffer(testCmd, &testResult);
+
+    if (virCommandRun(testCmd, NULL) < 0)
+        return -1;
+
+    /* output will be something like: "qdisc htb 1: root refcnt ..."
+     * if the qdisc was already added. We just search for "qdisc" and
+     * " 1: " anywhere in the output to allow for tc changing its
+     * output format.
+     */
+    if (!(testResult && strstr(testResult, "qdisc") && strstr(testResult, " 1: "))) {
+        /* didn't find qdisc in output, so we need to add one */
+        g_autoptr(virCommand) addCmd = virCommandNew("tc");
+
+        virCommandAddArgList(addCmd, "qdisc", "add", "dev", ifname, "root",
+                             "handle", "1:", "htb", "default",
+                             hierarchical_class ? "2" : "1", NULL);
+
+        return virCommandRun(addCmd, NULL);
     }
 
     return 0;

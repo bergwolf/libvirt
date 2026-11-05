@@ -21,11 +21,13 @@
 
 #pragma once
 
-#include "internal.h"
+#include "libvirt_internal.h"
 #include "virthread.h"
 #include "virdnsmasq.h"
 #include "virnetworkobj.h"
 #include "object_event.h"
+#include "virfirewall.h"
+#include "virinhibitor.h"
 
 typedef struct _virNetworkDriverConfig virNetworkDriverConfig;
 struct _virNetworkDriverConfig {
@@ -37,6 +39,8 @@ struct _virNetworkDriverConfig {
     char *stateDir;
     char *pidDir;
     char *dnsmasqStateDir;
+
+    virFirewallBackend firewallBackend;
 };
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virNetworkDriverConfig, virObjectUnref);
@@ -45,6 +49,9 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(virNetworkDriverConfig, virObjectUnref);
 typedef struct _virNetworkDriverState virNetworkDriverState;
 struct _virNetworkDriverState {
     virMutex lock;
+
+    /* Immutable pointer, self-locking APIs */
+    virInhibitor *inhibitor;
 
     /* Read-only */
     bool privileged;

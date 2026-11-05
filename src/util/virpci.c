@@ -30,6 +30,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef __linux__
+# include <sys/utsname.h>
+#endif
+
 #include "virlog.h"
 #include "virerror.h"
 #include "virfile.h"
@@ -42,6 +46,7 @@ VIR_LOG_INIT("util.pci");
 
 #define PCI_SYSFS "/sys/bus/pci/"
 #define PCI_ID_LEN 10   /* "XXXX XXXX" */
+#define VIR_PCI_DEVICE_ADDRESS_FMT "%04x:%02x:%02x.%d"
 
 VIR_ENUM_IMPL(virPCIELinkSpeed,
               VIR_PCIE_LINK_SPEED_LAST,
@@ -87,7 +92,8 @@ struct _virPCIDevice {
 
     bool          managed;
 
-    virPCIStubDriver stubDriver;
+    virPCIStubDriver stubDriverType;
+    char            *stubDriverName; /* if blank, use default for type */
 
     /* used by reattach function */
     bool          unbind_from_stub;
@@ -221,13 +227,20 @@ virPCIDriverDir(const char *driver)
 
 
 static char *
+virPCIModuleDir(const char *module)
+{
+    return g_strdup_printf("/sys/module/%s", module);
+}
+
+
+static char *
 virPCIFile(const char *device, const char *file)
 {
     return g_strdup_printf(PCI_SYSFS "devices/%s/%s", device, file);
 }
 
 
-/* virPCIDeviceGetDriverPathAndName - put the path to the driver
+/* virPCIDeviceGetCurrentDriverPathAndName - put the path to the driver
  * directory of the driver in use for this device in @path and the
  * name of the driver in @name. Both could be NULL if it's not bound
  * to any driver.
@@ -235,7 +248,9 @@ virPCIFile(const char *device, const char *file)
  * Return 0 for success, -1 for error.
  */
 int
-virPCIDeviceGetDriverPathAndName(virPCIDevice *dev, char **path, char **name)
+virPCIDeviceGetCurrentDriverPathAndName(virPCIDevice *dev,
+                                        char **path,
+                                        char **name)
 {
     int ret = -1;
     g_autofree char *drvlink = NULL;
@@ -274,6 +289,73 @@ virPCIDeviceGetDriverPathAndName(virPCIDevice *dev, char **path, char **name)
         VIR_FREE(*name);
     }
     return ret;
+}
+
+
+/**
+ * virPCIDeviceGetCurrentDriverNameAndType:
+ * @dev: virPCIDevice object to examine
+ * @drvName: returns name of driver bound to this device (if any)
+ * @drvType: returns type of driver if it is a known stub driver type
+ *
+ * Find the name of the driver bound to @dev (if any) and the type of
+ * the driver if it is a known/recognized "stub" driver (based on the
+ * driver name).
+ *
+ * There are vfio "variant" drivers that provide all the basic
+ * functionality of the standard vfio-pci driver as well as additional
+ * stuff. As of kernel 6.1, the vfio-pci driver and all vfio variant
+ * drivers can be identified (once the driver has been bound to a
+ * device) by looking for the subdirectory "vfio-dev" in the device's
+ * sysfs directory; for example, if the directory
+ * /sys/bus/pci/devices/0000:04:11.4/vfio-dev exists, then the driver
+ * that is currently bound to PCI device 0000:04:11.4 is either
+ * vfio-pci, or a vfio-pci variant driver.
+ *
+ * Return 0 on success, -1 on failure. If -1 is returned, then an error
+ * message has been logged.
+ */
+int
+virPCIDeviceGetCurrentDriverNameAndType(virPCIDevice *dev,
+                                        char **drvName,
+                                        virPCIStubDriver *drvType)
+{
+    g_autofree char *drvPath = NULL;
+    g_autofree char *vfioDevDir = NULL;
+    int tmpType;
+
+    if (virPCIDeviceGetCurrentDriverPathAndName(dev, &drvPath, drvName) < 0)
+        return -1;
+
+    if (!*drvName) {
+        *drvType = VIR_PCI_STUB_DRIVER_NONE;
+        return 0;
+    }
+
+    tmpType = virPCIStubDriverTypeFromString(*drvName);
+
+    if (tmpType > VIR_PCI_STUB_DRIVER_NONE) {
+        *drvType = tmpType;
+        return 0; /* exact match of a known driver name (or no name) */
+    }
+
+    /* If the sysfs directory of this device contains a directory
+     * named "vfio-dev" then the currently-bound driver is a vfio
+     * variant driver.
+     */
+
+    vfioDevDir = virPCIFile(dev->name, "vfio-dev");
+
+    if (virFileIsDir(vfioDevDir)) {
+        VIR_DEBUG("Driver %s is a vfio_pci driver", *drvName);
+        *drvType = VIR_PCI_STUB_DRIVER_VFIO;
+    } else {
+        VIR_DEBUG("Driver %s is NOT a vfio_pci driver, or kernel is too old",
+                  *drvName);
+        *drvType = VIR_PCI_STUB_DRIVER_NONE;
+    }
+
+    return 0;
 }
 
 
@@ -405,7 +487,8 @@ virPCIDeviceReadClass(virPCIDevice *dev, uint16_t *device_class)
     if (virFileReadAll(path, 9, &id_str) < 0)
         return -1;
 
-    id_str[8] = '\0';
+    virStringTrimOptionalNewline(id_str);
+
     if (virStrToLong_ui(id_str, NULL, 16, &value) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Unusual value in %1$s/devices/%2$s/class: %3$s"),
@@ -999,13 +1082,94 @@ virPCIDeviceInit(virPCIDevice *dev, int cfgfd)
     return 0;
 }
 
+/*
+ * Check if a PCI device is directly attached to a root bus (no parent bridge).
+ *
+ * A PCIe topology can have multiple root buses (a "root" bus is any
+ * PCI bus that doesn't have yet another higher level PCI bus as its
+ * parent), so by definition we can't detect a root bus by just
+ * looking for bus 0. Instead, we can detect if a bus is attached to a
+ * root bus by examining the *canonical* path of the device's
+ * directory in sysfs: a device is connected directly to a root bus if
+ * its canonicalized sysfs path is a direct child of a
+ * /sys/devices/pciXXXX:YY directory. For example, this device:
+ *
+ *   /sys/bus/pci/devices/0000:00:14.0      (path in "flat" sysfs pci namespace)
+ *   /sys/devices/pci0000:80/0000:80:14.0). (canonicalized version of above)
+
+ * is connnected to a root bus. Conversely, if the given device's
+ * canonial path has yet another PCI device as its parent in the
+ * sys/device's hierarchy, then it *isn't* attached to a root bus,
+ * e.g.:
+ *
+ *   /sys/bus/pci/devices/0000:04:00.1                  (link in "flat" namespace)
+ *   /sys/devices/pci0000:00/0000:00:1c.4/0000:04:00.0  (canonicalized)
+ *
+ * Returns 1 if the given device is directly attached to a root bus,
+ * 0 if not, -1 on error.
+ */
+static int
+virPCIDeviceIsOnRootBus(virPCIDevice *dev)
+{
+    unsigned int domain, bus;
+    g_autofree char *devPath = NULL;
+    g_autofree char *canonicalPath = NULL;
+    g_autofree char *parentPath = NULL;
+    g_autofree char *parentName = NULL;
+
+    /* Get the sysfs symlink path for this device */
+    devPath = g_strdup_printf(PCI_SYSFS "devices/%s", dev->name);
+
+    /* Resolve the symlink to get the real path in /sys/devices/... */
+    if (virFileResolveLink(devPath, &canonicalPath) < 0) {
+        virReportSystemError(errno, _("failed to resolve links in PCI device %1$s sysfs path '%2$s'"),
+                             dev->name, devPath);
+        return -1;
+    }
+
+    /* get just the final component of the parent directory */
+    parentPath = g_path_get_dirname(canonicalPath);
+    parentName = g_path_get_basename(parentPath);
+
+    /*
+     * Detect root bus by parsing the parent directory name with sscanf.
+     *
+     * PCI root buses in /sys/devices follow the naming convention:
+     * pci<domain>:<bus>
+     *
+     *   <domain>: number (0000-ffff, hex)
+     *   <bus>:    number within the domain (00-ff, hex)
+     *
+     * This format is defined in:
+     * https://www.kernel.org/doc/html/latest/PCI/sysfs-pci.html
+     *
+     * Examples from Intel Arrow Lake systems:
+     *   - pci0000:00  (CPU root bus)
+     *   - pci0000:80  (PCH root bus)
+     *
+     * We aren't concerned with the actual values parsed by sscanf,
+     * only whether or not the parse was successful - if soo, then we
+     * return 1 indicating this device is attached to a root bus,
+     * otherwise 0.
+     */
+    if (sscanf(parentName, "pci%x:%x", &domain, &bus) == 2) {
+        VIR_DEBUG("%s %s: device is on root bus (parent=%s)",
+                  dev->id, dev->name, parentName);
+        return 1;
+    }
+
+    VIR_DEBUG("%s %s: device is not on root bus (parent=%s)",
+              dev->id, dev->name, parentName);
+    return 0;
+}
+
 int
 virPCIDeviceReset(virPCIDevice *dev,
                   virPCIDeviceList *activeDevs,
                   virPCIDeviceList *inactiveDevs)
 {
-    g_autofree char *drvPath = NULL;
     g_autofree char *drvName = NULL;
+    virPCIStubDriver drvType;
     int ret = -1;
     int fd = -1;
     int hdrType = -1;
@@ -1031,15 +1195,16 @@ virPCIDeviceReset(virPCIDevice *dev,
      * reset it whenever appropriate, so doing it ourselves would just
      * be redundant.
      */
-    if (virPCIDeviceGetDriverPathAndName(dev, &drvPath, &drvName) < 0)
+    if (virPCIDeviceGetCurrentDriverNameAndType(dev, &drvName, &drvType) < 0)
         goto cleanup;
 
-    if (virPCIStubDriverTypeFromString(drvName) == VIR_PCI_STUB_DRIVER_VFIO) {
-        VIR_DEBUG("Device %s is bound to vfio-pci - skip reset",
-                  dev->name);
+    if (drvType == VIR_PCI_STUB_DRIVER_VFIO) {
+
+        VIR_DEBUG("Device %s is bound to %s - skip reset", dev->name, drvName);
         ret = 0;
         goto cleanup;
     }
+
     VIR_DEBUG("Resetting device %s", dev->name);
 
     if ((fd = virPCIDeviceConfigOpenWrite(dev)) < 0)
@@ -1063,9 +1228,18 @@ virPCIDeviceReset(virPCIDevice *dev,
     if (dev->has_pm_reset)
         ret = virPCIDeviceTryPowerManagementReset(dev, fd);
 
-    /* Bus reset is not an option with the root bus */
-    if (ret < 0 && dev->address.bus != 0)
-        ret = virPCIDeviceTrySecondaryBusReset(dev, fd, inactiveDevs);
+    /* If power management reset isn't available (or if it failed),
+     * and the bus we're attached to isn't a root bus, try a secondary
+     * bus reset. (This is not an option if we are attached directly
+     * to a root bus).
+     */
+    if (ret < 0) {
+        int onRootBus = virPCIDeviceIsOnRootBus(dev);
+        if (onRootBus < 0)
+            goto cleanup;
+        if (!onRootBus)
+            ret = virPCIDeviceTrySecondaryBusReset(dev, fd, inactiveDevs);
+    }
 
     if (ret < 0) {
         virErrorPtr err = virGetLastError();
@@ -1082,52 +1256,383 @@ virPCIDeviceReset(virPCIDevice *dev,
 }
 
 
-static int
-virPCIProbeStubDriver(virPCIStubDriver driver)
+/**
+ * virPCINameDashToUnderscore:
+ * @path: the module/driver name or path - will be directly modified
+ *
+ * Replace all occurences of "-" with "_" in the name
+ * part of the path (everything after final "/"
+ *
+ * return true if any change was made, otherwise false.
+ */
+static bool
+virPCINameDashToUnderscore(char *path)
 {
-    const char *drvname = NULL;
-    g_autofree char *drvpath = NULL;
+    bool changed = false;
+    char *tmp = strrchr(path, '/');
+
+    if (!tmp)
+        tmp = path;
+
+    while (*tmp) {
+        if (*tmp == '-') {
+            *tmp = '_';
+            changed = true;
+        }
+        tmp++;
+    }
+
+    return changed;
+}
+
+
+static int
+virPCIProbeModule(const char *moduleName)
+{
+    g_autofree char *modulePath = NULL;
     g_autofree char *errbuf = NULL;
 
-    if (driver == VIR_PCI_STUB_DRIVER_NONE ||
-        !(drvname = virPCIStubDriverTypeToString(driver))) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s",
-                       _("Attempting to use unknown stub driver"));
+    modulePath = virPCIModuleDir(moduleName);
+
+    /* driver previously loaded, return */
+    if (virFileExists(modulePath))
+        return 0;
+
+    if ((errbuf = virKModLoad(moduleName))) {
+        /* If we know failure was because of admin config, let's report that;
+         * otherwise, report a more generic failure message
+         */
+        if (virKModIsProhibited(moduleName)) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Failed to load PCI driver module %1$s: administratively prohibited"),
+                           moduleName);
+        } else {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Failed to load PCI driver module %1$s: %2$s"),
+                           moduleName, errbuf);
+        }
         return -1;
     }
 
-    drvpath = virPCIDriverDir(drvname);
-
-    /* driver previously loaded, return */
-    if (virFileExists(drvpath))
-        return 0;
-
-    if ((errbuf = virKModLoad(drvname))) {
-        VIR_WARN("failed to load driver %s: %s", drvname, errbuf);
-        goto cleanup;
-    }
-
     /* driver loaded after probing */
-    if (virFileExists(drvpath))
+    if (virFileExists(modulePath))
         return 0;
 
- cleanup:
-    /* If we know failure was because of admin config, let's report that;
-     * otherwise, report a more generic failure message
-     */
-    if (virKModIsProhibited(drvname)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Failed to load PCI stub module %1$s: administratively prohibited"),
-                       drvname);
-    } else {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Failed to load PCI stub module %1$s"),
-                       drvname);
-    }
-
+    virReportError(VIR_ERR_INTERNAL_ERROR,
+                   _("modprobe reported success loading module '%1$s', but module is missing from /sys/module"),
+                   moduleName);
     return -1;
 }
+
+/**
+ * virPCIDeviceFindDriver:
+ * @dev: initialized virPCIDevice, including desired stubDriverName
+ *
+ * Checks if there is a driver named @dev->stubDriverName already
+ * loaded. If there is, we're done. If not, look for a driver with
+ * that same name, except with dashes replaced with underscores.
+
+ * If neither of the above is found, then look for/load the module of
+ * the underscored version of the name, and follow the links from
+ * /sys/module/$name/drivers/pci:* to the PCI driver associated with that
+ * module, and update @dev->stubDriverName with that name.
+ *
+ * On a successful return, @dev->stubDriverName will be updated with
+ * the proper name for the driver, and that driver will be loaded.
+ *
+ * returns 0 on success, -1 on failure
+ */
+static int
+virPCIDeviceFindDriver(virPCIDevice *dev)
+{
+    g_autofree char *driverPath = virPCIDriverDir(dev->stubDriverName);
+    g_autofree char *moduleName = NULL;
+    g_autofree char *moduleDriversDir = NULL;
+    g_autoptr(DIR) dir = NULL;
+    struct dirent *ent;
+
+    /* unchanged  stubDriverName */
+    if (virFileExists(driverPath))
+        return 0;
+
+    /* try replacing "-" with "_" */
+    if (virPCINameDashToUnderscore(driverPath) && virFileExists(driverPath)) {
+
+        /* update original name in dev */
+        virPCINameDashToUnderscore(dev->stubDriverName);
+        return 0;
+    }
+
+    /* look for a module with this name (but always replacing
+     * "-" with "_", since that's what modprobe does)
+     */
+
+    moduleName = g_strdup(dev->stubDriverName);
+    virPCINameDashToUnderscore(moduleName);
+
+    if (virPCIProbeModule(moduleName) < 0)
+        return -1;
+
+    /* module was found/loaded. Now find the PCI driver it implements,
+     * linked to by /sys/module/$moduleName/drivers/pci:$driverName
+     */
+
+    moduleDriversDir = g_strdup_printf("/sys/module/%s/drivers", moduleName);
+
+    if (virDirOpenQuiet(&dir, moduleDriversDir) < 0) {
+        /* with monolithic kernels this directory will not exist: ENOENT
+         * with hardened system like grsecurity or any MAC frameowrk it might be be accessible:
+         * EACCESS or EPERM.
+         */
+        if (errno == ENOENT || errno == EACCES || errno == EPERM) {
+            VIR_DEBUG("driver directory not available (%s), using module name as driver name",
+                     moduleDriversDir);
+            g_free(dev->stubDriverName);
+            dev->stubDriverName = g_steal_pointer(&moduleName);
+            return 0;
+        }
+        virReportSystemError(errno, _("cannot open directory '%1$s'"), moduleDriversDir);
+        return -1;
+    }
+
+    while (virDirRead(dir, &ent, moduleDriversDir) > 0) {
+
+        if (STRPREFIX(ent->d_name, "pci:")) {
+            /* this is the link to the driver we want */
+
+            g_autofree char *drvName = NULL;
+            g_autofree char *drvPath = NULL;
+
+            /* extract the driver name from the link name */
+            drvName = g_strdup(ent->d_name + strlen("pci:"));
+
+            /* make sure that driver is actually loaded */
+            drvPath = virPCIDriverDir(drvName);
+            if (!virFileExists(drvPath)) {
+                virReportError(VIR_ERR_INTERNAL_ERROR,
+                               _("pci driver '%1$s' supposedly loaded by module '%2$s' not found in sysfs"),
+                               drvName, moduleName);
+                return -1;
+            }
+
+            g_free(dev->stubDriverName);
+            dev->stubDriverName = g_steal_pointer(&drvName);
+            return 0;
+        }
+    }
+
+    virReportError(VIR_ERR_INTERNAL_ERROR,
+                   _("module '%1$s' does not implement any pci driver"),
+                   moduleName);
+    return -1;
+}
+
+
+#ifdef __linux__
+typedef struct {
+    /* this is the decomposed version of a string like:
+     *
+     *   vNNNNNNNNdNNNNNNNNsvNNNNNNNNsdNNNNNNNNbcNNscNNiNN
+     *
+     * (followed by a space or newline). The "NNNN" are always of the
+     * length in the example unless replaced with a wildcard ("*"),
+     * but we make no assumptions about length.
+     *
+     * Rather than name each field, we just put them
+     * all in an array of 7 elements, so that we
+     * can write a simple loop to compare them
+     */
+    char *fields[7]; /* v, d, sv, sd, bc, sc, i */
+} virPCIDeviceAliasInfo;
+
+
+/* NULL in last position makes parsing loop simpler */
+static const char *fieldnames[] = { "v", "d", "sv", "sd", "bc", "sc", "i", NULL };
+
+
+static void
+virPCIDeviceAliasInfoFree(virPCIDeviceAliasInfo *info)
+{
+    if (info) {
+        size_t i;
+
+        for (i = 0; i < G_N_ELEMENTS(info->fields); i++)
+            g_free(info->fields[i]);
+
+        g_free(info);
+    }
+}
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virPCIDeviceAliasInfo, virPCIDeviceAliasInfoFree);
+
+
+static virPCIDeviceAliasInfo *
+virPCIDeviceAliasInfoNew(const char *str)
+{
+    const char *field = str;
+
+    size_t i;
+    g_autoptr(virPCIDeviceAliasInfo) ret = g_new0(virPCIDeviceAliasInfo, 1);
+
+    /* initialize from str */
+    for (i = 0; i < G_N_ELEMENTS(ret->fields); i++) {
+        int len = strlen(fieldnames[i]);
+        const char *next;
+
+        if (strncmp(field, fieldnames[i], len))
+            return NULL;
+
+        field += len;
+        if (fieldnames[i + 1]) {
+            if (!(next = strstr(field, fieldnames[i + 1])))
+                return NULL;
+        } else {
+            next = field;
+            while (*next && !g_ascii_isspace(*next))
+                next++;
+        }
+
+        ret->fields[i] = g_strndup(field, next - field);
+        field = next;
+    }
+
+    return g_steal_pointer(&ret);
+}
+
+
+static bool
+virPCIDeviceAliasInfoMatch(virPCIDeviceAliasInfo *orig,
+                           virPCIDeviceAliasInfo *match,
+                           unsigned int *wildCardCt)
+{
+    size_t i;
+
+    *wildCardCt = 0;
+
+    for (i = 0; i < G_N_ELEMENTS(orig->fields); i++) {
+        if (STREQ(match->fields[i], "*"))
+            (*wildCardCt)++;
+        else if (STRNEQ(orig->fields[i], match->fields[i]))
+            return false;
+    }
+    return true;
+}
+
+
+/* virPCIDeviceFindBestVFIOVariant:
+ *
+ * Find the "best" match of all vfio_pci aliases for @dev in the host
+ * modules.alias file. This uses the algorithm of finding every
+ * modules.alias line that begins with "vfio_pci:", then picking the
+ * one that matches the device's own modalias value (from the file of
+ * that name in the device's sysfs directory) with the fewest
+ * "wildcards" (* character, meaning "match any value for this
+ * attribute").
+ */
+int
+virPCIDeviceFindBestVFIOVariant(virPCIDevice *dev,
+                                char **moduleName)
+{
+    g_autofree char *devModAliasPath = NULL;
+    g_autofree char *devModAliasContent = NULL;
+    const char *devModAlias;
+    g_autoptr(virPCIDeviceAliasInfo) devModAliasInfo = NULL;
+    struct utsname unameInfo;
+    g_autofree char *modulesAliasPath = NULL;
+    g_autofree char *modulesAliasContent = NULL;
+    const char *line;
+    unsigned int currentBestWildcardCt = UINT_MAX;
+
+    *moduleName = NULL;
+
+    /* get the modalias values for the device from sysfs */
+    devModAliasPath = virPCIFile(dev->name, "modalias");
+    if (virFileReadAll(devModAliasPath, 100, &devModAliasContent) < 0)
+        return -1;
+
+    VIR_DEBUG("modalias path: '%s' contents: '%s'",
+              devModAliasPath, devModAliasContent);
+
+    /* "pci:vNNNNNNNNdNNNNNNNNsvNNNNNNNNsdNNNNNNNNbcNNscNNiNN\n" */
+    if  ((devModAlias = STRSKIP(devModAliasContent, "pci:")) == NULL ||
+         !(devModAliasInfo = virPCIDeviceAliasInfoNew(devModAlias))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("device modalias file %1$s content has improper format"),
+                       devModAliasPath);
+        return -1;
+    }
+
+    uname(&unameInfo);
+    modulesAliasPath = g_strdup_printf("/lib/modules/%s/modules.alias", unameInfo.release);
+    if (!virFileExists(modulesAliasPath)) {
+        /* on monolithic kernel this file does not exist */
+        VIR_DEBUG("modules.alias not available (%s), skipping VFIO variant detection",
+                 modulesAliasPath);
+        return 0;
+    }
+    if (virFileReadAll(modulesAliasPath, 8 * 1024 * 1024, &modulesAliasContent) < 0)
+        return -1;
+
+    /* Look for all lines that are aliases for vfio_pci drivers.
+     * (The first line is always a comment, so we can be sure "alias"
+     * is preceded by a newline)
+     */
+    line = modulesAliasContent;
+
+    while ((line = strstr(line, "\nalias vfio_pci:"))) {
+        g_autoptr(virPCIDeviceAliasInfo) fileModAliasInfo = NULL;
+        unsigned int wildCardCt;
+
+        /* "alias vfio_pci:vNNNNNNNNdNNNNNNNNsvNNNNNNNNsdNNNNNNNNbcNNscNNiNN XXXX\n" */
+        line += strlen("\nalias vfio_pci:");
+        if (!(fileModAliasInfo = virPCIDeviceAliasInfoNew(line)))
+            continue;
+
+        if (virPCIDeviceAliasInfoMatch(devModAliasInfo,
+                                       fileModAliasInfo, &wildCardCt)) {
+
+            const char *aliasStart = strchr(line, ' ');
+            const char *aliasEnd = NULL;
+            g_autofree char *aliasName = NULL;
+
+            if (!aliasStart) {
+                VIR_WARN("malformed modules.alias vfio_pci: line");
+                continue;
+            }
+
+            aliasStart++;
+            line = aliasEnd = strchrnul(aliasStart, '\n');
+            aliasName = g_strndup(aliasStart, aliasEnd - aliasStart);
+
+            VIR_DEBUG("matching alias '%s' found, %u wildcards, best previously was %u",
+                      aliasName, wildCardCt, currentBestWildcardCt);
+
+            if (wildCardCt < currentBestWildcardCt) {
+
+                /* this is a better match than previous */
+                currentBestWildcardCt = wildCardCt;
+                g_free(*moduleName);
+                *moduleName = g_steal_pointer(&aliasName);
+            }
+        }
+    }
+    return 0;
+}
+
+
+#else /* __linux__ */
+
+
+int
+virPCIDeviceFindBestVFIOVariant(virPCIDevice *dev G_GNUC_UNUSED,
+                                char **moduleName G_GNUC_UNUSED)
+{
+    virReportSystemError(ENOSYS, "%s",
+                         _("VFIO device assignment is not available on this platform"));
+    return -1;
+}
+#endif /* __linux__ */
+
 
 int
 virPCIDeviceUnbind(virPCIDevice *dev)
@@ -1136,7 +1641,7 @@ virPCIDeviceUnbind(virPCIDevice *dev)
     g_autofree char *drvpath = NULL;
     g_autofree char *driver = NULL;
 
-    if (virPCIDeviceGetDriverPathAndName(dev, &drvpath, &driver) < 0)
+    if (virPCIDeviceGetCurrentDriverPathAndName(dev, &drvpath, &driver) < 0)
         return -1;
 
     if (!driver)
@@ -1228,36 +1733,61 @@ virPCIDeviceUnbindFromStub(virPCIDevice *dev)
 static int
 virPCIDeviceBindToStub(virPCIDevice *dev)
 {
-    const char *stubDriverName;
     g_autofree char *stubDriverPath = NULL;
     g_autofree char *driverLink = NULL;
 
-    /* Check the device is configured to use one of the known stub drivers */
-    if (dev->stubDriver == VIR_PCI_STUB_DRIVER_NONE) {
+
+    if (dev->stubDriverType == VIR_PCI_STUB_DRIVER_NONE) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("No stub driver configured for PCI device %1$s"),
                        dev->name);
         return -1;
-    } else if (!(stubDriverName = virPCIStubDriverTypeToString(dev->stubDriver))) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Unknown stub driver configured for PCI device %1$s"),
-                       dev->name);
-        return -1;
     }
 
-    stubDriverPath = virPCIDriverDir(stubDriverName);
+    if (dev->stubDriverType == VIR_PCI_STUB_DRIVER_VFIO && !dev->stubDriverName) {
+        g_autofree char *autodetectModuleName = NULL;
+
+        /*  automatically use a VFIO variant driver if available for
+         *  this device.
+         */
+
+        if (virPCIDeviceFindBestVFIOVariant(dev, &autodetectModuleName) < 0)
+            return -1;
+
+        g_free(dev->stubDriverName);
+        dev->stubDriverName = g_steal_pointer(&autodetectModuleName);
+    }
+
+    /* if a driver name hasn't been decided by now, use default for this type */
+    if (!dev->stubDriverName) {
+
+        const char *stubDriverName = NULL;
+
+        if (!(stubDriverName = virPCIStubDriverTypeToString(dev->stubDriverType))) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Unknown stub driver configured for PCI device %1$s"),
+                           dev->name);
+            return -1;
+        }
+        dev->stubDriverName = g_strdup(stubDriverName);
+    }
+
+    if (virPCIDeviceFindDriver(dev) < 0)
+        return -1;
+
+    stubDriverPath = virPCIDriverDir(dev->stubDriverName);
     driverLink = virPCIFile(dev->name, "driver");
 
     if (virFileExists(driverLink)) {
         if (virFileLinkPointsTo(driverLink, stubDriverPath)) {
             /* The device is already bound to the correct driver */
             VIR_DEBUG("Device %s is already bound to %s",
-                      dev->name, stubDriverName);
+                      dev->name, dev->stubDriverName);
             return 0;
         }
     }
 
-    if (virPCIDeviceBindWithDriverOverride(dev, stubDriverName) < 0)
+    if (virPCIDeviceBindWithDriverOverride(dev, dev->stubDriverName) < 0)
         return -1;
 
     dev->unbind_from_stub = true;
@@ -1267,9 +1797,10 @@ virPCIDeviceBindToStub(virPCIDevice *dev)
 /* virPCIDeviceDetach:
  *
  * Detach this device from the host driver, attach it to the stub
- * driver (previously set with virPCIDeviceSetStubDriver(), and add *a
- * copy* of the object to the inactiveDevs list (if provided). This
- * function will *never* consume dev, so the caller should free it.
+ * driver (previously set with virPCIDeviceSetStubDriverType(), and
+ * add *a copy* of the object to the inactiveDevs list (if provided).
+ * This function will *never* consume dev, so the caller should free
+ * it.
  *
  * Returns 0 on success, -1 on failure (will fail if the device is
  * already in the activeDevs list, but will be a NOP if the device is
@@ -1287,9 +1818,6 @@ virPCIDeviceDetach(virPCIDevice *dev,
                    virPCIDeviceList *activeDevs,
                    virPCIDeviceList *inactiveDevs)
 {
-    if (virPCIProbeStubDriver(dev->stubDriver) < 0)
-        return -1;
-
     if (activeDevs && virPCIDeviceListFind(activeDevs, &dev->address)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Not detaching active device %1$s"), dev->name);
@@ -1343,19 +1871,20 @@ virPCIDeviceReadID(virPCIDevice *dev, const char *id_name)
 {
     g_autofree char *path = NULL;
     g_autofree char *id_str = NULL;
+    int len;
 
     path = virPCIFile(dev->name, id_name);
 
     /* ID string is '0xNNNN\n' ... i.e. 7 bytes */
-    if (virFileReadAll(path, 7, &id_str) < 0)
+    if ((len = virFileReadAllQuiet(path, 7, &id_str)) < 0)
         return NULL;
 
-    /* Check for 0x suffix */
+    /* Check for 0x prefix */
     if (id_str[0] != '0' || id_str[1] != 'x')
         return NULL;
 
-    /* Chop off the newline; we know the string is 7 bytes */
-    id_str[6] = '\0';
+    /* Chop off the newline */
+    virStringTrimOptionalNewline(id_str);
 
     return g_steal_pointer(&id_str);
 }
@@ -1388,8 +1917,7 @@ virPCIDeviceAddressIsValid(virPCIDeviceAddress *addr,
     if (virPCIDeviceAddressIsEmpty(addr)) {
         if (report)
             virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("Invalid PCI address 0000:00:00, at least "
-                             "one of domain, bus, or slot must be > 0"));
+                           _("Invalid PCI address 0000:00:00, at least one of domain, bus, or slot must be > 0"));
         return false;
     }
     return true;
@@ -1507,6 +2035,7 @@ virPCIDeviceCopy(virPCIDevice *dev)
     copy->path = g_strdup(dev->path);
     copy->used_by_drvname = g_strdup(dev->used_by_drvname);
     copy->used_by_domname = g_strdup(dev->used_by_domname);
+    copy->stubDriverName = g_strdup(dev->stubDriverName);
     return copy;
 }
 
@@ -1521,6 +2050,7 @@ virPCIDeviceFree(virPCIDevice *dev)
     g_free(dev->path);
     g_free(dev->used_by_drvname);
     g_free(dev->used_by_domname);
+    g_free(dev->stubDriverName);
     g_free(dev);
 }
 
@@ -1569,15 +2099,29 @@ virPCIDeviceGetManaged(virPCIDevice *dev)
 }
 
 void
-virPCIDeviceSetStubDriver(virPCIDevice *dev, virPCIStubDriver driver)
+virPCIDeviceSetStubDriverType(virPCIDevice *dev, virPCIStubDriver driverType)
 {
-    dev->stubDriver = driver;
+    dev->stubDriverType = driverType;
 }
 
 virPCIStubDriver
-virPCIDeviceGetStubDriver(virPCIDevice *dev)
+virPCIDeviceGetStubDriverType(virPCIDevice *dev)
 {
-    return dev->stubDriver;
+    return dev->stubDriverType;
+}
+
+void
+virPCIDeviceSetStubDriverName(virPCIDevice *dev,
+                                   const char *driverName)
+{
+    g_free(dev->stubDriverName);
+    dev->stubDriverName = g_strdup(driverName);
+}
+
+const char *
+virPCIDeviceGetStubDriverName(virPCIDevice *dev)
+{
+    return dev->stubDriverName;
 }
 
 bool
@@ -1616,7 +2160,7 @@ virPCIDeviceSetReprobe(virPCIDevice *dev, bool reprobe)
     dev->reprobe = reprobe;
 }
 
-int
+void
 virPCIDeviceSetUsedBy(virPCIDevice *dev,
                       const char *drv_name,
                       const char *dom_name)
@@ -1625,8 +2169,6 @@ virPCIDeviceSetUsedBy(virPCIDevice *dev,
     VIR_FREE(dev->used_by_domname);
     dev->used_by_drvname = g_strdup(drv_name);
     dev->used_by_domname = g_strdup(dom_name);
-
-    return 0;
 }
 
 void
@@ -2100,15 +2642,19 @@ static int
 virPCIDeviceIsBehindSwitchLackingACS(virPCIDevice *dev)
 {
     g_autoptr(virPCIDevice) parent = NULL;
+    int onRootBus;
 
     if (virPCIDeviceGetParent(dev, &parent) < 0)
         return -1;
     if (!parent) {
-        /* if we have no parent, and this is the root bus, ACS doesn't come
-         * into play since devices on the root bus can't P2P without going
+        /* if we have no parent, and this is a root bus, ACS doesn't come
+         * into play since devices on root buses can't P2P without going
          * through the root IOMMU.
          */
-        if (dev->address.bus == 0) {
+        onRootBus = virPCIDeviceIsOnRootBus(dev);
+        if (onRootBus < 0)
+            return -1;
+        if (onRootBus) {
             return 0;
         } else {
             virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -2315,7 +2861,7 @@ virPCIGetPhysicalFunction(const char *vf_sysfs_path,
 
     *pf = NULL;
 
-    virBuildPath(&device_link, vf_sysfs_path, "physfn");
+    device_link = g_build_filename(vf_sysfs_path, "physfn", NULL);
 
     if ((*pf = virPCIGetDeviceAddressFromSysfsLink(device_link))) {
         VIR_DEBUG("PF for VF device '%s': " VIR_PCI_DEVICE_ADDRESS_FMT,
@@ -2439,6 +2985,9 @@ virPCIGetVirtualFunctionIndex(const char *pf_sysfs_device_link,
         }
     }
 
+    virReportError(VIR_ERR_INTERNAL_ERROR,
+                   _("No virtual function index found for '%1$s'"),
+                   pf_sysfs_device_link);
     return -1;
 }
 
@@ -2454,6 +3003,12 @@ virPCIDeviceAddressGetSysfsFile(virPCIDeviceAddress *addr,
                                              addr->bus, addr->slot, addr->function);
     return 0;
 }
+
+
+/* Represents format of PF's phys_port_name in switchdev mode:
+ * 'p%u' or 'p%us%u'. New line checked since value is read from sysfs file.
+ */
+# define VIR_PF_PHYS_PORT_NAME_REGEX  "(p[0-9]+$)|(p[0-9]+s[0-9]+$)"
 
 /**
  * virPCIGetNetName:
@@ -2499,7 +3054,7 @@ virPCIGetNetName(const char *device_link_sysfs_path,
         return -1;
     }
 
-    virBuildPath(&pcidev_sysfs_net_path, device_link_sysfs_path, "net");
+    pcidev_sysfs_net_path = g_build_filename(device_link_sysfs_path, "net", NULL);
 
     if (virDirOpenQuiet(&dir, pcidev_sysfs_net_path) < 0) {
         /* this *isn't* an error - caller needs to check for netname == NULL */
@@ -2580,6 +3135,8 @@ virPCIGetNetName(const char *device_link_sysfs_path,
     return -1;
 }
 
+# undef VIR_PF_PHYS_PORT_NAME_REGEX
+
 int
 virPCIGetVirtualFunctionInfo(const char *vf_sysfs_device_path,
                              int pfNetDevIdx,
@@ -2637,29 +3194,14 @@ virPCIGetVirtualFunctionInfo(const char *vf_sysfs_device_path,
 }
 
 
-bool
-virPCIDeviceHasVPD(virPCIDevice *dev)
-{
-    g_autofree char *vpdPath = NULL;
-
-    vpdPath = virPCIFile(dev->name, "vpd");
-    if (!virFileExists(vpdPath)) {
-        VIR_INFO("Device VPD file does not exist %s", vpdPath);
-        return false;
-    } else if (!virFileIsRegular(vpdPath)) {
-        VIR_WARN("VPD path does not point to a regular file %s", vpdPath);
-        return false;
-    }
-    return true;
-}
-
 /**
  * virPCIDeviceGetVPD:
  * @dev: a PCI device to get a PCI VPD for.
  *
  * Obtain a PCI device's Vital Product Data (VPD). VPD is optional in
  * both PCI Local Bus and PCIe specifications so there is no guarantee it
- * will be there for a particular device.
+ * will be there for a particular device. The VPD data is returned in @vpd if
+ * it's available or otherwise NULL is set.
  *
  * Returns: a pointer to virPCIVPDResource which needs to be freed by the caller
  * or NULL if getting it failed for some reason (e.g. invalid format, I/O error).
@@ -2667,28 +3209,17 @@ virPCIDeviceHasVPD(virPCIDevice *dev)
 virPCIVPDResource *
 virPCIDeviceGetVPD(virPCIDevice *dev)
 {
-    g_autofree char *vpdPath = NULL;
-    int fd;
-    g_autoptr(virPCIVPDResource) res = NULL;
+    g_autofree char *vpdPath = virPCIFile(dev->name, "vpd");
+    VIR_AUTOCLOSE fd = -1;
 
-    vpdPath = virPCIFile(dev->name, "vpd");
-    if (!virPCIDeviceHasVPD(dev)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, _("Device %1$s does not have a VPD"),
-                virPCIDeviceGetName(dev));
-        return NULL;
-    }
-    if ((fd = open(vpdPath, O_RDONLY)) < 0) {
-        virReportSystemError(-fd, _("Failed to open a VPD file '%1$s'"), vpdPath);
-        return NULL;
-    }
-    res = virPCIVPDParse(fd);
+    fd = open(vpdPath, O_RDONLY);
 
-    if (VIR_CLOSE(fd) < 0) {
-        virReportSystemError(errno, _("Unable to close the VPD file, fd: %1$d"), fd);
-        return NULL;
-    }
+    VIR_DEBUG("dev='%s' path='%s' fd='%d'", virPCIDeviceGetName(dev), vpdPath, fd);
 
-    return g_steal_pointer(&res);
+    if (fd < 0)
+        return NULL;
+
+    return virPCIVPDParse(fd);
 }
 
 #else
@@ -2765,17 +3296,10 @@ virPCIGetVirtualFunctionInfo(const char *vf_sysfs_device_path G_GNUC_UNUSED,
     return -1;
 }
 
-bool
-virPCIDeviceHasVPD(virPCIDevice *dev G_GNUC_UNUSED)
-{
-    virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _(unsupported));
-    return NULL;
-}
 
 virPCIVPDResource *
 virPCIDeviceGetVPD(virPCIDevice *dev G_GNUC_UNUSED)
 {
-    virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _(unsupported));
     return NULL;
 }
 #endif /* __linux__ */
@@ -2913,4 +3437,73 @@ void
 virPCIDeviceAddressFree(virPCIDeviceAddress *address)
 {
     g_free(address);
+}
+
+/**
+ * virPCIDeviceGetVfioPath:
+ * @addr: host device PCI address
+ * @vfioPath: returned VFIO device path
+ *
+ * Constructs the VFIO device path for a PCI hostdev.
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+int
+virPCIDeviceGetVfioPath(virPCIDevice *pci,
+                        char **vfioPath)
+{
+    g_autofree char *sysfsPath = NULL;
+    g_autoptr(DIR) dir = NULL;
+    struct dirent *entry = NULL;
+
+    *vfioPath = NULL;
+
+    /* Look in device's vfio-dev subdirectory */
+    sysfsPath = virPCIFile(pci->name, "vfio-dev");
+
+    if (virDirOpen(&dir, sysfsPath) == 1) {
+        while (virDirRead(dir, &entry, sysfsPath) > 0) {
+            if (STRPREFIX(entry->d_name, "vfio")) {
+                *vfioPath = g_strdup_printf("/dev/vfio/devices/%s", entry->d_name);
+                return 0;
+            }
+        }
+    }
+
+    virReportError(VIR_ERR_INTERNAL_ERROR,
+                   _("cannot find VFIO device for PCI device %1$s"),
+                   pci->name);
+    return -1;
+}
+
+/**
+ * virPCIDeviceOpenVfioFd:
+ * @addr:
+ *
+ * Opens VFIO device and returns its FD.
+ *
+ * Returns: FD on success, -1 on failure
+ */
+int
+virPCIDeviceOpenVfioFd(virPCIDeviceAddress *addr)
+{
+    g_autoptr(virPCIDevice) pci = NULL;
+    g_autofree char *vfioPath = NULL;
+    int fd = -1;
+
+    if (!(pci = virPCIDeviceNew(addr)))
+        return -1;
+
+    if (virPCIDeviceGetVfioPath(pci, &vfioPath) < 0)
+        return -1;
+
+    VIR_DEBUG("Opening VFIO device %s", vfioPath);
+
+    if ((fd = open(vfioPath, O_RDWR | O_CLOEXEC)) < 0) {
+        virReportSystemError(errno, _("cannot open VFIO device %1$s"), vfioPath);
+        return -1;
+    }
+
+    VIR_DEBUG("Opened VFIO device FD %d for %s", fd, vfioPath);
+    return fd;
 }

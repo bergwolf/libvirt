@@ -81,7 +81,8 @@ typedef virCPUDef *
 typedef int
 (*virCPUArchUpdate)(virCPUDef *guest,
                     const virCPUDef *host,
-                    bool relative);
+                    bool relative,
+                    virCPUFeaturePolicy removedPolicy);
 
 typedef int
 (*virCPUArchUpdateLive)(virCPUDef *cpu,
@@ -135,6 +136,18 @@ typedef virCPUCompareResult
 typedef virCPUData *
 (*virCPUArchDataGetHost)(void);
 
+typedef int
+(*virCPUArchGetCheckMode)(const char *modelName,
+                          bool *compat);
+
+typedef const char *
+(*virCPUArchGetCanonicalModel)(const char *model);
+
+typedef int
+(*virCPUArchUpdateFeatures)(virCPUDef *cpu,
+                            virCPUData *cpuData,
+                            virCPUFeaturePolicy policy);
+
 struct cpuArchDriver {
     const char *name;
     const virArch *arch;
@@ -162,6 +175,9 @@ struct cpuArchDriver {
     virCPUArchDataAddFeature dataAddFeature;
     virCPUArchDataIsIdentical dataIsIdentical;
     virCPUArchDataGetHost dataGetHost;
+    virCPUArchGetCheckMode getCheckMode;
+    virCPUArchGetCanonicalModel getCanonicalModel;
+    virCPUArchUpdateFeatures updateFeatures;
 };
 
 
@@ -178,6 +194,13 @@ virCPUCompare(virArch arch,
               virCPUDef *cpu,
               bool failIncompatible)
     ATTRIBUTE_NONNULL(3);
+
+int
+virCPUCompareUnusable(virArch arch,
+                      const virCPUDef *host,
+                      const virCPUDef *cpu,
+                      char **blockers,
+                      bool failIncompatible);
 
 int
 cpuDecode   (virCPUDef *cpu,
@@ -216,7 +239,7 @@ virCPUGetHost(virArch arch,
               virDomainCapsCPUModels *models);
 
 virCPUDef *
-virCPUProbeHost(virArch arch) G_NO_INLINE;
+virCPUProbeHost(virArch arch) ATTRIBUTE_MOCKABLE;
 
 virCPUDef *
 virCPUBaseline(virArch arch,
@@ -229,7 +252,8 @@ virCPUBaseline(virArch arch,
 int
 virCPUUpdate(virArch arch,
              virCPUDef *guest,
-             const virCPUDef *host)
+             const virCPUDef *host,
+             virCPUFeaturePolicy removedPolicy)
     ATTRIBUTE_NONNULL(2);
 
 int
@@ -304,6 +328,21 @@ virCPUDataIsIdentical(const virCPUData *a,
 
 virCPUData*
 virCPUDataGetHost(void);
+
+int
+virCPUGetCheckMode(virArch arch,
+                   const virCPUDef *cpu,
+                   bool *compat);
+
+const char *
+virCPUGetCanonicalModel(virArch arch,
+                        const char *model);
+
+int
+virCPUUpdateFeatures(virArch arch,
+                     virCPUDef *cpu,
+                     virCPUData *cpuData,
+                     virCPUFeaturePolicy policy);
 
 bool
 virCPUArchIsSupported(virArch arch);

@@ -24,6 +24,14 @@
 #include "internal.h"
 #include "virbuffer.h"
 
+typedef struct _virCommandSendBuffer virCommandSendBuffer;
+struct _virCommandSendBuffer {
+    int fd;
+    unsigned char *buffer;
+    size_t buflen;
+    off_t offset;
+};
+
 typedef struct _virCommand virCommand;
 
 /* This will execute in the context of the first child
@@ -54,7 +62,7 @@ typedef enum {
 
 void virCommandPassFD(virCommand *cmd,
                       int fd,
-                      unsigned int flags) G_NO_INLINE;
+                      unsigned int flags) ATTRIBUTE_MOCKABLE;
 
 void virCommandSetPidFile(virCommand *cmd,
                           const char *pidfile) ATTRIBUTE_NONNULL(2);
@@ -171,7 +179,6 @@ int virCommandToStringBuf(virCommand *cmd,
                           bool stripCommandPath);
 
 const char *virCommandGetBinaryPath(virCommand *cmd);
-int virCommandGetArgList(virCommand *cmd, char ***args);
 
 int virCommandExec(virCommand *cmd, gid_t *groups, int ngroups) G_GNUC_WARN_UNUSED_RESULT;
 

@@ -54,6 +54,7 @@
 #include "virpidfile.h"
 #include "virprocess.h"
 #include "virbuffer.h"
+#include "virsecureerase.h"
 #include "virthread.h"
 #include "virstring.h"
 
@@ -75,14 +76,6 @@ typedef struct _virCommandFD virCommandFD;
 struct _virCommandFD {
     int fd;
     unsigned int flags;
-};
-
-typedef struct _virCommandSendBuffer virCommandSendBuffer;
-struct _virCommandSendBuffer {
-    int fd;
-    unsigned char *buffer;
-    size_t buflen;
-    off_t offset;
 };
 
 struct _virCommand {
@@ -404,7 +397,7 @@ virCommandHandshakeChild(virCommand *cmd)
     int rv;
 
     if (!cmd->handshake)
-       return true;
+       return 0;
 
     VIR_DEBUG("Notifying parent for handshake start on %d",
               cmd->handshakeWait[1]);
@@ -480,17 +473,12 @@ virExecCommon(virCommand *cmd, gid_t *groups, int ngroups)
 }
 
 # ifdef __linux__
-/* On Linux, we can utilize procfs and read the table of opened
- * FDs and selectively close only those FDs we don't want to pass
- * onto child process (well, the one we will exec soon since this
- * is called from the child). */
 static int
-virCommandMassCloseGetFDsLinux(virCommand *cmd G_GNUC_UNUSED,
-                               virBitmap *fds)
+virCommandMassCloseGetFDsDir(virBitmap *fds,
+                             const char *dirName)
 {
     g_autoptr(DIR) dp = NULL;
     struct dirent *entry;
-    const char *dirName = "/proc/self/fd";
     int rc;
 
     if (virDirOpen(&dp, dirName) < 0)
@@ -506,7 +494,7 @@ virCommandMassCloseGetFDsLinux(virCommand *cmd G_GNUC_UNUSED,
             return -1;
         }
 
-        ignore_value(virBitmapSetBit(fds, fd));
+        virBitmapSetBitExpand(fds, fd);
     }
 
     if (rc < 0)
@@ -514,80 +502,29 @@ virCommandMassCloseGetFDsLinux(virCommand *cmd G_GNUC_UNUSED,
 
     return 0;
 }
-
-# else /* !__linux__ */
+# endif /* __linux__ */
 
 static int
-virCommandMassCloseGetFDsGeneric(virCommand *cmd G_GNUC_UNUSED,
-                                 virBitmap *fds)
+virCommandMassCloseGetFDs(virBitmap *fds)
 {
+# ifdef __linux__
+    /* On Linux, we can utilize procfs and read the table of opened
+     * FDs and selectively close only those FDs we don't want to pass
+     * onto child process (well, the one we will exec soon since this
+     * is called from the child). */
+    return virCommandMassCloseGetFDsDir(fds, "/proc/self/fd");
+# else
     virBitmapSetAll(fds);
     return 0;
-}
-# endif /* !__linux__ */
-
-# ifdef __FreeBSD__
-
-static int
-virCommandMassClose(virCommand *cmd,
-                    int childin,
-                    int childout,
-                    int childerr)
-{
-    int lastfd = -1;
-    int fd = -1;
-    size_t i;
-
-    /*
-     * Two phases of closing.
-     *
-     * The first (inefficient) phase iterates over FDs,
-     * preserving certain FDs we need to pass down, and
-     * closing others. The number of iterations is bounded
-     * to the number of the biggest FD we need to preserve.
-     *
-     * The second (speedy) phase uses closefrom() to cull
-     * all remaining FDs in the process.
-     *
-     * Usually the first phase will be fairly quick only
-     * processing a handful of low FD numbers, and thus using
-     * closefrom() is a massive win for high ulimit() NFILES
-     * values.
-     */
-    lastfd = MAX(lastfd, childin);
-    lastfd = MAX(lastfd, childout);
-    lastfd = MAX(lastfd, childerr);
-
-    for (i = 0; i < cmd->npassfd; i++)
-        lastfd = MAX(lastfd, cmd->passfd[i].fd);
-
-    for (fd = 0; fd <= lastfd; fd++) {
-        if (fd == childin || fd == childout || fd == childerr)
-            continue;
-        if (!virCommandFDIsSet(cmd, fd)) {
-            int tmpfd = fd;
-            VIR_MASS_CLOSE(tmpfd);
-        } else if (virSetInherit(fd, true) < 0) {
-            virReportSystemError(errno, _("failed to preserve fd %1$d"), fd);
-            return -1;
-        }
-    }
-
-    closefrom(lastfd + 1);
-
-    return 0;
+# endif
 }
 
-# else /* ! __FreeBSD__ */
-
 static int
-virCommandMassClose(virCommand *cmd,
-                    int childin,
-                    int childout,
-                    int childerr)
+virCommandMassCloseFrom(virBitmap *keep)
 {
     g_autoptr(virBitmap) fds = NULL;
     int openmax = sysconf(_SC_OPEN_MAX);
+    int lastfd = virBitmapLastSetBit(keep);
     int fd = -1;
 
     /* In general, it is not safe to call malloc() between fork() and exec()
@@ -598,38 +535,118 @@ virCommandMassClose(virCommand *cmd,
      * Therefore we can safely allocate memory here (and transitively call
      * opendir/readdir) without a deadlock. */
 
-    if (openmax < 0) {
-        virReportSystemError(errno, "%s", _("sysconf(_SC_OPEN_MAX) failed"));
-        return -1;
+    if (openmax <= 0) {
+        /* Darwin defaults to 10240. Start with a generous value.
+         * virCommandMassCloseGetFDsDir() uses virBitmapSetBitExpand() anyways.
+         */
+        openmax = 10240;
     }
 
     fds = virBitmapNew(openmax);
 
-#  ifdef __linux__
-    if (virCommandMassCloseGetFDsLinux(cmd, fds) < 0)
+    if (virCommandMassCloseGetFDs(fds) < 0)
         return -1;
-#  else
-    if (virCommandMassCloseGetFDsGeneric(cmd, fds) < 0)
-        return -1;
-#  endif
 
     fd = virBitmapNextSetBit(fds, 2);
-    for (; fd >= 0; fd = virBitmapNextSetBit(fds, fd)) {
-        if (fd == childin || fd == childout || fd == childerr)
+    for (; fd >= 0 && fd <= lastfd; fd = virBitmapNextSetBit(fds, fd)) {
+        int tmpfd = fd;
+
+        if (virBitmapIsBitSet(keep, fd))
             continue;
-        if (!virCommandFDIsSet(cmd, fd)) {
-            int tmpfd = fd;
-            VIR_MASS_CLOSE(tmpfd);
-        } else if (virSetInherit(fd, true) < 0) {
-            virReportSystemError(errno, _("failed to preserve fd %1$d"), fd);
+
+        VIR_MASS_CLOSE(tmpfd);
+    }
+
+    if (virCloseFrom(lastfd + 1) < 0) {
+        if (errno != ENOSYS)
             return -1;
+
+        if (fd > 0) {
+            for (; fd >= 0; fd = virBitmapNextSetBit(fds, fd)) {
+                int tmpfd = fd;
+                VIR_MASS_CLOSE(tmpfd);
+            }
         }
     }
 
     return 0;
 }
 
-# endif /* ! __FreeBSD__ */
+
+static int
+virCommandMassCloseRange(virBitmap *keep)
+{
+    ssize_t first;
+    ssize_t last;
+
+    first = 2;
+    while ((last = virBitmapNextSetBit(keep, first)) >= 0) {
+        if (first + 1 == last) {
+            first = last;
+            continue;
+        }
+
+        /* Preserve @first and @last and close everything in between. */
+        if (virCloseRange(first + 1, last - 1) < 0) {
+            virReportSystemError(errno,
+                                 _("Unable to mass close FDs (first=%1$zd, last=%2$zd)"),
+                                 first + 1, last - 1);
+            return -1;
+        }
+
+        first = last;
+    }
+
+    if (virCloseRange(first + 1, ~0U) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to mass close FDs (first=%1$zd, last=%2$d"),
+                             first + 1, ~0U);
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/**
+ * virCommandMassClose:
+ * @cmd: command structure
+ * @childin: fd passed to child as stdin
+ * @childout: fd passed to child as stdout
+ * @childerr: fd passed to child as stderr
+ *
+ * Prepares FDs to be passed to the child process spawned by @cmd and closes
+ * every other FD.
+ */
+static int
+virCommandMassClose(virCommand *cmd,
+                    int childin,
+                    int childout,
+                    int childerr)
+{
+    g_autoptr(virBitmap) fds = virBitmapNew(0);
+    size_t i;
+
+    virBitmapSetBitExpand(fds, childin);
+    virBitmapSetBitExpand(fds, childout);
+    virBitmapSetBitExpand(fds, childerr);
+
+    for (i = 0; i < cmd->npassfd; i++) {
+        int fd = cmd->passfd[i].fd;
+
+        virBitmapSetBitExpand(fds, fd);
+
+        if (virSetInherit(fd, true) < 0) {
+            virReportSystemError(errno, _("failed to preserve fd %1$d"), fd);
+            return -1;
+        }
+    }
+
+    if (virCloseRangeIsSupported())
+        return virCommandMassCloseRange(fds);
+
+    return virCommandMassCloseFrom(fds);
+}
 
 
 /*
@@ -708,8 +725,7 @@ virExec(virCommand *cmd)
         childerr = null;
     }
 
-    if ((ngroups = virGetGroupList(cmd->uid, cmd->gid, &groups)) < 0)
-        goto cleanup;
+    ngroups = virGetGroupList(cmd->uid, cmd->gid, &groups);
 
     pid = virFork();
 
@@ -1406,7 +1422,7 @@ virCommandAddEnvPass(virCommand *cmd, const char *name)
     if (virCommandHasError(cmd))
         return;
 
-    value = getenv(name);
+    value = g_getenv(name);
     if (value)
         virCommandAddEnvPair(cmd, name, value);
 }
@@ -1663,6 +1679,7 @@ virCommandFreeSendBuffers(virCommand *cmd)
 
     for (i = 0; i < virCommandGetNumSendBuffers(cmd); i++) {
         VIR_FORCE_CLOSE(cmd->sendBuffers[i].fd);
+        virSecureErase(cmd->sendBuffers[i].buffer, cmd->sendBuffers[i].buflen);
         VIR_FREE(cmd->sendBuffers[i].buffer);
     }
     VIR_FREE(cmd->sendBuffers);
@@ -2135,23 +2152,23 @@ virCommandToString(virCommand *cmd,
 }
 
 
-int
-virCommandGetArgList(virCommand *cmd,
-                     char ***args)
+/**
+ * virCommandArgListAccess:
+ * @cmd: command struct
+ * @args: filled with pointer to list of args of @cmd
+ * @nargs: filled with number of arguments
+ *
+ * For use only in tests.
+ *
+ * Allows access to the arguments, including modification.
+ */
+void
+virCommandArgListAccess(virCommand *cmd,
+                        char ***args,
+                        size_t *nargs)
 {
-    size_t i;
-
-    if (virCommandHasError(cmd)) {
-        virCommandRaiseError(cmd);
-        return -1;
-    }
-
-    *args = g_new0(char *, cmd->nargs);
-
-    for (i = 1; i < cmd->nargs; i++)
-        (*args)[i - 1] = g_strdup(cmd->args[i]);
-
-    return 0;
+    *args = cmd->args;
+    *nargs = cmd->nargs;
 }
 
 
@@ -2199,7 +2216,7 @@ virCommandProcessIO(virCommand *cmd)
     int outfd = -1, errfd = -1;
     size_t inlen = 0, outlen = 0, errlen = 0;
     size_t inoff = 0;
-    int ret = 0;
+    int ret = -1;
     g_autofree struct pollfd *fds = NULL;
 
     if (dryRunBuffer || dryRunCallback) {
@@ -2226,9 +2243,6 @@ virCommandProcessIO(virCommand *cmd)
         VIR_FREE(*cmd->errbuf);
         *cmd->errbuf = g_new0(char, 1);
     }
-    if (ret == -1)
-        goto cleanup;
-    ret = -1;
 
     fds = g_new0(struct pollfd, 3 + virCommandGetNumSendBuffers(cmd));
 
@@ -2606,7 +2620,7 @@ virCommandRunAsync(virCommand *cmd, pid_t *pid)
 
     if (dryRunBuffer || dryRunCallback) {
         g_autofree char *cmdstr = NULL;
-        dryRunStatus = 0;
+        dryRunStatus = EXIT_SUCCESS;
 
         if (!(cmdstr = virCommandToStringFull(cmd, dryRunBufferArgLinebreaks,
                                               dryRunBufferCommandStripPath)))
@@ -2657,8 +2671,7 @@ virCommandRunAsync(virCommand *cmd, pid_t *pid)
                                 virCommandDoAsyncIOHelper,
                                 "cmd-async-io", false, cmd) < 0) {
             virReportSystemError(errno, "%s",
-                                 _("Unable to create thread "
-                                   "to process command's IO"));
+                                 _("Unable to create thread to process command's IO"));
             VIR_FREE(cmd->asyncioThread);
             virCommandAbort(cmd);
             ret = -1;
@@ -3164,6 +3177,7 @@ virCommandDryRunTokenFree(virCommandDryRunToken *tok)
  * @bufArgLinebreaks: add linebreaks after command and every argument or argument pair
  * @bufCommandStripPath: strip leading paths of command
  * @callback: callback to process input/output/args
+ * @opaque: data blob to pass to @callback
  *
  * Sometimes it's desired to not actually run given command, but
  * see its string representation without having to change the
@@ -3180,13 +3194,14 @@ virCommandDryRunTokenFree(virCommandDryRunToken *tok)
  * The strings stored in @buf are escaped for a shell and
  * separated by a newline. For example:
  *
- * virBuffer buffer = VIR_BUFFER_INITIALIZER;
- * virCommandSetDryRun(&buffer);
- *
+ * g_auto(virBuffer) cmdbuf = VIR_BUFFER_INITIALIZER;
+ * g_autoptr(virCommandDryRunToken) dryRunToken = virCommandDryRunTokenNew();
  * virCommand *echocmd = virCommandNewArgList("/bin/echo", "Hello world", NULL);
+ *
+ * virCommandSetDryRun(dryRunToken, &cmdbuf, false, false, NULL, NULL);
  * virCommandRun(echocmd, NULL);
  *
- * After this, the @buffer should contain:
+ * After this, the @cmdbuf should contain:
  *
  * /bin/echo 'Hello world'\n
  *
@@ -3255,7 +3270,7 @@ virCommandRunRegex(virCommand *cmd,
 
     for (i = 0; i < nregex; i++) {
         g_autoptr(GError) err = NULL;
-        reg[i] = g_regex_new(regex[i], G_REGEX_OPTIMIZE, 0, &err);
+        reg[i] = g_regex_new(regex[i], 0, 0, &err);
         if (!reg[i]) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("Failed to compile regex %1$s"), err->message);
@@ -3478,4 +3493,13 @@ virCommandSetRunAmong(virCommand *cmd,
     }
 
     cmd->schedCore = pid;
+}
+
+void
+virCommandPeekSendBuffers(virCommand *cmd,
+                          virCommandSendBuffer **buffers,
+                          int *nbuffers)
+{
+    *buffers = cmd->sendBuffers;
+    *nbuffers = cmd->numSendBuffers;
 }

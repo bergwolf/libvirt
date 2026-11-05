@@ -39,7 +39,7 @@ virshLookupDomainInternal(vshControl *ctl,
     /* try it by ID */
     if (flags & VIRSH_BYID) {
         if (virStrToLong_i(name, NULL, 10, &id) == 0 && id >= 0) {
-            vshDebug(ctl, VSH_ERR_DEBUG, "%s: <domain> looks like ID\n",
+            vshDebug(ctl, VSH_ERR_DEBUG, "%s: <domain> looks like ID",
                      cmdname);
             dom = virDomainLookupByID(priv->conn, id);
         }
@@ -48,14 +48,14 @@ virshLookupDomainInternal(vshControl *ctl,
     /* try it by UUID */
     if (!dom && (flags & VIRSH_BYUUID) &&
         strlen(name) == VIR_UUID_STRING_BUFLEN-1) {
-        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <domain> trying as domain UUID\n",
+        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <domain> trying as domain UUID",
                  cmdname);
         dom = virDomainLookupByUUIDString(priv->conn, name);
     }
 
     /* try it by NAME */
     if (!dom && (flags & VIRSH_BYNAME)) {
-        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <domain> trying as domain NAME\n",
+        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <domain> trying as domain NAME",
                  cmdname);
         dom = virDomainLookupByName(priv->conn, name);
     }
@@ -87,10 +87,10 @@ virshCommandOptDomainBy(vshControl *ctl,
     const char *n = NULL;
     const char *optname = "domain";
 
-    if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
+    if (vshCommandOptString(ctl, cmd, optname, &n) < 0)
         return NULL;
 
-    vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s\n",
+    vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s",
              cmd->def->name, optname, n);
 
     if (name)
@@ -383,14 +383,39 @@ virshDomainGetXMLFromDom(vshControl *ctl,
     g_autofree char *desc = NULL;
 
     if (!(desc = virDomainGetXMLDesc(dom, flags))) {
-        vshError(ctl, _("Failed to get domain description xml"));
+        vshError(ctl, "%s", _("Failed to get domain description xml"));
         return -1;
     }
 
     *xml = virXMLParseStringCtxt(desc, _("(domain_definition)"), ctxt);
 
     if (!(*xml)) {
-        vshError(ctl, _("Failed to parse domain description xml"));
+        vshError(ctl, "%s", _("Failed to parse domain description xml"));
+        return -1;
+    }
+
+    return 0;
+}
+
+
+int
+virshNetworkGetXMLFromNet(vshControl *ctl,
+                          virNetworkPtr net,
+                          unsigned int flags,
+                          xmlDocPtr *xml,
+                          xmlXPathContextPtr *ctxt)
+{
+    g_autofree char *desc = NULL;
+
+    if (!(desc = virNetworkGetXMLDesc(net, flags))) {
+        vshError(ctl, "%s", _("Failed to get network description xml"));
+        return -1;
+    }
+
+    *xml = virXMLParseStringCtxt(desc, _("(network_definition)"), ctxt);
+
+    if (!(*xml)) {
+        vshError(ctl, "%s", _("Failed to parse network description xml"));
         return -1;
     }
 
@@ -449,16 +474,13 @@ virshDumpXML(vshControl *ctl,
     g_autofree xmlNodePtr *nodes = NULL;
     int nnodes = 0;
     size_t i;
-    int oldblanks;
 
     if (xpath == NULL) {
         vshPrint(ctl, "%s", xml);
         return true;
     }
 
-    oldblanks = xmlKeepBlanksDefault(0);
-    doc = virXMLParseStringCtxt(xml, url, &ctxt);
-    xmlKeepBlanksDefault(oldblanks);
+    doc = virXMLParseStringCtxtWithIndent(xml, url, &ctxt);
     if (!doc)
         return false;
 

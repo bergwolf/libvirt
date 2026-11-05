@@ -378,6 +378,37 @@
     </choice>
   </define>
 
+  <define name="usbIdDefault">
+    <data type="string">
+      <param name="pattern">-1</param>
+    </data>
+  </define>
+  <define name="usbId">
+    <data type="string">
+      <param name="pattern">(0x)?[0-9a-fA-F]{1,4}</param>
+    </data>
+  </define>
+  <define name="usbVersion">
+    <data type="string">
+      <param name="pattern">[0-9]{1,2}.[0-9]{1,2}</param>
+    </data>
+  </define>
+  <define name="usbAddr">
+    <data type="string">
+      <param name="pattern">(0x)?[0-9a-fA-F]{1,3}</param>
+    </data>
+  </define>
+  <define name="usbClass">
+    <data type="string">
+      <param name="pattern">(0x)?[0-9a-fA-F]{1,2}</param>
+    </data>
+  </define>
+  <define name="usbPort">
+    <data type="string">
+      <param name="pattern">((0x)?[0-9a-fA-F]{1,3}\.){0,3}(0x)?[0-9a-fA-F]{1,3}</param>
+    </data>
+  </define>
+
   <define name="wwn">
     <data type="string">
       <param name="pattern">(0x)?[0-9a-fA-F]{16}</param>
@@ -444,6 +475,7 @@
       <value>i686</value>
       <value>ia64</value>
       <value>lm32</value>
+      <value>loongarch64</value>
       <value>m68k</value>
       <value>microblaze</value>
       <value>microblazeel</value>
@@ -610,6 +642,21 @@
     </choice>
   </define>
 
+  <!--
+    title and description element, may be placed anywhere under the root
+    -->
+  <define name="title">
+    <element name="title">
+      <ref name="objectNameWithSlash"/>
+    </element>
+  </define>
+
+  <define name="description">
+    <element name="description">
+      <text/>
+    </element>
+  </define>
+
   <define name="metadata">
     <element name="metadata">
       <zeroOrMore>
@@ -639,6 +686,53 @@
       <value>minutes</value>
       <value>hours</value>
     </choice>
+  </define>
+
+  <define name="hostdevDriver">
+    <element name="driver">
+      <optional>
+        <attribute name="name">
+          <choice>
+            <value>kvm</value>
+            <value>vfio</value>
+            <value>xen</value>
+          </choice>
+        </attribute>
+      </optional>
+      <optional>
+        <attribute name="model">
+          <ref name="genericName"/>
+        </attribute>
+      </optional>
+      <optional>
+        <attribute name="iommufd">
+          <ref name="virYesNo"/>
+        </attribute>
+      </optional>
+      <empty/>
+    </element>
+  </define>
+
+  <define name="virttype">
+    <attribute name="type">
+      <choice>
+        <value>qemu</value>
+        <value>kqemu</value>
+        <value>kvm</value>
+        <value>xen</value>
+        <value>lxc</value>
+        <value>uml</value> <!-- NOT USED ANYMORE -->
+        <value>openvz</value>
+        <value>test</value>
+        <value>vmware</value>
+        <value>hyperv</value>
+        <value>vbox</value>
+        <value>phyp</value> <!-- NOT USED ANYMORE -->
+        <value>vz</value>
+        <value>bhyve</value>
+        <value>hvf</value>
+      </choice>
+    </attribute>
   </define>
 
 </grammar>

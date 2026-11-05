@@ -270,7 +270,7 @@ testSELinuxLabeling(const void *opaque)
     if (!(def = testSELinuxLoadDef(testname)))
         goto cleanup;
 
-    if (virSecurityManagerSetAllLabel(mgr, def, NULL, false, false) < 0)
+    if (virSecurityManagerSetAllLabel(mgr, NULL, def, NULL, false, false) < 0)
         goto cleanup;
 
     if (testSELinuxCheckLabels(files, nfiles) < 0)
@@ -299,7 +299,8 @@ mymain(void)
 {
     int ret = 0;
     int rc = testUserXattrEnabled();
-    g_autoptr(virQEMUCaps) qemuCaps = NULL;
+    g_autoptr(GHashTable) capslatest = testQemuGetLatestCaps();
+    g_autoptr(GHashTable) capscache = virHashNew(virObjectUnref);
 
     if (rc < 0) {
         VIR_TEST_VERBOSE("failed to determine xattr support");
@@ -322,19 +323,20 @@ mymain(void)
     if (qemuTestDriverInit(&driver) < 0)
         return EXIT_FAILURE;
 
-    qemuCaps = virQEMUCapsNew();
+    qemuTestSetHostArch(&driver, VIR_ARCH_X86_64);
 
-    virQEMUCapsSet(qemuCaps, QEMU_CAPS_DEVICE_CIRRUS_VGA);
-    virQEMUCapsSet(qemuCaps, QEMU_CAPS_VNC);
-
-    if (qemuTestCapsCacheInsert(driver.qemuCapsCache, qemuCaps) < 0)
+    if (testQemuInsertRealCaps(driver.qemuCapsCache, "x86_64", "latest", "",
+                               capslatest, capscache, NULL, NULL) < 0)
         return EXIT_FAILURE;
 
 #define DO_TEST_LABELING(name) \
     if (virTestRun("Labelling " # name, testSELinuxLabeling, name) < 0) \
         ret = -1;
 
-    setcon("system_r:system_u:libvirtd_t:s0:c0.c1023");
+    if (!g_setenv("FAKE_SELINUX_CONTEXT", "system_r:system_u:libvirtd_t:s0:c0.c1023", TRUE)) {
+        perror("Cannot set process security context");
+        return EXIT_FAILURE;
+    }
 
     DO_TEST_LABELING("disks");
     DO_TEST_LABELING("kernel");
@@ -348,4 +350,4 @@ mymain(void)
 
 VIR_TEST_MAIN_PRELOAD(mymain,
                       VIR_TEST_MOCK("domaincaps"),
-                      abs_builddir "/libsecurityselinuxhelper.so")
+                      "libsecurityselinuxhelper.so")

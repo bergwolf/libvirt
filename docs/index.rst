@@ -16,7 +16,7 @@ The libvirt project:
    `QEMU <drvqemu.html>`__,
    `Xen <drvxen.html>`__,
    `Virtuozzo <drvvirtuozzo.html>`__,
-   `VMWare ESX <drvesx.html>`__,
+   `VMware ESX <drvesx.html>`__,
    `LXC <drvlxc.html>`__,
    `BHyve <drvbhyve.html>`__ and
    `more <drivers.html>`__
@@ -30,8 +30,12 @@ Quick Links
 
 `New contributors <contribute.html>`__
   Get involved in the libvirt community & student outreach programs
+`Submitting patches <hacking.html>`__
+  Already a regular open source contributor and have git set up? Have a quick
+  look at how to propose your changes to libvirt correctly
 `Security vulnerabilities <securityprocess.html>`__
-  View security notices and report vulnerabilities to the libvirt security
+  View `security notices <https://security.libvirt.org>`__ and
+  `report vulnerabilities <securityprocess.html>`__ to the libvirt security
   response team
 `Bug reporting <bugs.html>`__
   View and report bugs in libvirt packages
@@ -54,16 +58,15 @@ Quick Links
   Read further community contributed content
 `Knowledge base <kbase/index.html>`__
   Learn more about libvirt through knowledge base
+`Documentation <docs.html>`__
+  Comprehensive documentation map
 
 Blog Planet
 -----------
 
 .. raw:: html
 
-   <script type="text/javascript">
-     <!--
-     window.addEventListener("load", function() { fetchRSS() });
-     // -->
+   <script src="js/virt-tools-blog-planet.js">
    </script>
    <div id="planet"> </div>
 

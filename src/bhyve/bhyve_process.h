@@ -24,28 +24,47 @@
 #include "bhyve_utils.h"
 
 int
+bhyvePrepareNVRAM(bhyveConn *driver,
+                  virDomainDef *def);
+
+int
 bhyveProcessPrepareDomain(bhyveConn *driver,
                           virDomainObj *vm,
                           unsigned int flags);
+int
+bhyveProcessPrepareHost(bhyveConn *driver,
+                        virDomainDef *def,
+                        unsigned int flags);
 
-int virBhyveProcessStart(virConnect *conn,
+int virBhyveProcessStart(bhyveConn *driver,
+                         virConnectPtr conn,
                          virDomainObj *vm,
                          virDomainRunningReason reason,
                          unsigned int flags);
 
 int virBhyveProcessStop(struct _bhyveConn *driver,
                         virDomainObj *vm,
-                        virDomainShutoffReason reason);
+                        virDomainShutoffReason reason,
+                        bool forceCleanup);
 
 int virBhyveProcessRestart(struct _bhyveConn *driver,
                            virDomainObj *vm);
 
+int virBhyveProcessReset(struct _bhyveConn *driver,
+                         virDomainObj *vm);
+
 int virBhyveProcessShutdown(virDomainObj *vm);
+
+pid_t virBhyveProcessGetBhyvePid(virDomainObj *vm);
 
 int virBhyveGetDomainTotalCpuStats(virDomainObj *vm,
                                    unsigned long long *cpustats);
 
 void virBhyveProcessReconnectAll(struct _bhyveConn *driver);
+
+int bhyveConnectAgent(struct _bhyveConn *driver, virDomainObj *vm);
+
+virDomainChrDef *bhyveFindAgentConfig(virDomainDef *def);
 
 typedef enum {
     VIR_BHYVE_PROCESS_START_AUTODESTROY = 1 << 0,

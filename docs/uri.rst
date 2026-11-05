@@ -1,3 +1,5 @@
+.. role:: since
+
 ===============
 Connection URIs
 ===============
@@ -296,7 +298,6 @@ Supported extra parameters:
     **Example:** ``no_verify=1``
 
   ``pkipath``
-
     Specifies x509 certificates path for the client. If any of the CA
     certificate, client certificate, or client key is missing, the connection
     will fail with a fatal error.
@@ -327,6 +328,9 @@ Supported extra parameters:
 
   ``command``
     The external command launched to tunnel the data to the destination.
+  ``argv`` :since:`(since 12.5.0)`
+    An optional parameter to be passed to the external command. ``argv`` may be
+    specified multiple times to pass multiple arguments.
 
 ``tcp`` transport
 ^^^^^^^^^^^^^^^^^

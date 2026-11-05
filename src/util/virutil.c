@@ -31,6 +31,10 @@
 # include <conio.h>
 #endif /* WIN32 */
 
+#ifdef WITH_LIBBSD
+# include <bsd/readpassphrase.h>
+#endif
+
 #ifdef __linux__
 # include <sys/sysmacros.h>
 #endif
@@ -61,6 +65,8 @@ G_STATIC_ASSERT(sizeof(gid_t) <= sizeof(unsigned int) &&
 #define VIR_FROM_THIS VIR_FROM_NONE
 
 VIR_LOG_INIT("util.util");
+
+#define UDEVADM "udevadm"
 
 #ifndef WIN32
 
@@ -229,6 +235,29 @@ virScaleInteger(unsigned long long *value, const char *suffix,
 }
 
 
+/* Parse the whole of STR as a byte count into RESULT, rejecting the
+ * result if it exceeds LIMIT. STR is a plain decimal integer, or a
+ * decimal integer immediately followed by one of the unit suffixes
+ * recognized by virScaleInteger(); unlike virStrToLong_ullp(), no
+ * characters may be left over after that optional suffix. Return 0 on
+ * success, -1 with error message raised on failure. */
+int
+virStrToBytes(const char *str,
+              unsigned long long limit,
+              unsigned long long *result)
+{
+    char *end;
+
+    if (virStrToLong_ullp(str, &end, 10, result) < 0) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("Unable to parse integer from size '%1$s'"), str);
+        return -1;
+    }
+
+    return virScaleInteger(result, end, 1, limit);
+}
+
+
 /**
  * Format @val as a base-10 decimal number, in the
  * buffer @buf of size @buflen. To allocate a suitable
@@ -308,15 +337,82 @@ virFormatIntPretty(unsigned long long val,
 }
 
 
+static int
+virDiskNameParseNvme(const char *name, int *controller, int *disk, int *partition)
+{
+    int ctrl = 0;
+    int ns = 0;
+    int part = 0;
+    char *end_ptr = NULL;
+    const char *tmp = STRSKIP(name, "nvme");
+
+    if (!controller)
+        return -1;
+
+    if (!tmp)
+        return -1;
+
+    if (virStrToLong_i(tmp, &end_ptr, 10, &ctrl) < 0)
+        return -1;
+
+    if (*end_ptr != 'n')
+        return -1;
+
+    if (ctrl < 0)
+        return -1;
+
+    tmp = end_ptr + 1;
+
+    if (virStrToLong_i(tmp, &end_ptr, 10, &ns) < 0)
+        return -1;
+
+    if (*end_ptr != '\0' && *end_ptr != 'p')
+        return -1;
+
+    /* NSIDs start from 1, but we need to map them to [0..] for the controller
+     * address. */
+    if (ns < 1)
+        return -1;
+    ns--;
+
+    if (partition) {
+        *partition = 0;
+
+        if (*end_ptr != '\0') {
+            tmp = end_ptr + 1;
+
+            if (virStrToLong_i(tmp, NULL, 10, &part) < 0)
+                return -1;
+
+            /* Partitions on NVMe disks also from 1 */
+            if (part < 1)
+                return -1;
+
+            *partition = part - 1;
+        }
+    }
+
+    *controller = ctrl;
+    *disk = ns;
+
+    return 0;
+}
+
+
 /* Translates a device name of the form (regex) /^[fhv]d[a-z]+[0-9]*$/
- * into the corresponding index and partition number
- * (e.g. sda0 => (0,0), hdz2 => (25,2), vdaa12 => (26,12))
+ * or nvme[0-9]+n[0-9]+(p[0-9]+) for NVMe devices
+ * into the corresponding nvme controller (see below), index and partition number
+ * (e.g. sda0 => (0,0,0), hdz2 => (0,25,2), vdaa12 => (0,26,12)) as these do not
+ * support namespaces and controller is calculated from the disk index
+ * for nvme disks disks: (nvme1n2p3 => (1, 1, 2) as nvme namespaces and
+ * partitions are numbered from 1 and not 0).
  * @param name The name of the device
+ * @param nvme_ctrl The disk namespace to be returned
  * @param disk The disk index to be returned
  * @param partition The partition index to be returned
  * @return 0 on success, or -1 on failure
  */
-int virDiskNameParse(const char *name, int *disk, int *partition)
+int virDiskNameParse(const char *name, int *nvme_ctrl, int *disk, int *partition)
 {
     const char *ptr = NULL;
     char *rem;
@@ -324,6 +420,12 @@ int virDiskNameParse(const char *name, int *disk, int *partition)
     static char const* const drive_prefix[] = {"fd", "hd", "vd", "sd", "xvd", "ubd"};
     size_t i;
     size_t n_digits;
+
+    if (STRPREFIX(name, "nvme"))
+        return virDiskNameParseNvme(name, nvme_ctrl, disk, partition);
+
+    if (nvme_ctrl)
+        *nvme_ctrl = 0;
 
     for (i = 0; i < G_N_ELEMENTS(drive_prefix); i++) {
         if (STRPREFIX(name, drive_prefix[i])) {
@@ -336,11 +438,17 @@ int virDiskNameParse(const char *name, int *disk, int *partition)
         return -1;
 
     for (i = 0; *ptr; i++) {
+        int c = *ptr - 'a';
+
         if (!g_ascii_islower(*ptr))
             break;
 
-        idx = (idx + (i < 1 ? 0 : 1)) * 26;
-        idx += *ptr - 'a';
+        idx = (idx + (i < 1 ? 0 : 1));
+
+        if (VIR_MULTIPLY_ADD_IS_OVERFLOW(INT_MAX, idx, 26, c))
+            return -1;
+
+        idx = idx * 26 + c;
         ptr++;
     }
 
@@ -369,6 +477,8 @@ int virDiskNameParse(const char *name, int *disk, int *partition)
 /* Translates a device name of the form (regex) /^[fhv]d[a-z]+[0-9]*$/
  * into the corresponding index (e.g. sda => 0, hdz => 25, vdaa => 26)
  * Note that any trailing string of digits is simply ignored.
+ * Since NVMe disks require controller devices, this function should not be used
+ * for nvme* names unless the caller does not need to know then controller index
  * @param name The name of the device
  * @return name's index, or -1 on failure
  */
@@ -376,16 +486,23 @@ int virDiskNameToIndex(const char *name)
 {
     int idx;
 
-    if (virDiskNameParse(name, &idx, NULL) < 0)
+    if (virDiskNameParse(name, NULL, &idx, NULL) < 0)
         idx = -1;
 
     return idx;
 }
 
-char *virIndexToDiskName(unsigned int idx, const char *prefix)
+char *virIndexToDiskName(unsigned int nvme_ctrl,
+                         unsigned int idx,
+                         const char *prefix)
 {
-    GString *str = g_string_new(NULL);
+    GString *str = NULL;
     long long ctr;
+
+    if (STREQ_NULLABLE(prefix, "nvme"))
+        return g_strdup_printf("nvme%dn%d", nvme_ctrl, idx + 1);
+
+    str = g_string_new(NULL);
 
     for (ctr = idx; ctr >= 0; ctr = ctr / 26 - 1)
         g_string_prepend_c(str, 'a' + (ctr % 26));
@@ -428,7 +545,8 @@ virGetHostnameImpl(bool quiet)
 {
     int r;
     char hostname[HOST_NAME_MAX+1], *result = NULL;
-    struct addrinfo hints, *info;
+    struct addrinfo hints = { 0 };
+    struct addrinfo *info;
 
     r = gethostname(hostname, sizeof(hostname));
     if (r == -1) {
@@ -453,7 +571,6 @@ virGetHostnameImpl(bool quiet)
      * canonicalize the hostname by running it through getaddrinfo
      */
 
-    memset(&hints, 0, sizeof(hints));
     hints.ai_flags = AI_CANONNAME|AI_CANONIDN;
     hints.ai_family = AF_UNSPEC;
     r = getaddrinfo(hostname, NULL, &hints, &info);
@@ -494,41 +611,62 @@ virGetHostnameQuiet(void)
 }
 
 
+
+#ifdef WIN32
+
+
 char *
-virGetUserDirectory(void)
+virGetUserHomeDirectory(void)
 {
     return g_strdup(g_get_home_dir());
 }
 
-
 char *virGetUserConfigDirectory(void)
 {
-#ifdef WIN32
     return g_strdup(g_get_user_config_dir());
-#else
-    return g_build_filename(g_get_user_config_dir(), "libvirt", NULL);
-#endif
 }
 
 
 char *virGetUserCacheDirectory(void)
 {
-#ifdef WIN32
     return g_strdup(g_get_user_cache_dir());
-#else
-    return g_build_filename(g_get_user_cache_dir(), "libvirt", NULL);
-#endif
 }
 
 
 char *virGetUserRuntimeDirectory(void)
 {
-#ifdef WIN32
     return g_strdup(g_get_user_runtime_dir());
-#else
-    return g_build_filename(g_get_user_runtime_dir(), "libvirt", NULL);
-#endif
 }
+
+
+#else /* !WIN32 */
+
+
+char *
+virGetUserHomeDirectory(void)
+{
+    return g_strdup(g_get_home_dir());
+}
+
+char *virGetUserConfigDirectory(void)
+{
+    return g_build_filename(g_get_user_config_dir(), "libvirt", NULL);
+}
+
+
+char *virGetUserCacheDirectory(void)
+{
+    return g_build_filename(g_get_user_cache_dir(), "libvirt", NULL);
+}
+
+
+char *virGetUserRuntimeDirectory(void)
+{
+    return g_build_filename(g_get_user_runtime_dir(), "libvirt", NULL);
+}
+
+
+#endif /* !WIN32 */
 
 
 #ifdef WITH_GETPWUID_R
@@ -659,7 +797,7 @@ static char *virGetGroupEnt(gid_t gid)
 
 
 char *
-virGetUserDirectoryByUID(uid_t uid)
+virGetUserHomeDirectoryByUID(uid_t uid)
 {
     char *ret;
     virGetUserEnt(uid, NULL, NULL, &ret, NULL, false);
@@ -878,14 +1016,16 @@ VIR_WARNINGS_NO_POINTER_SIGN
  * storing a malloc'd result into @list. If uid is -1 or doesn't exist in the
  * system database querying of the supplementary groups is skipped.
  *
- * Returns the size of the list on success, or -1 on failure with error
- * reported and errno set. May not be called between fork and exec.
+ * Returns the size of the list. Doesn't have an error path.
+ * May not be called between fork and exec.
  * */
 int
-virGetGroupList(uid_t uid, gid_t gid, gid_t **list)
+virGetGroupList(uid_t uid,
+                gid_t gid,
+                gid_t **list)
 {
     int ret = 0;
-    char *user = NULL;
+    g_autofree char *user = NULL;
     gid_t primary;
 
     *list = NULL;
@@ -923,14 +1063,12 @@ virGetGroupList(uid_t uid, gid_t gid, gid_t **list)
 
         for (i = 0; i < ret; i++) {
             if ((*list)[i] == gid)
-                goto cleanup;
+                return ret;
         }
         VIR_APPEND_ELEMENT(*list, i, gid);
-        ret = i;
+        return i;
     }
 
- cleanup:
-    VIR_FREE(user);
     return ret;
 }
 
@@ -997,7 +1135,7 @@ virDoesGroupExist(const char *name G_GNUC_UNUSED)
 
 # ifdef WIN32
 char *
-virGetUserDirectoryByUID(uid_t uid G_GNUC_UNUSED)
+virGetUserHomeDirectoryByUID(uid_t uid G_GNUC_UNUSED)
 {
     /* Since Windows lacks setuid binaries, and since we already fake
      * geteuid(), we can safely assume that this is only called when
@@ -1017,10 +1155,10 @@ virGetUserShell(uid_t uid G_GNUC_UNUSED)
 
 # else /* !WITH_GETPWUID_R && !WIN32 */
 char *
-virGetUserDirectoryByUID(uid_t uid G_GNUC_UNUSED)
+virGetUserHomeDirectoryByUID(uid_t uid G_GNUC_UNUSED)
 {
     virReportError(VIR_ERR_INTERNAL_ERROR,
-                   "%s", _("virGetUserDirectory is not available"));
+                   "%s", _("virGetUserHomeDirectoryByUID is not available"));
 
     return NULL;
 }
@@ -1083,6 +1221,78 @@ virGetGroupName(gid_t gid G_GNUC_UNUSED)
     return NULL;
 }
 #endif /* WITH_GETPWUID_R */
+
+void
+virSubIDsFree(virSubID **uids, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if ((*uids)[i].idstr)
+            g_free((*uids)[i].idstr);
+    }
+    g_clear_pointer(uids, g_free);
+}
+
+int
+virGetSubIDs(virSubID **retval, const char *file)
+{
+    g_autofree char *buf = NULL;
+    g_auto(GStrv) lines = NULL;
+    virSubID *entries = NULL;
+    size_t i = 0;
+    size_t len;
+    int ret = -1;
+
+    *retval = NULL;
+
+    /* We trust the source of the file so we set the limit absurdly high.
+     * For smaller files, the helper function will not allocate as much space */
+    if (virFileReadAll(file, INT_MAX, &buf) < 0)
+        return -1;
+
+    lines = g_strsplit(buf, "\n", 0);
+    if (!lines)
+        return -1;
+
+    len = g_strv_length(lines);
+    entries = g_new0(virSubID, len);
+
+    for (i = 0; i < len; i++) {
+        g_auto(GStrv) fields = NULL;
+        unsigned long ulong_id;
+
+        fields = g_strsplit(lines[i], ":", 0);
+        if (!fields)
+            goto cleanup;
+
+        if (g_strv_length(fields) != 3)
+            break;
+
+        if (g_ascii_isdigit(fields[0][0])) {
+            if (virStrToLong_ul(fields[0], NULL, 10, &ulong_id) < 0)
+                goto cleanup;
+            entries[i].id = ulong_id;
+        } else {
+            entries[i].idstr = g_strdup(fields[0]);
+        }
+
+        if (virStrToLong_ul(fields[1], NULL, 10, &ulong_id) < 0)
+            goto cleanup;
+        entries[i].start = ulong_id;
+
+        if (virStrToLong_ul(fields[2], NULL, 10, &ulong_id) < 0)
+            goto cleanup;
+        entries[i].range = ulong_id;
+    }
+
+    *retval = g_steal_pointer(&entries);
+    ret = i;
+ cleanup:
+    if (entries)
+        virSubIDsFree(&entries, len);
+    return ret;
+}
 
 #if WITH_CAPNG
 /* Set the real and effective uid and gid to the given values, while
@@ -1200,8 +1410,12 @@ virSetUIDGIDWithCaps(uid_t uid, gid_t gid, gid_t *groups, int ngroups,
      * do this if we failed to get the capability above, so ignore the
      * return value.
      */
-    if (!need_setpcap)
-        capng_apply(CAPNG_SELECT_BOUNDS);
+    if (!need_setpcap &&
+        (capng_ret = capng_apply(CAPNG_SELECT_BOUNDS)) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("cannot apply process capabilities: %1$d"), capng_ret);
+        return -1;
+    }
 
     /* Drop the caps that allow setuid/gid (unless they were requested) */
     if (need_setgid)
@@ -1291,17 +1505,16 @@ virValidateWWN(const char *wwn)
  * Returns -1 on error, 0 otherwise.
  */
 int
-virParseOwnershipIds(const char *label, uid_t *uidPtr, gid_t *gidPtr)
+virParseOwnershipIds(const char *label,
+                     uid_t *uidPtr,
+                     gid_t *gidPtr)
 {
-    int rc = -1;
     uid_t theuid;
     gid_t thegid;
-    char *tmp_label = NULL;
+    g_autofree char *tmp_label = g_strdup(label);
     char *sep = NULL;
     char *owner = NULL;
     char *group = NULL;
-
-    tmp_label = g_strdup(label);
 
     /* Split label */
     sep = strchr(tmp_label, ':');
@@ -1309,7 +1522,7 @@ virParseOwnershipIds(const char *label, uid_t *uidPtr, gid_t *gidPtr)
         virReportError(VIR_ERR_INVALID_ARG,
                        _("Failed to parse uid and gid from '%1$s'"),
                        label);
-        goto cleanup;
+        return -1;
     }
     *sep = '\0';
     owner = tmp_label;
@@ -1320,19 +1533,14 @@ virParseOwnershipIds(const char *label, uid_t *uidPtr, gid_t *gidPtr)
      */
     if (virGetUserID(owner, &theuid) < 0 ||
         virGetGroupID(group, &thegid) < 0)
-        goto cleanup;
+        return -1;
 
     if (uidPtr)
         *uidPtr = theuid;
     if (gidPtr)
         *gidPtr = thegid;
 
-    rc = 0;
-
- cleanup:
-    VIR_FREE(tmp_label);
-
-    return rc;
+    return 0;
 }
 
 static time_t selfLastChanged;
@@ -1691,6 +1899,19 @@ char *virGetPassword(void)
     }
 
     return g_string_free(pw, FALSE);
+#elif WITH_LIBBSD /* !WIN32 */
+# ifndef PASS_MAX
+#  define PASS_MAX 1024
+# endif
+    char *pass = NULL;
+    g_autofree char *buffer = g_new0(char, PASS_MAX);
+
+    pass = readpassphrase("", buffer, PASS_MAX, 0);
+    if (pass == NULL) {
+        return NULL;
+    }
+
+    return g_steal_pointer(&buffer);
 #else /* !WIN32 */
     return g_strdup(getpass(""));
 #endif /* ! WIN32 */

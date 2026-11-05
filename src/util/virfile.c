@@ -87,6 +87,7 @@
 #include "virlog.h"
 #include "virprocess.h"
 #include "virstring.h"
+#include "virthread.h"
 #include "virutil.h"
 #include "virsocket.h"
 
@@ -108,6 +109,9 @@ VIR_LOG_INIT("util.file");
 #ifndef O_DIRECT
 # define O_DIRECT 0
 #endif
+
+static virOnceControl virCloseRangeOnce = VIR_ONCE_CONTROL_INITIALIZER;
+static bool virCloseRangeSupported;
 
 int virFileClose(int *fdptr, virFileCloseFlags flags)
 {
@@ -173,6 +177,112 @@ FILE *virFileFdopen(int *fdptr, const char *mode)
     }
 
     return file;
+}
+
+
+static int
+virCloseRangeImpl(unsigned int first G_GNUC_UNUSED,
+                  unsigned int last G_GNUC_UNUSED)
+{
+#if defined(WITH_SYS_SYSCALL_H) && defined(__NR_close_range)
+    return syscall(__NR_close_range, first, last, 0);
+#endif
+
+    errno = ENOSYS;
+    return -1;
+}
+
+
+static void
+virCloseRangeOnceInit(void)
+{
+    int fd[2] = {-1, -1};
+
+    if (virPipeQuiet(fd) < 0)
+        return;
+
+    VIR_FORCE_CLOSE(fd[1]);
+    if (virCloseRangeImpl(fd[0], fd[0]) < 0) {
+        VIR_FORCE_CLOSE(fd[0]);
+        return;
+    }
+
+    virCloseRangeSupported = true;
+}
+
+
+/**
+ * virCloseRange:
+ *
+ * Closes all open file descriptors from @first to @last (included).
+ *
+ * Returns: 0 on success,
+ *         -1 on failure (with errno set).
+ */
+int
+virCloseRange(unsigned int first,
+              unsigned int last)
+{
+    if (virCloseRangeInit() < 0)
+        return -1;
+
+    if (!virCloseRangeSupported) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    return virCloseRangeImpl(first, last);
+}
+
+
+/**
+ * virCloseRangeInit:
+ *
+ * Detects whether close_range() is available and cache the result.
+ */
+int
+virCloseRangeInit(void)
+{
+    if (virOnce(&virCloseRangeOnce, virCloseRangeOnceInit) < 0)
+        return -1;
+
+    return 0;
+}
+
+
+/**
+ * virCloseRangeIsSupported:
+ *
+ * Returns whether close_range() is supported or not.
+ */
+bool
+virCloseRangeIsSupported(void)
+{
+    if (virCloseRangeInit() < 0)
+        return false;
+
+    return virCloseRangeSupported;
+}
+
+
+/**
+ * virCloseFrom:
+ *
+ * Closes all open file descriptors greater than or equal to @fromfd.
+ *
+ * Returns: 0 on success,
+ *         -1 on error (with errno set).
+ */
+int
+virCloseFrom(int fromfd)
+{
+#ifdef __FreeBSD__
+    /* FreeBSD has closefrom() since FreeBSD-8.0, i.e. since 2009. */
+    closefrom(fromfd);
+    return 0;
+#else /* !__FreeBSD__ */
+    return virCloseRange(fromfd, ~0U);
+#endif /* !__FreeBSD__ */
 }
 
 
@@ -357,7 +467,7 @@ virFileWrapperFdNew(int *fd, const char *name, unsigned int flags)
         goto error;
 
     if (VIR_CLOSE(pipefd[!output]) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("unable to close pipe"));
+        virReportSystemError(errno, "%s", _("unable to close pipe"));
         goto error;
     }
 
@@ -876,14 +986,13 @@ int virFileLoopDeviceAssociate(const char *file,
 {
     int lofd = -1;
     int fsfd = -1;
-    struct loop_info64 lo;
+    struct loop_info64 lo = { 0 };
     g_autofree char *loname = NULL;
     int ret = -1;
 
     if ((lofd = virFileLoopDeviceOpen(&loname)) < 0)
         return -1;
 
-    memset(&lo, 0, sizeof(lo));
     lo.lo_flags = LO_FLAGS_AUTOCLEAR;
 
     /* Set backing file name for LOOP_GET_STATUS64 queries */
@@ -985,8 +1094,7 @@ virFileNBDLoadDriver(void)
 {
     if (virKModIsProhibited(NBD_DRIVER)) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Failed to load nbd module: "
-                         "administratively prohibited"));
+                       _("Failed to load nbd module: administratively prohibited"));
         return false;
     } else {
         g_autofree char *errbuf = NULL;
@@ -1193,13 +1301,16 @@ safezero_posix_fallocate(int fd, off_t offset, off_t len)
     int ret = posix_fallocate(fd, offset, len);
     if (ret == 0) {
         return 0;
-    } else if (ret == EINVAL) {
+    } else if (ret == EINVAL || ret == EOPNOTSUPP) {
         /* EINVAL is returned when either:
            - Operation is not supported by the underlying filesystem,
            - offset or len argument values are invalid.
            Assuming that offset and len are valid, this error means
            the operation is not supported, and we need to fall back
            to other methods.
+
+           Newer versions of FreeBSD return EOPNOTSUPP when the
+           operation is not supported.
         */
         return -2;
     }
@@ -1382,28 +1493,6 @@ virFileFindMountPoint(const char *type G_GNUC_UNUSED)
 
 #endif /* defined WITH_MNTENT_H && defined WITH_GETMNTENT_R */
 
-void
-virBuildPathInternal(char **path, ...)
-{
-    char *path_component = NULL;
-    g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
-    va_list ap;
-
-    va_start(ap, path);
-
-    path_component = va_arg(ap, char *);
-    virBufferAdd(&buf, path_component, -1);
-
-    while ((path_component = va_arg(ap, char *)) != NULL) {
-        virBufferAddChar(&buf, '/');
-        virBufferAdd(&buf, path_component, -1);
-    }
-
-    va_end(ap);
-
-    *path = virBufferContentAndReset(&buf);
-}
-
 /* Read no more than the specified maximum number of bytes. */
 static char *
 saferead_lim(int fd, size_t max_len, size_t *length)
@@ -1417,10 +1506,13 @@ saferead_lim(int fd, size_t max_len, size_t *length)
         int count;
         int requested;
 
-        if (size + BUFSIZ + 1 > alloc) {
+        if (alloc < max_len + 1 &&
+            size + BUFSIZ + 1 > alloc) {
             alloc += alloc / 2;
             if (alloc < size + BUFSIZ + 1)
                 alloc = size + BUFSIZ + 1;
+
+            alloc = MIN(alloc, max_len + 1);
 
             VIR_REALLOC_N(buf, alloc);
         }
@@ -1437,6 +1529,7 @@ saferead_lim(int fd, size_t max_len, size_t *length)
                 break;
             buf[size] = '\0';
             *length = size;
+            VIR_REALLOC_N(buf, size + 1);
             return buf;
         }
     }
@@ -1447,10 +1540,27 @@ saferead_lim(int fd, size_t max_len, size_t *length)
 }
 
 
-/* A wrapper around saferead_lim that merely stops reading at the
- * specified maximum size.  */
+/**
+ * virFileReadHeaderFD:
+ * @fd: file descriptor to read
+ * @maxlen: maximum amount of bytes to read
+ * @buf: filled with allocated buffer containing read data
+ *
+ * Reads up to @maxlen bytes from @fd and fills @buf with pointer to the
+ * read contents.
+ *
+ * The buffer @buf is guaranteed to be terminated with a NUL ('\0') byte one
+ * byte beyond the read contents of the file. The NUL byte is not included in
+ * the returned amount of bytes read. Caller is responsible for freeing the
+ * buffer.
+ *
+ * Returns number of bytes actually read from the fd on success, -1 on error
+ * and doesn't raise a libvirt error.
+ */
 int
-virFileReadHeaderFD(int fd, int maxlen, char **buf)
+virFileReadHeaderFD(int fd,
+                    int maxlen,
+                    char **buf)
 {
     size_t len;
     char *s;
@@ -1467,6 +1577,26 @@ virFileReadHeaderFD(int fd, int maxlen, char **buf)
 }
 
 
+/**
+ * virFileReadHeaderQuiet:
+ * @path: file to read
+ * @maxlen: maximum length of file to read
+ * @buf: filled with allocated buffer containing read data
+ *
+ * Reads up to @maxlen bytes from file @path and fills @buf with pointer to the
+ * read contents.
+ *
+ * If file @path is longer than @maxlen the buffer contains only first @maxlen
+ * bytes read from the file.
+ *
+ * The buffer @buf is guaranteed to be terminated with a NUL ('\0') byte one
+ * byte beyond the read contents of the file. The NUL byte is not included in
+ * the returned amount of bytes read. Caller is responsible for freeing the
+ * buffer.
+ *
+ * Returns number of bytes actually read from file on success, -1 on error
+ * and doesn't raise a libvirt error.
+ */
 int
 virFileReadHeaderQuiet(const char *path,
                        int maxlen,
@@ -1486,10 +1616,29 @@ virFileReadHeaderQuiet(const char *path,
 }
 
 
-/* A wrapper around saferead_lim that maps a failure due to
-   exceeding the maximum size limitation to EOVERFLOW.  */
+/**
+ * virFileReadLimFD:
+ * @fd: file descriptor to read
+ * @maxlen: maximum amount of bytes to read
+ * @buf: filled with allocated buffer containing read data
+ *
+ * Reads the whole contents from @fd and fills @buf with pointer to the read
+ * contents.
+ *
+ * If @fd allowed reading more than @maxlen bytes an error is returned.
+ *
+ * The buffer @buf is guaranteed to be terminated with a NUL ('\0') byte one
+ * byte beyond the read contents of the file. The NUL byte is not included in
+ * the returned amount of bytes read. Caller is responsible for freeing the
+ * buffer.
+ *
+ * Returns number of bytes actually read from @fd on success, -1 on error and
+ * doesn't raise a libvirt error.
+ */
 int
-virFileReadLimFD(int fd, int maxlen, char **buf)
+virFileReadLimFD(int fd,
+                 int maxlen,
+                 char **buf)
 {
     size_t len;
     char *s;
@@ -1512,8 +1661,29 @@ virFileReadLimFD(int fd, int maxlen, char **buf)
     return len;
 }
 
+
+/**
+ * virFileReadAll:
+ * @path: file to read
+ * @maxlen: maximum length of file to read
+ * @buf: filled with allocated buffer containing read data
+ *
+ * Reads the whole file @path and fills @buf with pointer to the read contents.
+ *
+ * If file @path is longer than @maxlen error is returned.
+ *
+ * The buffer @buf is guaranteed to be terminated with a NUL ('\0') byte one
+ * byte beyond the read contents of the file. The NUL byte is not included in
+ * the returned amount of bytes read. Caller is responsible for freeing the
+ * buffer.
+ *
+ * Returns number of bytes actually read from file on success, -1 on error and
+ * raises a libvirt error.
+ */
 int
-virFileReadAll(const char *path, int maxlen, char **buf)
+virFileReadAll(const char *path,
+               int maxlen,
+               char **buf)
 {
     int fd;
     int len;
@@ -1534,8 +1704,29 @@ virFileReadAll(const char *path, int maxlen, char **buf)
     return len;
 }
 
+
+/**
+ * virFileReadAllQuiet:
+ * @path: file to read
+ * @maxlen: maximum length of file to read
+ * @buf: filled with allocated buffer containing read data
+ *
+ * Reads the whole file @path and fills @buf with pointer to the read contents.
+ *
+ * If file @path is longer than @maxlen error is returned.
+ *
+ * The buffer @buf is guaranteed to be terminated with a NUL ('\0') byte one
+ * byte beyond the read contents of the file. The NUL byte is not included in
+ * the returned amount of bytes read. Caller is responsible for freeing the
+ * buffer.
+ *
+ * Returns number of bytes actually read from file on success, -errno on error
+ * and doesn't raise a libvirt error.
+ */
 int
-virFileReadAllQuiet(const char *path, int maxlen, char **buf)
+virFileReadAllQuiet(const char *path,
+                    int maxlen,
+                    char **buf)
 {
     int fd;
     int len;
@@ -1552,13 +1743,26 @@ virFileReadAllQuiet(const char *path, int maxlen, char **buf)
     return len;
 }
 
-/* Read @file into preallocated buffer @buf of size @len.
- * Return value is -errno in case of errors and size
- * of data read (no trailing zero) in case of success.
- * If there is more data then @len - 1 then data will be
- * truncated. */
+
+/**
+ * virFileReadBufQuiet:
+ * @file: file to read
+ * @buf: buffer to read files into
+ * @len: size of @buf
+ *
+ * Reads up to @len - 1 bytes of @file into @buf.
+ *
+ * The buffer @buf is guaranteed to be terminated with a NUL ('\0') byte one
+ * byte beyond the read contents of the file. The NUL byte is not included in
+ * the returned amount of bytes read.
+ *
+ * Returns number of bytes actually read from file on success, -errno on error
+ * and doesn't raise a libvirt error.
+ */
 int
-virFileReadBufQuiet(const char *file, char *buf, int len)
+virFileReadBufQuiet(const char *file,
+                    char *buf,
+                    int len)
 {
     int fd;
     ssize_t sz;
@@ -1575,6 +1779,7 @@ virFileReadBufQuiet(const char *file, char *buf, int len)
     buf[sz] = '\0';
     return sz;
 }
+
 
 /* Truncate @path and write @str to it.  If @mode is 0, ensure that
    @path exists; otherwise, use @mode if @path must be created.
@@ -1611,7 +1816,7 @@ virFileWriteStr(const char *path, const char *str, mode_t mode)
 /* Return nonzero if checkLink and checkDest
  * refer to the same file.  Otherwise, return 0.
  */
-int
+bool
 virFileLinkPointsTo(const char *checkLink,
                     const char *checkDest)
 {
@@ -1826,7 +2031,7 @@ virFileFindResourceFull(const char *filename,
                         const char *envname)
 {
     char *ret = NULL;
-    const char *envval = envname ? getenv(envname) : NULL;
+    const char *envval = envname ? g_getenv(envname) : NULL;
     const char *path;
     g_autofree char *fullFilename = NULL;
 
@@ -1891,7 +2096,7 @@ virFileActivateDirOverrideForProg(const char *argv0)
 void
 virFileActivateDirOverrideForLib(void)
 {
-    if (getenv("LIBVIRT_DIR_OVERRIDE") != NULL)
+    if (g_getenv("LIBVIRT_DIR_OVERRIDE") != NULL)
         useDirOverride = true;
 }
 
@@ -1942,6 +2147,14 @@ virFileIsRegular(const char *path)
 {
     struct stat s;
     return (stat(path, &s) == 0) && S_ISREG(s.st_mode);
+}
+
+
+bool
+virFileFDIsRegular(int fd)
+{
+    struct stat s;
+    return (fstat(fd, &s) == 0) && S_ISREG(s.st_mode);
 }
 
 
@@ -2107,9 +2320,11 @@ virFileGetMountSubtreeImpl(const char *mtabpath,
         mounts[nmounts - 2] = g_strdup(mntent.mnt_dir);
     }
 
-    if (mounts)
-        qsort(mounts, nmounts - 1, sizeof(mounts[0]),
-              reverse ? virStringSortRevCompare : virStringSortCompare);
+    if (mounts) {
+        g_qsort_with_data(mounts, nmounts - 1, sizeof(mounts[0]),
+                          reverse ? virStringSortRevCompare : virStringSortCompare,
+                          NULL);
+    }
 
     *mountsret = mounts;
     *nmountsret = nmounts ? nmounts - 1 : 0;
@@ -2197,8 +2412,6 @@ virFileAccessibleAs(const char *path, int mode,
         return access(path, mode);
 
     ngroups = virGetGroupList(uid, gid, &groups);
-    if (ngroups < 0)
-        return -1;
 
     pid = virFork();
 
@@ -2242,8 +2455,12 @@ virFileAccessibleAs(const char *path, int mode,
  * opened as "fd" if it's not correct AND the flags say it should be
  * forced. */
 static int
-virFileOpenForceOwnerMode(const char *path, int fd, mode_t mode,
-                          uid_t uid, gid_t gid, unsigned int flags)
+virFileOpenForceOwnerMode(const char *path,
+                          int fd,
+                          mode_t mode,
+                          uid_t uid,
+                          gid_t gid,
+                          unsigned int flags)
 {
     int ret = 0;
     struct stat st;
@@ -2293,11 +2510,16 @@ virFileOpenForceOwnerMode(const char *path, int fd, mode_t mode,
  * buildVol backend function expects the file to be deleted on error.
  */
 static int
-virFileOpenForked(const char *path, int openflags, mode_t mode,
-                  uid_t uid, gid_t gid, unsigned int flags)
+virFileOpenForked(const char *path,
+                  int openflags,
+                  mode_t mode,
+                  uid_t uid,
+                  gid_t gid,
+                  unsigned int flags)
 {
     pid_t pid;
-    int status = 0, ret = 0;
+    int status = 0;
+    int ret = 0;
     int recvfd_errno = 0;
     int fd = -1;
     int pair[2] = { -1, -1 };
@@ -2311,8 +2533,6 @@ virFileOpenForked(const char *path, int openflags, mode_t mode,
      * NFS servers. */
 
     ngroups = virGetGroupList(uid, gid, &groups);
-    if (ngroups < 0)
-        return -errno;
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, pair) < 0) {
         ret = -errno;
@@ -2348,8 +2568,7 @@ virFileOpenForked(const char *path, int openflags, mode_t mode,
             created = true;
 
         /* File is successfully open. Set permissions if requested. */
-        ret = virFileOpenForceOwnerMode(path, fd, mode, uid, gid, flags);
-        if (ret < 0) {
+        if (virFileOpenForceOwnerMode(path, fd, mode, uid, gid, flags) < 0) {
             ret = -errno;
             virReportSystemError(errno,
                                  _("child process failed to force owner mode file '%1$s'"),
@@ -2357,11 +2576,7 @@ virFileOpenForked(const char *path, int openflags, mode_t mode,
             goto childerror;
         }
 
-        do {
-            ret = virSocketSendFD(pair[1], fd);
-        } while (ret < 0 && errno == EINTR);
-
-        if (ret < 0) {
+        if (virSocketSendFD(pair[1], fd) < 0) {
             ret = -errno;
             virReportSystemError(errno, "%s",
                                  _("child process failed to send fd to parent"));
@@ -2460,10 +2675,15 @@ virFileOpenForked(const char *path, int openflags, mode_t mode,
  * expects the file to be deleted on error.
  */
 int
-virFileOpenAs(const char *path, int openflags, mode_t mode,
-              uid_t uid, gid_t gid, unsigned int flags)
+virFileOpenAs(const char *path,
+              int openflags,
+              mode_t mode,
+              uid_t uid,
+              gid_t gid,
+              unsigned int flags)
 {
-    int ret = 0, fd = -1;
+    int ret = 0;
+    int fd = -1;
     bool created = false;
 
     /* allow using -1 to mean "current value" */
@@ -2477,9 +2697,9 @@ virFileOpenAs(const char *path, int openflags, mode_t mode,
     if (!(flags & (VIR_FILE_OPEN_NOFORK|VIR_FILE_OPEN_FORK)))
         flags |= VIR_FILE_OPEN_NOFORK|VIR_FILE_OPEN_FORK;
 
-    if ((flags & VIR_FILE_OPEN_NOFORK)
-        || (geteuid() != 0)
-        || ((uid == 0) && (gid == 0))) {
+    if ((flags & VIR_FILE_OPEN_NOFORK) ||
+        (geteuid() != 0) ||
+        ((uid == 0) && (gid == 0))) {
 
         if ((fd = open(path, openflags, mode)) < 0) {
             ret = -errno;
@@ -2511,8 +2731,14 @@ virFileOpenAs(const char *path, int openflags, mode_t mode,
                 goto error;
 
             /* On Linux we can also verify the FS-type of the
-             * directory.  (this is a NOP on other platforms). */
-            if (virFileIsSharedFS(path) <= 0)
+             * directory.  (this is a NOP on other platforms).
+             *
+             * Note that it would be pointless to pass
+             * virQEMUDriverConfig.sharedFilesystems here, since those
+             * listed there are by definition paths that can be accessed
+             * as local from the current host. Thus, a second attempt at
+             * opening the file would not make a difference */
+            if (virFileIsSharedFS(path, NULL) <= 0)
                 goto error;
         }
 
@@ -2609,8 +2835,6 @@ virFileRemove(const char *path,
         gid = getegid();
 
     ngroups = virGetGroupList(uid, gid, &groups);
-    if (ngroups < 0)
-        return -errno;
 
     pid = virFork();
 
@@ -2783,8 +3007,6 @@ virDirCreate(const char *path,
         gid = getegid();
 
     ngroups = virGetGroupList(uid, gid, &groups);
-    if (ngroups < 0)
-        return -errno;
 
     pid = virFork();
 
@@ -3036,6 +3258,45 @@ void virDirClose(DIR *dirp)
     closedir(dirp); /* exempt from syntax-check */
 }
 
+/**
+ * virDirIsEmpty:
+ * @path: path to the directory
+ * @hidden: whether hidden files matter
+ *
+ * Check whether given directory (@path) is empty, i.e. it
+ * contains just the usual entries '.' and '..'. Hidden files are
+ * ignored unless @hidden is true. IOW, a directory containing
+ * nothing but hidden files is considered empty if @hidden is
+ * false and not empty if @hidden is true.
+ *
+ * Returns: 1 if the directory is empty,
+ *          0 if the directory is not empty,
+ *         -1 otherwise (no error reported).
+ */
+int virDirIsEmpty(const char *path,
+                  bool hidden)
+{
+    g_autoptr(DIR) dir = NULL;
+    struct dirent *ent;
+    int direrr;
+
+    if (virDirOpenQuiet(&dir, path) < 0)
+        return -1;
+
+    while ((direrr = virDirRead(dir, &ent, NULL)) > 0) {
+        /* virDirRead() skips over '.' and '..' so here we have
+         * actual directory entry. */
+        if (!hidden ||
+            (hidden && ent->d_name[0] != '.'))
+            return 0;
+    }
+
+    if (direrr < 0)
+        return -1;
+
+    return 1;
+}
+
 
 /*
  * virFileChownFiles:
@@ -3044,6 +3305,12 @@ void virDirClose(DIR *dirp)
  * @gid: gid
  *
  * Change ownership of all regular files in a directory.
+ *
+ * This will NOT follow any symlinks, to avoid security risks.
+ * It is assumed the process using content under @name will
+ * be unprivileged, thus less trusted than libvirt. If it is
+ * compromised it might attempt to create symlinks in @name to
+ * escalate privileges on a subsequent call to virFileChownFiles.
  *
  * Returns -1 on error, with error already reported, 0 on success.
  */
@@ -3061,13 +3328,19 @@ int virFileChownFiles(const char *name,
 
     while ((direrr = virDirRead(dir, &ent, name)) > 0) {
         g_autofree char *path = NULL;
+        struct stat sb;
 
         path = g_build_filename(name, ent->d_name, NULL);
 
-        if (!virFileIsRegular(path))
+        if (g_lstat(path, &sb) < 0) {
+            virReportSystemError(errno, _("cannot stat '%1$s'"), path);
+            return -1;
+        }
+
+        if (!S_ISREG(sb.st_mode))
             continue;
 
-        if (chown(path, uid, gid) < 0) {
+        if (lchown(path, uid, gid) < 0) {
             virReportSystemError(errno,
                                  _("cannot chown '%1$s' to (%2$u, %3$u)"),
                                  ent->d_name, (unsigned int) uid,
@@ -3225,7 +3498,7 @@ char *
 virFileSanitizePath(const char *path)
 {
     const char *cur = path;
-    char *uri;
+    const char *uri;
     char *cleanpath;
     int idx = 0;
 
@@ -3274,7 +3547,8 @@ virFileSanitizePath(const char *path)
 /**
  * virFileCanonicalizePath:
  *
- * Returns the canonical representation of @path.
+ * Returns the canonical representation of @path. This function is only
+ * guaranteed to work when @path exists. It may return NULL otherwise.
  *
  * The returned string must be freed after use.
  */
@@ -3308,6 +3582,64 @@ virFileRemoveLastComponent(char *path)
     else
         path[0] = '\0';
 }
+
+
+/* Check callback for virFileCheckParents */
+typedef bool (*virFileCheckParentsCallback)(const char *dirpath,
+                                            void *opaque);
+
+/**
+ * virFileCheckParents:
+ * @path: path to check
+ * @parent: where to store the closest parent satisfying the check
+ * @check: callback called on parent paths
+ * @opaque: data for the @check callback
+ *
+ * Calls @check on the @path and its parent paths until it returns true or a
+ * root directory is reached. When @check returns true, the @parent (if
+ * non-NULL) will be set to a copy of the corresponding path. The caller is
+ * responsible for freeing it.
+ *
+ * Returns  0 on success (@parent set),
+ *         -1 on invalid input,
+ *         -2 when no path (including "/") satisfies the @check.
+ */
+static int
+virFileCheckParents(const char *path,
+                    char **parent,
+                    virFileCheckParentsCallback check,
+                    void *opaque)
+{
+    g_autofree char *dirpath = g_strdup(path);
+    char *p = NULL;
+    bool checkOK;
+
+    checkOK = check(dirpath, opaque);
+
+    while (!checkOK && p != dirpath) {
+        if (!(p = strrchr(dirpath, G_DIR_SEPARATOR))) {
+            virReportSystemError(EINVAL,
+                                 _("Invalid absolute path '%1$s'"), path);
+            return -1;
+        }
+
+        if (p == dirpath)
+            *(p + 1) = '\0';
+        else
+            *p = '\0';
+
+        checkOK = check(dirpath, opaque);
+    }
+
+    if (!checkOK)
+        return -2;
+
+    if (parent)
+        *parent = g_steal_pointer(&dirpath);
+
+    return 0;
+}
+
 
 #ifdef __linux__
 
@@ -3343,6 +3675,8 @@ virFileRemoveLastComponent(char *path)
 # endif
 
 # define VIR_ACFS_MAGIC 0x61636673
+/* https://git.beegfs.io/pub/v7/-/blob/master/client_module/source/filesystem/FhgfsOpsSuper.h#L14 */
+# define VIR_BEEGFS_MAGIC 0x19830326 /* formerly fhgfs */
 
 # define PROC_MOUNTS "/proc/mounts"
 
@@ -3430,7 +3764,16 @@ static const struct virFileSharedFsData virFileSharedFs[] = {
     { .fstype = VIR_FILE_SHFS_CEPH, .magic = CEPH_SUPER_MAGIC },
     { .fstype = VIR_FILE_SHFS_GPFS, .magic = GPFS_SUPER_MAGIC },
     { .fstype = VIR_FILE_SHFS_ACFS, .magic = VIR_ACFS_MAGIC },
+    { .fstype = VIR_FILE_SHFS_BEEGFS, .magic = VIR_BEEGFS_MAGIC },
 };
+
+
+static bool
+virFileCheckParentsStatFS(const char *path,
+                          void *opaque)
+{
+    return statfs(path, (struct statfs *) opaque) == 0;
+}
 
 
 int
@@ -3438,40 +3781,16 @@ virFileIsSharedFSType(const char *path,
                       unsigned int fstypes)
 {
     g_autofree char *dirpath = NULL;
-    char *p = NULL;
     struct statfs sb;
-    int statfs_ret;
     long long f_type = 0;
     size_t i;
+    int rc;
 
-    dirpath = g_strdup(path);
+    if ((rc = virFileCheckParents(path, &dirpath,
+                                  virFileCheckParentsStatFS, &sb)) == -1)
+        return -1;
 
-    statfs_ret = statfs(dirpath, &sb);
-
-    while ((statfs_ret < 0) && (p != dirpath)) {
-        /* Try less and less of the path until we get to a
-         * directory we can stat. Even if we don't have 'x'
-         * permission on any directory in the path on the NFS
-         * server (assuming it's NFS), we will be able to stat the
-         * mount point, and that will properly tell us if the
-         * fstype is NFS.
-         */
-
-        if ((p = strrchr(dirpath, '/')) == NULL) {
-            virReportSystemError(EINVAL,
-                                 _("Invalid relative path '%1$s'"), path);
-            return -1;
-        }
-
-        if (p == dirpath)
-            *(p+1) = '\0';
-        else
-            *p = '\0';
-
-        statfs_ret = statfs(dirpath, &sb);
-    }
-
-    if (statfs_ret < 0) {
+    if (rc != 0) {
         virReportSystemError(errno,
                              _("cannot determine filesystem for '%1$s'"),
                              path);
@@ -3667,8 +3986,74 @@ virFileGetDefaultHugepage(virHugeTLBFS *fs,
     return NULL;
 }
 
-int virFileIsSharedFS(const char *path)
+
+static bool
+virFileCheckParentsCanonicalize(const char *path,
+                                void *opaque)
 {
+    char **canonical = opaque;
+
+    *canonical = virFileCanonicalizePath(path);
+    return !!*canonical;
+}
+
+
+static bool
+virFileCheckParentsInOverrides(const char *path,
+                               void *opaque)
+{
+    return g_strv_contains((const char *const *) opaque, path);
+}
+
+
+/**
+ * virFileIsSharedFSOverride:
+ * @path: Path to check
+ * @overrides: string list of path overrides
+ *
+ * Checks whether @path is inside any of the shared filesystem override
+ * directories passed as @overrides.
+ */
+bool
+virFileIsSharedFSOverride(const char *path,
+                          char *const *overrides)
+{
+    g_autofree char *dirpath = NULL;
+    int rc;
+
+    if (!path || path[0] != '/' || !overrides)
+        return false;
+
+    /* We only care about the longest existing sub-path. Further components
+     * that may later be created by libvirt will not magically become a shared
+     * filesystem. Overrides have been canonicalized ahead of time, so we need
+     * to do the same for the provided path or we'll never be able to find a
+     * match if symlinks are involved.
+     */
+    rc = virFileCheckParents(path, NULL,
+                             virFileCheckParentsCanonicalize, &dirpath);
+    if (rc == -1)
+        return false;
+
+    if (rc != 0) {
+        VIR_DEBUG("Cannot canonicalize path '%s'", path);
+        return false;
+    }
+
+    if (virFileCheckParents(dirpath, NULL, virFileCheckParentsInOverrides,
+                            (void *) overrides) < 0)
+        return false;
+
+    return true;
+}
+
+
+int virFileIsSharedFS(const char *path,
+                      char *const *overrides)
+{
+    if (virFileIsSharedFSOverride(path, overrides))
+        return 1;
+
     return virFileIsSharedFSType(path,
                                  VIR_FILE_SHFS_NFS |
                                  VIR_FILE_SHFS_GFS2 |
@@ -3680,7 +4065,8 @@ int virFileIsSharedFS(const char *path)
                                  VIR_FILE_SHFS_GPFS|
                                  VIR_FILE_SHFS_QB |
                                  VIR_FILE_SHFS_ACFS |
-                                 VIR_FILE_SHFS_GLUSTERFS);
+                                 VIR_FILE_SHFS_GLUSTERFS |
+                                 VIR_FILE_SHFS_BEEGFS);
 }
 
 
@@ -3902,11 +4288,11 @@ virFileComparePaths(const char *p1, const char *p2)
      * 'sysfs', since they're no real paths so fallback to plain string
      * comparison.
      */
-    ignore_value(virFileResolveLink(p1, &res1));
+    ignore_value(virFileResolveAllLinks(p1, &res1));
     if (!res1)
         res1 = g_strdup(p1);
 
-    ignore_value(virFileResolveLink(p2, &res2));
+    ignore_value(virFileResolveAllLinks(p2, &res2));
     if (!res2)
         res2 = g_strdup(p2);
 
@@ -4236,26 +4622,12 @@ virFileReadValueScaledInt(unsigned long long *value, const char *format, ...)
  * used for small, interface-like files, so it should not be huge (subjective) */
 #define VIR_FILE_READ_VALUE_STRING_MAX 4096
 
-/**
- * virFileReadValueBitmap:
- * @value: pointer to virBitmap * to be allocated and filled in with the value
- * @format, ...: file to read from
- *
- * Read int from @format and put it into @value.
- *
- * Return -2 for non-existing file, -1 on other errors and 0 if everything went
- * fine.
- */
-int
-virFileReadValueBitmap(virBitmap **value, const char *format, ...)
+static int
+virFileReadValueBitmapImpl(virBitmap **value,
+                           const char *path,
+                           bool allowEmpty)
 {
     g_autofree char *str = NULL;
-    g_autofree char *path = NULL;
-    va_list ap;
-
-    va_start(ap, format);
-    path = g_strdup_vprintf(format, ap);
-    va_end(ap);
 
     if (!virFileExists(path))
         return -2;
@@ -4265,12 +4637,69 @@ virFileReadValueBitmap(virBitmap **value, const char *format, ...)
 
     virStringTrimOptionalNewline(str);
 
-    *value = virBitmapParseUnlimited(str);
+    if (allowEmpty) {
+        *value = virBitmapParseUnlimitedAllowEmpty(str);
+    } else {
+        *value = virBitmapParseUnlimited(str);
+    }
+
     if (!*value)
         return -1;
 
     return 0;
 }
+
+
+/**
+ * virFileReadValueBitmap:
+ * @value: pointer to virBitmap * to be allocated and filled in with the value
+ * @format, ...: file to read from
+ *
+ * Read int from @format and put it into @value.
+ *
+ * Returns: -2 for non-existing file,
+ *          -1 on other errors (with error reported),
+ *           0 otherwise.
+ */
+int
+virFileReadValueBitmap(virBitmap **value, const char *format, ...)
+{
+    g_autofree char *path = NULL;
+    va_list ap;
+
+    va_start(ap, format);
+    path = g_strdup_vprintf(format, ap);
+    va_end(ap);
+
+    return virFileReadValueBitmapImpl(value, path, false);
+}
+
+
+/**
+ * virFileReadValueBitmapAllowEmpty:
+ * @value: pointer to virBitmap * to be allocated and filled in with the value
+ * @format, ...: file to read from
+ *
+ * Just like virFileReadValueBitmap(), except if the file is empty or contains
+ * nothing but spaces an empty bitmap is returned instead of an error.
+ *
+ * Returns: -2 for non-existing file,
+ *          -1 on other errors (with error reported),
+ *           0 otherwise.
+ */
+int
+virFileReadValueBitmapAllowEmpty(virBitmap **value, const char *format, ...)
+{
+    g_autofree char *path = NULL;
+    va_list ap;
+
+    va_start(ap, format);
+    path = g_strdup_vprintf(format, ap);
+    va_end(ap);
+
+    return virFileReadValueBitmapImpl(value, path, true);
+}
+
 
 /**
  * virFileReadValueString:

@@ -25,8 +25,7 @@ qemuBackupBegin(virDomainObj *vm,
                 unsigned int flags);
 
 char *
-qemuBackupGetXMLDesc(virDomainObj *vm,
-                     unsigned int flags);
+qemuBackupGetXMLDesc(virDomainObj *vm);
 
 void
 qemuBackupJobCancelBlockjobs(virDomainObj *vm,
@@ -35,8 +34,12 @@ qemuBackupJobCancelBlockjobs(virDomainObj *vm,
                              int asyncJob);
 
 void
+qemuBackupNotifyBlockjobEndStopNBD(virDomainObj *vm,
+                                   int asyncJob);
+
+void
 qemuBackupNotifyBlockjobEnd(virDomainObj *vm,
-                            virDomainDiskDef *disk,
+                            const char *diskdst,
                             qemuBlockjobState state,
                             const char *errmsg,
                             unsigned long long cur,

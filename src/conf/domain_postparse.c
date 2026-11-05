@@ -72,10 +72,9 @@ virDomainDefPostParseMemory(virDomainDef *def,
         def->mem.cur_balloon == 0)
         def->mem.cur_balloon = virDomainDefGetMemoryTotal(def);
 
-    if ((def->mem.max_memory || def->mem.memory_slots) &&
-        !(def->mem.max_memory && def->mem.memory_slots)) {
+    if (def->mem.max_memory == 0 && def->mem.memory_slots > 0) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("both maximum memory size and memory slot count must be specified"));
+                       _("maximum memory size must be specified when specifying number of memory slots"));
         return -1;
     }
 
@@ -84,22 +83,6 @@ virDomainDefPostParseMemory(virDomainDef *def,
         virReportError(VIR_ERR_XML_ERROR, "%s",
                        _("maximum memory size must be equal or greater than the actual memory size"));
         return -1;
-    }
-
-    return 0;
-}
-
-
-static int
-virDomainDefPostParseOs(virDomainDef *def)
-{
-    if (!def->os.loader)
-        return 0;
-
-    if (def->os.loader->path &&
-        def->os.loader->type == VIR_DOMAIN_LOADER_TYPE_NONE) {
-        /* By default, loader is type of 'rom' */
-        def->os.loader->type = VIR_DOMAIN_LOADER_TYPE_ROM;
     }
 
     return 0;
@@ -524,6 +507,8 @@ virDomainDiskDefPostParse(virDomainDiskDef *disk,
                 disk->bus = VIR_DOMAIN_DISK_BUS_XEN;
             else if (STRPREFIX(disk->dst, "ubd"))
                 disk->bus = VIR_DOMAIN_DISK_BUS_UML;
+            else if (STRPREFIX(disk->dst, "nvme"))
+                disk->bus = VIR_DOMAIN_DISK_BUS_NVME;
         }
     }
 
@@ -617,10 +602,10 @@ virDomainMemoryDefPostParse(virDomainMemoryDef *mem,
     case VIR_DOMAIN_MEMORY_MODEL_NVDIMM:
         /* If no NVDIMM UUID was provided in XML, generate one. */
         if (ARCH_IS_PPC64(def->os.arch) &&
-            !mem->uuid) {
+            !mem->target.nvdimm.uuid) {
 
-            mem->uuid = g_new0(unsigned char, VIR_UUID_BUFLEN);
-            if (virUUIDGenerate(mem->uuid) < 0) {
+            mem->target.nvdimm.uuid = g_new0(unsigned char, VIR_UUID_BUFLEN);
+            if (virUUIDGenerate(mem->target.nvdimm.uuid) < 0) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                "%s", _("Failed to generate UUID"));
                 return -1;
@@ -658,6 +643,7 @@ virDomainInputDefPostParse(virDomainInputDef *input,
             if ((input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
                  input->type == VIR_DOMAIN_INPUT_TYPE_KBD) &&
                 (ARCH_IS_X86(def->os.arch) || def->os.arch == VIR_ARCH_NONE)) {
+                    input->bus = VIR_DOMAIN_INPUT_BUS_PS2;
             } else if (ARCH_IS_S390(def->os.arch) ||
                        input->type == VIR_DOMAIN_INPUT_TYPE_PASSTHROUGH) {
                 input->bus = VIR_DOMAIN_INPUT_BUS_VIRTIO;
@@ -677,6 +663,13 @@ virDomainInputDefPostParse(virDomainInputDef *input,
     }
 }
 
+static void
+virDomainSoundDefPostParse(virDomainSoundDef *sound)
+{
+    if (sound->model == VIR_DOMAIN_SOUND_MODEL_VIRTIO && sound->streams == 0)
+        sound->streams = 2;
+}
+
 static int
 virDomainDeviceDefPostParseCommon(virDomainDeviceDef *dev,
                                   const virDomainDef *def,
@@ -685,7 +678,7 @@ virDomainDeviceDefPostParseCommon(virDomainDeviceDef *dev,
 {
     int ret = -1;
 
-    switch ((virDomainDeviceType)dev->type) {
+    switch (dev->type) {
     case VIR_DOMAIN_DEVICE_CHR:
         ret = virDomainChrDefPostParse(dev->data.chr, def);
         break;
@@ -730,9 +723,13 @@ virDomainDeviceDefPostParseCommon(virDomainDeviceDef *dev,
         ret = 0;
         break;
 
+    case VIR_DOMAIN_DEVICE_SOUND:
+        virDomainSoundDefPostParse(dev->data.sound);
+        ret = 0;
+        break;
+
     case VIR_DOMAIN_DEVICE_LEASE:
     case VIR_DOMAIN_DEVICE_NET:
-    case VIR_DOMAIN_DEVICE_SOUND:
     case VIR_DOMAIN_DEVICE_WATCHDOG:
     case VIR_DOMAIN_DEVICE_GRAPHICS:
     case VIR_DOMAIN_DEVICE_HUB:
@@ -746,6 +743,7 @@ virDomainDeviceDefPostParseCommon(virDomainDeviceDef *dev,
     case VIR_DOMAIN_DEVICE_IOMMU:
     case VIR_DOMAIN_DEVICE_AUDIO:
     case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
         ret = 0;
         break;
 
@@ -999,10 +997,6 @@ virDomainVcpuDefPostParse(virDomainDef *def)
     for (i = 0; i < maxvcpus; i++) {
         vcpu = virDomainDefGetVcpu(def, i);
 
-        /* impossible but some compilers don't like it */
-        if (!vcpu)
-            continue;
-
         switch (vcpu->hotpluggable) {
         case VIR_TRISTATE_BOOL_ABSENT:
             if (vcpu->online)
@@ -1241,9 +1235,6 @@ virDomainDefPostParseCommon(virDomainDef *def,
     if (virDomainDefPostParseMemory(def, data->parseFlags) < 0)
         return -1;
 
-    if (virDomainDefPostParseOs(def) < 0)
-        return -1;
-
     virDomainDefPostParseMemtune(def);
 
     if (virDomainDefRejectDuplicateControllers(def) < 0)
@@ -1335,6 +1326,7 @@ virDomainAssignControllerIndexes(virDomainDef *def)
      * unused index.
      */
     size_t outer;
+    bool reinsert = false;
 
     for (outer = 0; outer < def->ncontrollers; outer++) {
         virDomainControllerDef *cont = def->controllers[outer];
@@ -1362,6 +1354,13 @@ virDomainAssignControllerIndexes(virDomainDef *def)
              * index as the previous controller.
              */
             int prevIdx;
+
+            /* virDomainControllerInsert enforces an ordering of USB2 controllers
+             * based on their master port, which doesn't happen on the initial
+             * parse if the index wasn't yet allocated. If we encounter a USB2
+             * controller where we populated the index, we need to re-shuffle
+             * the controllers after allocating the index */
+            reinsert = true;
 
             prevIdx = outer - 1;
             while (prevIdx >= 0 &&
@@ -1398,6 +1397,19 @@ virDomainAssignControllerIndexes(virDomainDef *def)
         /* if none of the above applied, prev will be NULL */
         if (!prev)
             cont->idx = virDomainControllerFindUnusedIndex(def, cont->type);
+    }
+
+    if (reinsert) {
+        g_autofree virDomainControllerDef **controllers = g_steal_pointer(&def->controllers);
+        size_t ncontrollers = def->ncontrollers;
+        size_t i;
+
+        def->controllers = g_new0(virDomainControllerDef *, ncontrollers);
+        def->ncontrollers = 0;
+
+        for (i = 0; i < ncontrollers; i++) {
+            virDomainControllerInsertPreAlloced(def, controllers[i]);
+        }
     }
 }
 

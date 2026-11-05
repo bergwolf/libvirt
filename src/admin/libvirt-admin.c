@@ -163,7 +163,7 @@ getSocketPath(virURI *uri)
 static int
 virAdmGetDefaultURI(virConf *conf, char **uristr)
 {
-    const char *defname = getenv("LIBVIRT_ADMIN_DEFAULT_URI");
+    const char *defname = g_getenv("LIBVIRT_ADMIN_DEFAULT_URI");
     if (defname && *defname) {
         *uristr = g_strdup(defname);
         VIR_DEBUG("Using LIBVIRT_ADMIN_DEFAULT_URI '%s'", *uristr);
@@ -1351,6 +1351,39 @@ virAdmConnectSetDaemonTimeout(virAdmConnectPtr conn,
     virCheckAdmConnectReturn(conn, -1);
 
     if ((ret = remoteAdminConnectSetDaemonTimeout(conn, timeout, flags)) < 0) {
+        virDispatchError(NULL);
+        return -1;
+    }
+
+    return ret;
+}
+
+
+/**
+ * virAdmConnectDaemonShutdown:
+ * @conn: pointer to an active admin connection
+ * @flags: optional extra falgs
+ *
+ * Trigger shutdown of the daemon, if @flags includes
+ * VIR_DAEMON_SHUTDOWN_PRESERVE then state will be
+ * preserved before shutting down
+ *
+ * Returns 0 on success, -1 on error.
+ *
+ * Since: 11.2.0
+ */
+int
+virAdmConnectDaemonShutdown(virAdmConnectPtr conn,
+                            unsigned int flags)
+{
+    int ret;
+
+    VIR_DEBUG("conn=%p, flags=0x%x", conn, flags);
+
+    virResetLastError();
+    virCheckAdmConnectReturn(conn, -1);
+
+    if ((ret = remoteAdminConnectDaemonShutdown(conn, flags)) < 0) {
         virDispatchError(NULL);
         return -1;
     }

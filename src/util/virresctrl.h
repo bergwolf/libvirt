@@ -38,6 +38,7 @@ typedef enum {
     VIR_RESCTRL_MONITOR_TYPE_UNSUPPORT,
     VIR_RESCTRL_MONITOR_TYPE_CACHE,
     VIR_RESCTRL_MONITOR_TYPE_MEMBW,
+    VIR_RESCTRL_MONITOR_TYPE_ENERGY,
 
     VIR_RESCTRL_MONITOR_TYPE_LAST
 } virResctrlMonitorType;
@@ -47,6 +48,7 @@ VIR_ENUM_DECL(virResctrlMonitorPrefix);
 
 typedef struct _virResctrlInfoPerCache virResctrlInfoPerCache;
 struct _virResctrlInfoPerCache {
+    unsigned int id;
     /* Smallest possible increase of the allocation size in bytes */
     unsigned long long granularity;
     /* Minimal allocatable size in bytes (if different from granularity) */
@@ -96,6 +98,7 @@ virResctrlInfoNew(void);
 
 int
 virResctrlInfoGetCache(virResctrlInfo *resctrl,
+                       unsigned int id,
                        unsigned int level,
                        unsigned long long size,
                        size_t *ncontrols,
@@ -104,6 +107,7 @@ virResctrlInfoGetCache(virResctrlInfo *resctrl,
 int
 virResctrlInfoGetMemoryBandwidth(virResctrlInfo *resctrl,
                                  unsigned int level,
+                                 unsigned int id,
                                  virResctrlInfoMemBWPerNode *control);
 /* Alloc-related things */
 typedef struct _virResctrlAlloc virResctrlAlloc;
@@ -193,11 +197,18 @@ struct _virResctrlMonitorStats {
     /* @features is a NULL terminal string list tracking the statistical record
      * name.*/
     char **features;
-    /* @vals store the statistical record values and @val[0] is the value for
-     * @features[0], @val[1] for@features[1] ... respectively */
+    /* @vals store the statistical record values for integer-valued resources.
+     * Entries correspond 1:1 with @features; empty when the resource reports
+     * floating-point data. */
     unsigned long long *vals;
     /* The length of @vals array */
     size_t nvals;
+    /* @dvals store double-precision values for floating-point resources.
+     * Entries correspond 1:1 with @features; empty when the resource reports
+     * integer data. */
+    double *dvals;
+    /* The length of @dvals array */
+    size_t ndvals;
 };
 
 virResctrlMonitor *
@@ -221,6 +232,9 @@ virResctrlMonitorSetID(virResctrlMonitor *monitor,
 
 const char *
 virResctrlMonitorGetID(virResctrlMonitor *monitor);
+
+char *
+virResctrlMonitorGetName(virResctrlMonitor *monitor);
 
 void
 virResctrlMonitorSetAlloc(virResctrlMonitor *monitor,

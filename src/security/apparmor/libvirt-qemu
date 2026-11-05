@@ -34,6 +34,7 @@
   # only modify its comm value or those in its thread group.
   owner @{PROC}/@{pid}/task/@{tid}/comm rw,
   @{PROC}/sys/kernel/cap_last_cap r,
+  @{PROC}/sys/vm/max_map_count r,
   @{PROC}/sys/vm/overcommit_memory r,
   # detect hardware capabilities via qemu_getauxval
   owner @{PROC}/*/auxv r,
@@ -44,10 +45,26 @@
   /sys/bus/usb/devices/ r,
   /sys/bus/usb/devices/* r,
   /sys/devices/**/usb[0-9]*/** r,
+  # For USB hostdev access, QEMU (via libusb) walks up the sysfs topology
+  # of the passed-through device and reads the uevent of the parent USB
+  # host controller, which sits one level above the usb[0-9]* directory
+  # (e.g. /sys/devices/pci0000:00/0000:00:01.2/uevent). uevent files only
+  # expose non-sensitive device metadata.
+  /sys/devices/**/uevent r,
   # libusb needs udev data about usb devices (~equal to content of lsusb -v)
   /run/udev/data/+usb* r,
   /run/udev/data/c16[6,7]* r,
   /run/udev/data/c18[0,8,9]* r,
+
+  # For vfio-ccw (s390x channel subsystem) hostdev passthrough. QEMU reads
+  # the channel-path masks, CHPID list and CHPID type of the passed-through
+  # subchannel from sysfs when building the guest SCHIB. The chpids and
+  # pimpampom files are opened via /sys/bus/css/devices/<id>/ symlinks that
+  # AppArmor resolves to /sys/devices/cssN/<id>/; the CHPID type is read
+  # directly from /sys/devices/cssN/chp0.<chpid>/.
+  /sys/devices/css[0-9]*/*/chpids r,
+  /sys/devices/css[0-9]*/*/pimpampom r,
+  /sys/devices/css[0-9]*/chp0.*/type r,
 
   # WARNING: this gives the guest direct access to host hardware and specific
   # portions of shared memory. This is required for sound using ALSA with kvm,
@@ -143,6 +160,7 @@
   /usr/bin/qemu-system-hppa rmix,
   /usr/bin/qemu-system-i386 rmix,
   /usr/bin/qemu-system-lm32 rmix,
+  /usr/bin/qemu-system-loongarch64 rmix,
   /usr/bin/qemu-system-m68k rmix,
   /usr/bin/qemu-system-microblaze rmix,
   /usr/bin/qemu-system-microblazeel rmix,
@@ -171,6 +189,9 @@
   /usr/bin/qemu-system-xtensaeb rmix,
   /usr/bin/qemu-unicore32 rmix,
   /usr/bin/qemu-x86_64 rmix,
+  # Debian 12 has a wrapper script in /usr/bin while the actual
+  # binary lives in /usr/libexec (Debian: #1030926)
+  /usr/libexec/qemu-system-i386 rmix,
   # for Debian/Ubuntu qemu-block-extra / RPMs qemu-block-* (LP: #1554761)
   /usr/{lib,lib64}/qemu/*.so mr,
   /usr/lib/@{multiarch}/qemu/*.so mr,
@@ -188,14 +209,15 @@
   # support for passt network back-end
   /usr/bin/passt Cx -> passt,
 
-  profile passt {
+  profile passt flags=(attach_disconnected) {
     /usr/bin/passt r,
 
     signal (receive) set=("term") peer=/usr/sbin/libvirtd,
     signal (receive) set=("term") peer=libvirtd,
     signal (receive) set=("term") peer=virtqemud,
 
-    owner /{,var/}run/libvirt/qemu/passt/* rw,
+    owner @{run}/user/[0-9]*/libvirt/qemu/run/passt/* rw,
+    owner @{run}/libvirt/qemu/passt/* rw,
 
     include if exists <abstractions/passt>
   }
@@ -250,6 +272,9 @@
   /sys/devices/system/node/node[0-9]*/meminfo r,
   /sys/module/vhost/parameters/max_mem_regions r,
 
+   # Access to libnuma
+   /sys/devices/system/node/*/cpumap r,
+
   # silence refusals to open lttng files (see LP: #1432644)
   deny /dev/shm/lttng-ust-wait-* r,
   deny /run/shm/lttng-ust-wait-* r,
@@ -269,3 +294,5 @@
   # required for QEMU accessing UEFI nvram variables
   owner /var/lib/libvirt/qemu/nvram/*_VARS.fd rwk,
   owner /var/lib/libvirt/qemu/nvram/*_VARS.ms.fd rwk,
+
+  include if exists <abstractions/libvirt-qemu.d>

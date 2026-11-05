@@ -92,12 +92,12 @@ int getcon_raw(char **context)
         errno = EINVAL;
         return -1;
     }
-    if (getenv("FAKE_SELINUX_CONTEXT") == NULL) {
+    if (g_getenv("FAKE_SELINUX_CONTEXT") == NULL) {
         *context = NULL;
         errno = EINVAL;
         return -1;
     }
-    *context = g_strdup(getenv("FAKE_SELINUX_CONTEXT"));
+    *context = g_strdup(g_getenv("FAKE_SELINUX_CONTEXT"));
     return 0;
 }
 
@@ -117,12 +117,12 @@ int getpidcon_raw(pid_t pid, char **context)
         errno = ESRCH;
         return -1;
     }
-    if (getenv("FAKE_SELINUX_CONTEXT") == NULL) {
+    if (g_getenv("FAKE_SELINUX_CONTEXT") == NULL) {
         *context = NULL;
         errno = EINVAL;
         return -1;
     }
-    *context = g_strdup(getenv("FAKE_SELINUX_CONTEXT"));
+    *context = g_strdup(g_getenv("FAKE_SELINUX_CONTEXT"));
     return 0;
 }
 
@@ -130,21 +130,6 @@ int getpidcon(pid_t pid, char **context)
 {
     return getpidcon_raw(pid, context);
 }
-
-int setcon_raw(const char *context)
-{
-    if (!is_selinux_enabled()) {
-        errno = EINVAL;
-        return -1;
-    }
-    return g_setenv("FAKE_SELINUX_CONTEXT", context, TRUE) == TRUE ? 0 : -1;
-}
-
-int setcon(const char *context)
-{
-    return setcon_raw(context);
-}
-
 
 int setfilecon_raw(const char *path, const char *con)
 {
@@ -206,17 +191,7 @@ int statfs(const char *path, struct statfs *buf)
 
 int is_selinux_enabled(void)
 {
-    return getenv("FAKE_SELINUX_DISABLED") == NULL;
-}
-
-int security_disable(void)
-{
-    if (!is_selinux_enabled()) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    return g_setenv("FAKE_SELINUX_DISABLED", "1", TRUE) == TRUE ? 0 : -1;
+    return g_getenv("FAKE_SELINUX_DISABLED") == NULL;
 }
 
 int security_getenforce(void)

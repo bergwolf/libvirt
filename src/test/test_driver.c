@@ -41,6 +41,8 @@
 #include "domain_conf.h"
 #include "domain_driver.h"
 #include "domain_event.h"
+#include "domain_postparse.h"
+#include "domain_validate.h"
 #include "network_event.h"
 #include "snapshot_conf.h"
 #include "virfdstream.h"
@@ -187,6 +189,7 @@ struct _testIOThreadInfo {
     unsigned long long poll_max_ns;
     unsigned int poll_grow;
     unsigned int poll_shrink;
+    unsigned int poll_weight;
 };
 
 static void
@@ -419,6 +422,22 @@ testDomainDevicesDefPostParse(virDomainDeviceDef *dev G_GNUC_UNUSED,
 }
 
 
+static int
+testDomainDefPostParse(virDomainDef *def,
+                       unsigned int parseFlags G_GNUC_UNUSED,
+                       void *opaque G_GNUC_UNUSED,
+                       void *parseOpaque G_GNUC_UNUSED)
+{
+    if (def->os.loader &&
+        def->os.loader->path &&
+        !def->os.loader->type) {
+        def->os.loader->type = VIR_DOMAIN_LOADER_TYPE_ROM;
+    }
+
+    return 0;
+}
+
+
 static void
 testDomainObjPrivateFree(void *data)
 {
@@ -446,6 +465,7 @@ testDriverNew(void)
                     VIR_DOMAIN_DEF_FEATURE_FW_AUTOSELECT |
                     VIR_DOMAIN_DEF_FEATURE_NET_MODEL_STRING,
         .devicesPostParseCallback = testDomainDevicesDefPostParse,
+        .domainPostParseCallback = testDomainDefPostParse,
         .defArch = VIR_ARCH_I686,
     };
     virDomainXMLPrivateDataCallbacks privatecb = {
@@ -633,6 +653,25 @@ static int testStoragePoolObjSetDefaults(virStoragePoolObj *obj);
 static int testNodeGetInfo(virConnectPtr conn, virNodeInfoPtr info);
 static virNetworkObj *testNetworkObjFindByName(testDriver *privconn, const char *name);
 
+static virNetworkObj *
+testNetworkObjFromNetwork(virNetworkPtr network)
+{
+    virNetworkObj *net;
+    testDriver *driver = network->conn->privateData;
+    char uuidstr[VIR_UUID_STRING_BUFLEN];
+
+    net = virNetworkObjFindByUUID(driver->networks, network->uuid);
+    if (!net) {
+        virUUIDFormat(network->uuid, uuidstr);
+        virReportError(VIR_ERR_NO_NETWORK,
+                       _("no network with matching uuid '%1$s' (%2$s)"),
+                       uuidstr, network->name);
+    }
+
+    return net;
+}
+
+
 static virDomainObj *
 testDomObjFromDomain(virDomainPtr domain)
 {
@@ -711,6 +750,7 @@ testDomainGenerateIOThreadInfos(virDomainObj *obj)
         iothread.poll_max_ns = 32768;
         iothread.poll_grow = 0;
         iothread.poll_shrink = 0;
+        iothread.poll_weight = 0;
         g_array_append_val(priv->iothreads, iothread);
     }
 }
@@ -1249,7 +1289,10 @@ testParseNodedevs(testDriver *privconn,
             return -1;
         }
 
+        virNodeDeviceObjSetPersistent(obj, true);
+        virNodeDeviceObjSetActive(obj, true);
         virNodeDeviceObjSetSkipUpdateCaps(obj, true);
+        virNodeDeviceSyncMdevActiveConfig(def);
         virNodeDeviceObjEndAPI(&obj);
     }
 
@@ -2691,8 +2734,7 @@ static int testDomainSetMemoryStatsPeriod(virDomainPtr dom,
 
     if (!virDomainDefHasMemballoon(def)) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("No memory balloon device configured, "
-                         "can not set the collection period"));
+                       _("No memory balloon device configured, can not set the collection period"));
         goto cleanup;
     }
 
@@ -2727,22 +2769,19 @@ static int testDomainSetMemoryFlags(virDomainPtr domain,
     if (flags & VIR_DOMAIN_MEM_MAXIMUM) {
         if (live) {
             virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                           _("cannot resize the maximum memory on an "
-                             "active domain"));
+                           _("cannot resize the maximum memory on an active domain"));
             goto cleanup;
         }
 
         if (virDomainNumaGetNodeCount(def->numa) > 0) {
             virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                           _("initial memory size of a domain with NUMA "
-                             "nodes cannot be modified with this API"));
+                           _("initial memory size of a domain with NUMA nodes cannot be modified with this API"));
             goto cleanup;
         }
 
         if (def->mem.max_memory && def->mem.max_memory < memory) {
             virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                           _("cannot set initial memory size greater than "
-                             "the maximum memory size"));
+                           _("cannot set initial memory size greater than the maximum memory size"));
             goto cleanup;
         }
 
@@ -3413,8 +3452,7 @@ testDomainSetMemoryParameters(virDomainPtr dom,
 
         if (mem_limit > swap_limit) {
             virReportError(VIR_ERR_INVALID_ARG, "%s",
-                           _("memory hard_limit tunable value must be lower "
-                             "than or equal to swap_hard_limit"));
+                           _("memory hard_limit tunable value must be lower than or equal to swap_hard_limit"));
             goto cleanup;
         }
     }
@@ -3945,32 +3983,28 @@ testDomainSetBlockIoTune(virDomainPtr dom,
     if ((info.total_bytes_sec && info.read_bytes_sec) ||
         (info.total_bytes_sec && info.write_bytes_sec)) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("total and read/write of bytes_sec "
-                         "cannot be set at the same time"));
+                       _("total and read/write of bytes_sec cannot be set at the same time"));
         goto cleanup;
     }
 
     if ((info.total_iops_sec && info.read_iops_sec) ||
         (info.total_iops_sec && info.write_iops_sec)) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("total and read/write of iops_sec "
-                         "cannot be set at the same time"));
+                       _("total and read/write of iops_sec cannot be set at the same time"));
         goto cleanup;
     }
 
     if ((info.total_bytes_sec_max && info.read_bytes_sec_max) ||
         (info.total_bytes_sec_max && info.write_bytes_sec_max)) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("total and read/write of bytes_sec_max "
-                         "cannot be set at the same time"));
+                       _("total and read/write of bytes_sec_max cannot be set at the same time"));
         goto cleanup;
     }
 
     if ((info.total_iops_sec_max && info.read_iops_sec_max) ||
         (info.total_iops_sec_max && info.write_iops_sec_max)) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("total and read/write of iops_sec_max "
-                         "cannot be set at the same time"));
+                       _("total and read/write of iops_sec_max cannot be set at the same time"));
         goto cleanup;
     }
 
@@ -4420,7 +4454,7 @@ static int testNodeGetCellsFreeMemory(virConnectPtr conn,
     return ret;
 }
 
-#define TEST_NB_CPU_STATS 4
+#define TEST_NB_CPU_STATS 5
 
 static int
 testNodeGetCPUStats(virConnectPtr conn G_GNUC_UNUSED,
@@ -4438,7 +4472,7 @@ testNodeGetCPUStats(virConnectPtr conn G_GNUC_UNUSED,
         return 0;
     }
 
-    for (i = 0; i < *nparams && i < 4; i++) {
+    for (i = 0; i < *nparams && i < 5; i++) {
         switch (i) {
         case 0:
             if (virHostCPUStatsAssign(&params[i],
@@ -4458,6 +4492,11 @@ testNodeGetCPUStats(virConnectPtr conn G_GNUC_UNUSED,
         case 3:
             if (virHostCPUStatsAssign(&params[i],
                                       VIR_NODE_CPU_STATS_IOWAIT, 763600000) < 0)
+                return -1;
+            break;
+        case 4:
+            if (virHostCPUStatsAssign(&params[i],
+                                      VIR_NODE_CPU_STATS_GUEST, 1797400000) < 0)
                 return -1;
             break;
         }
@@ -4487,24 +4526,25 @@ static int
 testNodeGetFreePages(virConnectPtr conn G_GNUC_UNUSED,
                      unsigned int npages,
                      unsigned int *pages G_GNUC_UNUSED,
-                     int startCell G_GNUC_UNUSED,
+                     int startCell,
                      unsigned int cellCount,
                      unsigned long long *counts,
                      unsigned int flags)
 {
     size_t i = 0, j = 0;
-    int x = 6;
 
     virCheckFlags(0, -1);
 
     for (i = 0; i < cellCount; i++) {
+        int x = (startCell + i) * 6;
+
         for (j = 0; j < npages; j++) {
             x = x * 2 + 7;
             counts[(i * npages) +  j] = x;
         }
     }
 
-    return 0;
+    return cellCount * npages;
 }
 
 static int testDomainCreateWithFlags(virDomainPtr domain, unsigned int flags)
@@ -4578,8 +4618,7 @@ static int testDomainUndefineFlags(virDomainPtr domain,
     if (privdom->hasManagedSave &&
         !(flags & VIR_DOMAIN_UNDEFINE_MANAGED_SAVE)) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("Refusing to undefine while domain managed "
-                         "save image exists"));
+                       _("Refusing to undefine while domain managed save image exists"));
         goto cleanup;
     }
 
@@ -4826,7 +4865,7 @@ static int testDomainGetDiskErrors(virDomainPtr dom,
 
     if (errors) {
         /* sanitize input */
-        memset(errors, 0, sizeof(virDomainDiskError) * nerrors);
+        memset(errors, 0, sizeof(*errors) * nerrors);
 
         for (i = 0; i < nerrors; i++) {
             errors[i].disk = g_strdup(vm->def->disks[i]->dst);
@@ -5658,7 +5697,7 @@ testNetworkUpdate(virNetworkPtr net,
 {
     testDriver *privconn = net->conn->privateData;
     virNetworkObj *obj = NULL;
-    int isActive, ret = -1;
+    int ret = -1;
 
     virCheckFlags(VIR_NETWORK_UPDATE_AFFECT_LIVE |
                   VIR_NETWORK_UPDATE_AFFECT_CONFIG,
@@ -5667,18 +5706,8 @@ testNetworkUpdate(virNetworkPtr net,
     if (!(obj = testNetworkObjFindByUUID(privconn, net->uuid)))
         goto cleanup;
 
-    /* VIR_NETWORK_UPDATE_AFFECT_CURRENT means "change LIVE if network
-     * is active, else change CONFIG
-    */
-    isActive = virNetworkObjIsActive(obj);
-    if ((flags & (VIR_NETWORK_UPDATE_AFFECT_LIVE
-                   | VIR_NETWORK_UPDATE_AFFECT_CONFIG)) ==
-        VIR_NETWORK_UPDATE_AFFECT_CURRENT) {
-        if (isActive)
-            flags |= VIR_NETWORK_UPDATE_AFFECT_LIVE;
-        else
-            flags |= VIR_NETWORK_UPDATE_AFFECT_CONFIG;
-    }
+    if (virNetworkObjUpdateModificationImpact(obj, &flags) < 0)
+        goto cleanup;
 
     /* update the network config in memory/on disk */
     if (virNetworkObjUpdate(obj, command, section,
@@ -6053,8 +6082,7 @@ testInterfaceChangeCommit(virConnectPtr conn,
 
     if (!privconn->transaction_running) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("no transaction running, "
-                         "nothing to be committed."));
+                       _("no transaction running, nothing to be committed."));
         goto cleanup;
     }
 
@@ -6083,8 +6111,7 @@ testInterfaceChangeRollback(virConnectPtr conn,
 
     if (!privconn->transaction_running) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("no transaction running, "
-                         "nothing to rollback."));
+                       _("no transaction running, nothing to rollback."));
         goto cleanup;
     }
 
@@ -6878,7 +6905,7 @@ testStoragePoolGetInfo(virStoragePoolPtr pool,
         return -1;
     def = virStoragePoolObjGetDef(obj);
 
-    memset(info, 0, sizeof(virStoragePoolInfo));
+    memset(info, 0, sizeof(*info));
     if (virStoragePoolObjIsActive(obj))
         info->state = VIR_STORAGE_POOL_RUNNING;
     else
@@ -7482,7 +7509,7 @@ testConnectListAllNodeDevices(virConnectPtr conn,
 {
     testDriver *driver = conn->privateData;
 
-    virCheckFlags(VIR_CONNECT_LIST_NODE_DEVICES_FILTERS_CAP, -1);
+    virCheckFlags(VIR_CONNECT_LIST_NODE_DEVICES_FILTERS_ALL, -1);
 
     return virNodeDeviceObjListExport(conn, driver->devs, devices,
                                       NULL, flags);
@@ -7513,15 +7540,30 @@ testNodeDeviceGetXMLDesc(virNodeDevicePtr dev,
 {
     testDriver *driver = dev->conn->privateData;
     virNodeDeviceObj *obj;
+    virNodeDeviceDef *def;
     char *ret = NULL;
 
-    virCheckFlags(0, NULL);
+    virCheckFlags(VIR_NODE_DEVICE_XML_INACTIVE, NULL);
 
     if (!(obj = testNodeDeviceObjFindByName(driver, dev->name)))
         return NULL;
+    def = virNodeDeviceObjGetDef(obj);
 
-    ret = virNodeDeviceDefFormat(virNodeDeviceObjGetDef(obj));
+    if (flags & VIR_NODE_DEVICE_XML_INACTIVE) {
+        if (!virNodeDeviceObjIsPersistent(obj)) {
+            virReportError(VIR_ERR_OPERATION_INVALID,
+                           _("node device '%1$s' is not persistent"),
+                           def->name);
+            goto cleanup;
+        }
+    } else {
+        if (!virNodeDeviceObjIsActive(obj))
+            flags |= VIR_NODE_DEVICE_XML_INACTIVE;
+    }
 
+    ret = virNodeDeviceDefFormat(def, flags);
+
+ cleanup:
     virNodeDeviceObjEndAPI(&obj);
     return ret;
 }
@@ -7620,7 +7662,7 @@ testNodeDeviceMockCreateVport(testDriver *driver,
                                                    "scsi_host11")))
         goto cleanup;
 
-    xml = virNodeDeviceDefFormat(virNodeDeviceObjGetDef(objcopy));
+    xml = virNodeDeviceDefFormat(virNodeDeviceObjGetDef(objcopy), 0);
     virNodeDeviceObjEndAPI(&objcopy);
     if (!xml)
         goto cleanup;
@@ -7657,8 +7699,9 @@ testNodeDeviceMockCreateVport(testDriver *driver,
 
     if (!(obj = virNodeDeviceObjListAssignDef(driver->devs, def)))
         goto cleanup;
-    virNodeDeviceObjSetSkipUpdateCaps(obj, true);
+    /* @def is now owned by @obj */
     def = NULL;
+    virNodeDeviceObjSetSkipUpdateCaps(obj, true);
     objdef = virNodeDeviceObjGetDef(obj);
 
     event = virNodeDeviceEventLifecycleNew(objdef->name,
@@ -7685,11 +7728,14 @@ testNodeDeviceCreateXML(virConnectPtr conn,
     g_autofree char *wwnn = NULL;
     g_autofree char *wwpn = NULL;
     bool validate = flags & VIR_NODE_DEVICE_CREATE_XML_VALIDATE;
+    const char *virt_type;
 
     virCheckFlags(VIR_NODE_DEVICE_CREATE_XML_VALIDATE, NULL);
 
-    if (!(def = virNodeDeviceDefParse(xmlDesc, NULL, CREATE_DEVICE, NULL, NULL,
-                                      NULL, validate)))
+    virt_type = virConnectGetType(conn);
+
+    if (!(def = virNodeDeviceDefParse(xmlDesc, NULL, CREATE_DEVICE, virt_type,
+                                      NULL, NULL, validate)))
         goto cleanup;
 
     /* We run this simply for validation - it essentially validates that
@@ -7747,10 +7793,10 @@ testNodeDeviceDestroy(virNodeDevicePtr dev)
     if (virNodeDeviceGetWWNs(def, &wwnn, &wwpn) == -1)
         goto cleanup;
 
-    /* Unlike the real code we cannot run into the udevAddOneDevice race
-     * which would replace obj->def, so no need to save off the parent,
-     * but do need to drop the @obj lock so that the FindByName code doesn't
-     * deadlock on ourselves */
+    /* Unlike the real code we cannot run into the
+     * processNodeDeviceAddAndChangeEvent race which would replace obj->def, so
+     * no need to save off the parent, but do need to drop the @obj lock so that
+     * the FindByName code doesn't deadlock on ourselves */
     virObjectUnlock(obj);
 
     /* We do this just for basic validation and throw away the parentobj
@@ -7774,6 +7820,36 @@ testNodeDeviceDestroy(virNodeDevicePtr dev)
  cleanup:
     virNodeDeviceObjEndAPI(&obj);
     virObjectEventStateQueue(driver->eventState, event);
+    return ret;
+}
+
+static int
+testNodeDeviceIsActive(virNodeDevicePtr dev)
+{
+    testDriver *privconn = dev->conn->privateData;
+    virNodeDeviceObj *obj = NULL;
+    int ret = -1;
+
+    if (!(obj = testNodeDeviceObjFindByName(privconn, dev->name)))
+        return -1;
+
+    ret = virNodeDeviceObjIsActive(obj);
+    virNodeDeviceObjEndAPI(&obj);
+    return ret;
+}
+
+static int
+testNodeDeviceIsPersistent(virNodeDevicePtr dev)
+{
+    testDriver *privconn = dev->conn->privateData;
+    virNodeDeviceObj *obj = NULL;
+    int ret = -1;
+
+    if (!(obj = testNodeDeviceObjFindByName(privconn, dev->name)))
+        return -1;
+
+    ret = virNodeDeviceObjIsPersistent(obj);
+    virNodeDeviceObjEndAPI(&obj);
     return ret;
 }
 
@@ -8721,7 +8797,7 @@ testDomainSnapshotAlignDisks(virDomainObj *vm,
                       VIR_DOMAIN_SNAPSHOT_LOCATION_INTERNAL;
     }
 
-    return virDomainSnapshotAlignDisks(def, NULL, align_location, true);
+    return virDomainSnapshotAlignDisks(def, NULL, align_location, true, false);
 }
 
 
@@ -9012,8 +9088,7 @@ testDomainRevertToSnapshot(virDomainSnapshotPtr snapshot,
         (flags & (VIR_DOMAIN_SNAPSHOT_REVERT_RUNNING |
                   VIR_DOMAIN_SNAPSHOT_REVERT_PAUSED)) == 0) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("transient domain needs to request run or pause "
-                         "to revert to inactive snapshot"));
+                       _("transient domain needs to request run or pause to revert to inactive snapshot"));
         goto cleanup;
     }
 
@@ -9471,16 +9546,24 @@ testDomainGetMessages(virDomainPtr dom,
                       char ***msgs,
                       unsigned int flags)
 {
+    g_autoptr(GPtrArray) m = g_ptr_array_new_with_free_func(g_free);
     virDomainObj *vm = NULL;
     int rv = -1;
 
     virCheckFlags(VIR_DOMAIN_MESSAGE_DEPRECATION |
-                  VIR_DOMAIN_MESSAGE_TAINTING, -1);
+                  VIR_DOMAIN_MESSAGE_TAINTING |
+                  VIR_DOMAIN_MESSAGE_IOERRORS, -1);
 
     if (!(vm = testDomObjFromDomain(dom)))
         return -1;
 
-    rv = virDomainObjGetMessages(vm, msgs, flags);
+    virDomainObjGetMessages(vm, m, flags);
+
+    rv = m->len;
+    if (m->len > 0) {
+        g_ptr_array_add(m, NULL);
+        *msgs = (char **) g_ptr_array_steal(m, NULL);
+    }
 
     virDomainObjEndAPI(&vm);
     return rv;
@@ -9600,6 +9683,7 @@ testDomainAddIOThread(virDomainPtr dom,
     iothread.poll_max_ns = 32768;
     iothread.poll_grow = 0;
     iothread.poll_shrink = 0;
+    iothread.poll_weight = 0;
 
     g_array_append_val(priv->iothreads, iothread);
 
@@ -9714,6 +9798,8 @@ testDomainIOThreadParseParams(virTypedParameterPtr params,
                                VIR_TYPED_PARAM_UINT,
                                VIR_DOMAIN_IOTHREAD_POLL_SHRINK,
                                VIR_TYPED_PARAM_UINT,
+                               VIR_DOMAIN_IOTHREAD_POLL_WEIGHT,
+                               VIR_TYPED_PARAM_UINT,
                                NULL) < 0)
         return -1;
 
@@ -9730,6 +9816,11 @@ testDomainIOThreadParseParams(virTypedParameterPtr params,
     if (virTypedParamsGetUInt(params, nparams,
                               VIR_DOMAIN_IOTHREAD_POLL_SHRINK,
                               &iothread->poll_shrink) < 0)
+        return -1;
+
+    if (virTypedParamsGetUInt(params, nparams,
+                              VIR_DOMAIN_IOTHREAD_POLL_WEIGHT,
+                              &iothread->poll_weight) < 0)
         return -1;
 
     return 0;
@@ -9818,6 +9909,8 @@ testDomainGetStatsIOThread(virDomainObj *dom,
                                  "iothread.%u.poll-grow", iothread.iothread_id);
         virTypedParamListAddUInt(params, iothread.poll_shrink,
                                  "iothread.%u.poll-shrink", iothread.iothread_id);
+        virTypedParamListAddUInt(params, iothread.poll_weight,
+                                 "iothread.%u.poll-weight", iothread.iothread_id);
     }
 
     return 0;
@@ -9948,6 +10041,1132 @@ testConnectGetAllDomainStats(virConnectPtr conn,
     return ret;
 }
 
+static char *
+testNetworkGetMetadata(virNetworkPtr net,
+                       int type,
+                       const char *uri,
+                       unsigned int flags)
+{
+    virNetworkObj *privnet;
+    char *ret;
+
+    virCheckFlags(VIR_NETWORK_UPDATE_AFFECT_LIVE |
+                  VIR_NETWORK_UPDATE_AFFECT_CONFIG, NULL);
+
+    if (!(privnet = testNetworkObjFromNetwork(net)))
+        return NULL;
+
+    ret = virNetworkObjGetMetadata(privnet, type, uri, flags);
+
+    virNetworkObjEndAPI(&privnet);
+    return ret;
+}
+
+static int
+testNetworkSetMetadata(virNetworkPtr net,
+                       int type,
+                       const char *metadata,
+                       const char *key,
+                       const char *uri,
+                       unsigned int flags)
+{
+    testDriver *privconn = net->conn->privateData;
+    virNetworkObj *privnet;
+    int ret;
+
+    virCheckFlags(VIR_NETWORK_UPDATE_AFFECT_LIVE |
+                  VIR_NETWORK_UPDATE_AFFECT_CONFIG, -1);
+
+    if (!(privnet = testNetworkObjFromNetwork(net)))
+        return -1;
+
+    ret = virNetworkObjSetMetadata(privnet, type, metadata,
+                                   key, uri, NULL,
+                                   NULL, NULL, flags);
+
+    if (ret == 0) {
+        virObjectEvent *ev = NULL;
+        ev = virNetworkEventMetadataChangeNewFromObj(privnet, type, uri);
+        virObjectEventStateQueue(privconn->eventState, ev);
+    }
+
+    virNetworkObjEndAPI(&privnet);
+    return ret;
+}
+
+static char *
+testConnectGetDomainCapabilities(virConnectPtr conn G_GNUC_UNUSED,
+                                 const char *emulatorbin,
+                                 const char *arch_str,
+                                 const char *machine,
+                                 const char *virttype_str,
+                                 unsigned int flags)
+{
+    g_autoptr(virDomainCaps) domCaps = NULL;
+    virArch arch = VIR_ARCH_I686;
+    int virttype = VIR_DOMAIN_VIRT_TEST;
+
+    virCheckFlags(0, NULL);
+
+    if (arch_str &&
+        (arch = virArchFromString(arch_str)) == VIR_ARCH_NONE) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("unknown architecture: %1$s"), arch_str);
+        return NULL;
+    }
+
+    if (virttype_str &&
+        (virttype = virDomainVirtTypeFromString(virttype_str)) < 0) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("unknown virttype: %1$s"), virttype_str);
+        return NULL;
+    }
+
+    if (!(domCaps = virDomainCapsNew(emulatorbin, machine, arch, virttype)))
+        return NULL;
+
+    return virDomainCapsFormat(domCaps);
+}
+
+
+static int
+testDomainAttachHostPCIDevice(testDriver *driver G_GNUC_UNUSED,
+                              virDomainObj *vm,
+                              virDomainHostdevDef *hostdev)
+{
+    int driverName = hostdev->source.subsys.u.pci.driver.name;
+
+    switch (driverName) {
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO:
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_DEFAULT:
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_KVM:
+        break;
+
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN:
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_LAST:
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("test hypervisor does not support device assignment mode '%1$s'"),
+                       virDeviceHostdevPCIDriverNameTypeToString(driverName));
+        return -1;
+    }
+
+    VIR_REALLOC_N(vm->def->hostdevs, vm->def->nhostdevs + 1);
+    vm->def->hostdevs[vm->def->nhostdevs++] = hostdev;
+
+    return 0;
+}
+
+
+static int
+testDomainDeviceAliasIndex(const virDomainDeviceInfo *info,
+                           const char *prefix)
+{
+    int idx;
+
+    if (!info->alias)
+        return -1;
+    if (!STRPREFIX(info->alias, prefix))
+        return -1;
+
+    if (virStrToLong_i(info->alias + strlen(prefix), NULL, 10, &idx) < 0)
+        return -1;
+
+    return idx;
+}
+
+
+static void
+testAssignDeviceNetAlias(virDomainDef *def,
+                         virDomainNetDef *net,
+                         int idx)
+{
+    if (net->info.alias)
+        return;
+
+    if (idx == -1) {
+        size_t i;
+
+        idx = 0;
+        for (i = 0; i < def->nnets; i++) {
+            int thisidx;
+
+            if ((thisidx = testDomainDeviceAliasIndex(&def->nets[i]->info, "net")) < 0)
+                continue; /* failure could be due to "hostdevN" */
+            if (thisidx >= idx)
+                idx = thisidx + 1;
+        }
+    }
+
+    net->info.alias = g_strdup_printf("net%d", idx);
+}
+
+
+static int
+testDomainAttachNetDevice(testDriver *driver G_GNUC_UNUSED,
+                          virDomainObj *vm,
+                          virDomainNetDef *net)
+{
+    virDomainNetType actualType;
+
+    actualType = virDomainNetGetActualType(net);
+
+    testAssignDeviceNetAlias(vm->def, net, -1);
+
+    switch (actualType) {
+    case VIR_DOMAIN_NET_TYPE_ETHERNET:
+    case VIR_DOMAIN_NET_TYPE_BRIDGE:
+        break;
+
+    case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_NETWORK:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_DIRECT:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
+    case VIR_DOMAIN_NET_TYPE_VDPA:
+    case VIR_DOMAIN_NET_TYPE_NULL:
+    case VIR_DOMAIN_NET_TYPE_VDS:
+    case VIR_DOMAIN_NET_TYPE_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("hotplug of interface type of %1$s is not implemented yet"),
+                       virDomainNetTypeToString(actualType));
+        return -1;
+    }
+
+    VIR_APPEND_ELEMENT_COPY(vm->def->nets, vm->def->nnets, net);
+
+    return 0;
+}
+
+static int
+testDomainAttachHostDevice(testDriver *driver,
+                           virDomainObj *vm,
+                           virDomainHostdevDef *hostdev)
+{
+    if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("hotplug is not supported for hostdev mode '%1$s'"),
+                       virDomainHostdevModeTypeToString(hostdev->mode));
+        return -1;
+    }
+
+    if (hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("hotplug is not supported for hostdev subsys type '%1$s'"),
+                       virDeviceHostdevPCIDriverNameTypeToString(hostdev->source.subsys.type));
+        return -1;
+    }
+
+    return testDomainAttachHostPCIDevice(driver, vm, hostdev);
+}
+
+
+/**
+ * @def: Domain definition
+ * @info: Domain device info
+ *
+ * Using the device info, find the controller related to the
+ * device by index and use that controller to return the model.
+ *
+ * Returns the model if found, -1 if not with an error message set
+ */
+static int
+testDomainFindSCSIControllerModel(const virDomainDef *def,
+                                  virDomainDeviceInfo *info)
+{
+    virDomainControllerDef *cont;
+
+    if (!(cont = virDomainDeviceFindSCSIController(def, &info->addr.drive))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("unable to find a SCSI controller for idx=%1$d"),
+                       info->addr.drive.controller);
+        return -1;
+    }
+
+    return cont->model;
+}
+
+
+static int
+testAssignDeviceDiskAlias(virDomainDef *def,
+                          virDomainDiskDef *disk)
+{
+    const char *prefix = virDomainDiskBusTypeToString(disk->bus);
+    int controllerModel = -1;
+
+    if (!disk->info.alias) {
+        if (disk->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DRIVE) {
+            if (disk->bus == VIR_DOMAIN_DISK_BUS_SCSI) {
+                controllerModel = testDomainFindSCSIControllerModel(def,
+                                                                    &disk->info);
+                if (controllerModel < 0)
+                    return -1;
+            }
+
+            if (disk->bus != VIR_DOMAIN_DISK_BUS_SCSI ||
+                controllerModel == VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSILOGIC) {
+                disk->info.alias = g_strdup_printf("%s%d-%d-%d", prefix,
+                                                   disk->info.addr.drive.controller,
+                                                   disk->info.addr.drive.bus,
+                                                   disk->info.addr.drive.unit);
+            } else {
+                disk->info.alias = g_strdup_printf("%s%d-%d-%d-%d", prefix,
+                                                   disk->info.addr.drive.controller,
+                                                   disk->info.addr.drive.bus,
+                                                   disk->info.addr.drive.target,
+                                                   disk->info.addr.drive.unit);
+            }
+        } else {
+            int idx = virDiskNameToIndex(disk->dst);
+            disk->info.alias = g_strdup_printf("%s-disk%d", prefix, idx);
+        }
+    }
+
+    return 0;
+}
+
+
+static int
+testDomainAttachDeviceDiskLiveInternal(testDriver *driver G_GNUC_UNUSED,
+                                       virDomainObj *vm,
+                                       virDomainDeviceDef *dev)
+{
+    size_t i;
+    virDomainDiskDef *disk = dev->data.disk;
+    int ret = -1;
+
+    if (disk->device == VIR_DOMAIN_DISK_DEVICE_FLOPPY) {
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                       _("floppy device hotplug isn't supported"));
+        return -1;
+    }
+
+    if (virDomainDiskTranslateSourcePool(disk) < 0)
+        goto cleanup;
+
+    for (i = 0; i < vm->def->ndisks; i++) {
+        if (virDomainDiskDefCheckDuplicateInfo(vm->def->disks[i], disk) < 0)
+            goto cleanup;
+    }
+
+    switch (disk->bus) {
+    case VIR_DOMAIN_DISK_BUS_USB:
+        if (disk->device == VIR_DOMAIN_DISK_DEVICE_LUN) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("disk device='lun' is not supported for usb bus"));
+            goto cleanup;
+        }
+
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_VIRTIO:
+        if (disk->device == VIR_DOMAIN_DISK_DEVICE_CDROM) {
+            virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                           _("cdrom device with virtio bus isn't supported"));
+            goto cleanup;
+        }
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_SCSI:
+    case VIR_DOMAIN_DISK_BUS_IDE:
+    case VIR_DOMAIN_DISK_BUS_FDC:
+    case VIR_DOMAIN_DISK_BUS_XEN:
+    case VIR_DOMAIN_DISK_BUS_UML:
+    case VIR_DOMAIN_DISK_BUS_SATA:
+    case VIR_DOMAIN_DISK_BUS_SD:
+    case VIR_DOMAIN_DISK_BUS_NVME:
+    case VIR_DOMAIN_DISK_BUS_NONE:
+    case VIR_DOMAIN_DISK_BUS_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("disk bus '%1$s' cannot be hotplugged."),
+                       virDomainDiskBusTypeToString(disk->bus));
+        goto cleanup;
+    }
+
+    if (testAssignDeviceDiskAlias(vm->def, disk) < 0)
+        goto cleanup;
+
+    virDomainDiskInsert(vm->def, disk);
+
+    ret = 0;
+
+ cleanup:
+    return ret;
+}
+
+
+/**
+ * testDomainAttachDeviceDiskLive:
+ * @driver: test driver struct
+ * @vm: domain object
+ * @dev: device to attach (expected type is DISK)
+ *
+ * Attach a new disk or in case of cdroms/floppies change the media in the drive.
+ * This function handles all the necessary steps to attach a new storage source
+ * to the VM.
+ */
+static int
+testDomainAttachDeviceDiskLive(testDriver *driver,
+                               virDomainObj *vm,
+                               virDomainDeviceDef *dev)
+{
+    virDomainDiskDef *disk = dev->data.disk;
+    virDomainDiskDef *orig_disk = NULL;
+
+    /* this API overloads media change semantics on disk hotplug
+     * for devices supporting media changes */
+    if ((disk->device == VIR_DOMAIN_DISK_DEVICE_CDROM ||
+         disk->device == VIR_DOMAIN_DISK_DEVICE_FLOPPY) &&
+        (orig_disk = virDomainDiskByTarget(vm->def, disk->dst))) {
+        virObjectUnref(orig_disk->src);
+        orig_disk->src = g_steal_pointer(&disk->src);
+        virDomainDiskDefFree(disk);
+        return 0;
+    }
+
+    return testDomainAttachDeviceDiskLiveInternal(driver, vm, dev);
+}
+
+
+static int
+testDomainAttachDeviceLive(virDomainObj *vm,
+                           virDomainDeviceDef *dev,
+                           testDriver *driver)
+{
+    const char *alias = NULL;
+    int ret = -1;
+
+    switch (dev->type) {
+    case VIR_DOMAIN_DEVICE_NET:
+        testDomainObjCheckNetTaint(vm, dev->data.net);
+        ret = testDomainAttachNetDevice(driver, vm, dev->data.net);
+        if (ret == 0) {
+            alias = dev->data.net->info.alias;
+            dev->data.net = NULL;
+        }
+        break;
+
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+        testDomainObjCheckHostdevTaint(vm, dev->data.hostdev);
+        ret = testDomainAttachHostDevice(driver, vm,
+                                         dev->data.hostdev);
+        if (ret == 0) {
+            alias = dev->data.hostdev->info->alias;
+            dev->data.hostdev = NULL;
+        }
+        break;
+
+    case VIR_DOMAIN_DEVICE_DISK:
+        testDomainObjCheckDiskTaint(vm, dev->data.disk);
+        ret = testDomainAttachDeviceDiskLive(driver, vm, dev);
+        if (!ret) {
+            alias = dev->data.disk->info.alias;
+            dev->data.disk = NULL;
+        }
+        break;
+
+    case VIR_DOMAIN_DEVICE_NONE:
+    case VIR_DOMAIN_DEVICE_LEASE:
+    case VIR_DOMAIN_DEVICE_FS:
+    case VIR_DOMAIN_DEVICE_INPUT:
+    case VIR_DOMAIN_DEVICE_SOUND:
+    case VIR_DOMAIN_DEVICE_VIDEO:
+    case VIR_DOMAIN_DEVICE_WATCHDOG:
+    case VIR_DOMAIN_DEVICE_CONTROLLER:
+    case VIR_DOMAIN_DEVICE_GRAPHICS:
+    case VIR_DOMAIN_DEVICE_HUB:
+    case VIR_DOMAIN_DEVICE_REDIRDEV:
+    case VIR_DOMAIN_DEVICE_SMARTCARD:
+    case VIR_DOMAIN_DEVICE_CHR:
+    case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_NVRAM:
+    case VIR_DOMAIN_DEVICE_RNG:
+    case VIR_DOMAIN_DEVICE_SHMEM:
+    case VIR_DOMAIN_DEVICE_TPM:
+    case VIR_DOMAIN_DEVICE_PANIC:
+    case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_IOMMU:
+    case VIR_DOMAIN_DEVICE_VSOCK:
+    case VIR_DOMAIN_DEVICE_AUDIO:
+    case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
+    case VIR_DOMAIN_DEVICE_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("live attach of device '%1$s' is not supported"),
+                       virDomainDeviceTypeToString(dev->type));
+        return -1;
+    }
+
+    if (alias) {
+        virObjectEvent *event;
+        event = virDomainEventDeviceAddedNewFromObj(vm, alias);
+        virObjectEventStateQueue(driver->eventState, event);
+    }
+
+    return ret;
+}
+
+
+static int
+testDomainAttachDeviceLiveAndConfig(virDomainObj *vm,
+                                    testDriver *driver,
+                                    const char *xml,
+                                    unsigned int flags)
+{
+    g_autoptr(virDomainDeviceDef) devLive = NULL;
+    unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE |
+                               VIR_DOMAIN_DEF_PARSE_ABI_UPDATE;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE, -1);
+
+    if (flags & VIR_DOMAIN_AFFECT_LIVE) {
+        if (!(devLive = virDomainDeviceDefParse(xml, vm->def,
+                                                driver->xmlopt, NULL,
+                                                parse_flags)))
+            return -1;
+
+        if (virDomainDeviceValidateAliasForHotplug(vm, devLive,
+                                                   VIR_DOMAIN_AFFECT_LIVE) < 0)
+            return -1;
+
+        if (virDomainDefCompatibleDevice(vm->def, devLive, NULL,
+                                         VIR_DOMAIN_DEVICE_ACTION_ATTACH,
+                                         true) < 0)
+            return -1;
+
+        if (testDomainAttachDeviceLive(vm, devLive, driver) < 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+
+static int
+testDomainAttachDeviceFlags(virDomainPtr domain,
+                            const char *xml,
+                            unsigned int flags)
+{
+
+    testDriver *driver = domain->conn->privateData;
+    virDomainObj *vm = NULL;
+    int ret = -1;
+
+    if (!(vm = testDomObjFromDomain(domain)))
+        return -1;
+
+    if (virDomainObjUpdateModificationImpact(vm, &flags) < 0)
+        goto cleanup;
+
+    if (testDomainAttachDeviceLiveAndConfig(vm, driver, xml, flags) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+
+static int
+testDomainAttachDevice(virDomainPtr domain, const char *xml)
+{
+    return testDomainAttachDeviceFlags(domain, xml, 0);
+}
+
+
+static int
+testDomainUpdateDevice(virDomainDef *vmdef,
+                       virDomainDeviceDef *dev,
+                       unsigned int parse_flags,
+                       virDomainXMLOption *xmlopt)
+{
+    virDomainDiskDef *newDisk;
+    virDomainDeviceDef oldDev = { .type = dev->type };
+    int pos;
+
+    switch (dev->type) {
+    case VIR_DOMAIN_DEVICE_DISK:
+        newDisk = dev->data.disk;
+        if ((pos = virDomainDiskIndexByName(vmdef, newDisk->dst, false)) < 0) {
+            virReportError(VIR_ERR_INVALID_ARG,
+                           _("target %1$s doesn't exist."), newDisk->dst);
+            return -1;
+        }
+
+        oldDev.data.disk = vmdef->disks[pos];
+        if (virDomainDefCompatibleDevice(vmdef, dev, &oldDev,
+                                         VIR_DOMAIN_DEVICE_ACTION_UPDATE,
+                                         false) < 0)
+            return -1;
+
+        virDomainDiskDefFree(vmdef->disks[pos]);
+        vmdef->disks[pos] = newDisk;
+        dev->data.disk = NULL;
+        break;
+
+    case VIR_DOMAIN_DEVICE_GRAPHICS:
+    case VIR_DOMAIN_DEVICE_NET:
+    case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_FS:
+    case VIR_DOMAIN_DEVICE_INPUT:
+    case VIR_DOMAIN_DEVICE_SOUND:
+    case VIR_DOMAIN_DEVICE_VIDEO:
+    case VIR_DOMAIN_DEVICE_WATCHDOG:
+    case VIR_DOMAIN_DEVICE_HUB:
+    case VIR_DOMAIN_DEVICE_SMARTCARD:
+    case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_NVRAM:
+    case VIR_DOMAIN_DEVICE_RNG:
+    case VIR_DOMAIN_DEVICE_SHMEM:
+    case VIR_DOMAIN_DEVICE_LEASE:
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+    case VIR_DOMAIN_DEVICE_CONTROLLER:
+    case VIR_DOMAIN_DEVICE_REDIRDEV:
+    case VIR_DOMAIN_DEVICE_CHR:
+    case VIR_DOMAIN_DEVICE_NONE:
+    case VIR_DOMAIN_DEVICE_TPM:
+    case VIR_DOMAIN_DEVICE_PANIC:
+    case VIR_DOMAIN_DEVICE_IOMMU:
+    case VIR_DOMAIN_DEVICE_VSOCK:
+    case VIR_DOMAIN_DEVICE_AUDIO:
+    case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
+    case VIR_DOMAIN_DEVICE_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("persistent update of device '%1$s' is not supported"),
+                       virDomainDeviceTypeToString(dev->type));
+        return -1;
+    }
+
+    if (virDomainDefPostParse(vmdef, parse_flags, xmlopt, NULL) < 0)
+        return -1;
+
+    return 0;
+}
+
+
+static int
+testDomainUpdateDeviceFlags(virDomainPtr dom,
+                            const char *xml,
+                            unsigned int flags)
+{
+    testDriver *driver = dom->conn->privateData;
+    virDomainObj *vm = NULL;
+    virObjectEvent *event = NULL;
+    virDomainDef *def = NULL;
+    virDomainDef *persistentDef = NULL;
+    g_autoptr(virDomainDef) vmdef = NULL;
+    g_autoptr(virDomainDeviceDef) dev_live = NULL;
+    g_autoptr(virDomainDeviceDef) dev_config = NULL;
+    int ret = -1;
+    unsigned int parse_flags = 0;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE |
+                  VIR_DOMAIN_AFFECT_CONFIG, -1);
+
+    if (!(vm = testDomObjFromDomain(dom)))
+        goto cleanup;
+
+    if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
+        goto cleanup;
+
+    if (virDomainObjUpdateModificationImpact(vm, &flags) < 0)
+        goto endjob;
+
+    if ((flags & VIR_DOMAIN_AFFECT_CONFIG) &&
+        !(flags & VIR_DOMAIN_AFFECT_LIVE)) {
+        parse_flags |= VIR_DOMAIN_DEF_PARSE_INACTIVE;
+    }
+
+    if (virDomainObjGetDefs(vm, flags, &def, &persistentDef) < 0)
+        goto cleanup;
+
+    if (def) {
+        if (!(dev_live = virDomainDeviceDefParse(xml, def, driver->xmlopt,
+                                                 NULL, parse_flags)))
+            goto endjob;
+    }
+
+    if (persistentDef) {
+        if (!(dev_config = virDomainDeviceDefParse(xml, persistentDef,
+                                                   driver->xmlopt, NULL,
+                                                   parse_flags)))
+            goto endjob;
+    }
+
+    if (flags & VIR_DOMAIN_AFFECT_CONFIG) {
+        /* Make a copy for updated domain. */
+        vmdef = virDomainObjCopyPersistentDef(vm, driver->xmlopt, NULL);
+        if (!vmdef)
+            goto endjob;
+
+        /* virDomainDefCompatibleDevice call is delayed until we know the
+         * device we're going to update. */
+        if ((ret = testDomainUpdateDevice(vmdef, dev_config,
+                                          parse_flags,
+                                          driver->xmlopt)) < 0)
+            goto endjob;
+    }
+
+    if (flags & VIR_DOMAIN_AFFECT_LIVE) {
+        /* virDomainDefCompatibleDevice call is delayed until we know the
+         * device we're going to update. */
+        if ((ret = testDomainUpdateDevice(def, dev_live,
+                                          parse_flags,
+                                          driver->xmlopt)) < 0)
+            goto endjob;
+    }
+
+    if (flags & VIR_DOMAIN_AFFECT_CONFIG) {
+        if (!ret) {
+            virDomainObjAssignDef(vm, &vmdef, false, NULL);
+
+            /* Event sending if persistent config has changed */
+            event = virDomainEventLifecycleNewFromObj(vm,
+                                                      VIR_DOMAIN_EVENT_DEFINED,
+                                                      VIR_DOMAIN_EVENT_DEFINED_UPDATED);
+
+            virObjectEventStateQueue(driver->eventState, event);
+        }
+    }
+
+ endjob:
+    virDomainObjEndJob(vm);
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+
+/* search for a hostdev matching dev and detach it */
+static int
+testDomainDetachPrepHostdev(virDomainObj *vm,
+                            virDomainHostdevDef *match,
+                            virDomainHostdevDef **detach)
+{
+    virDomainHostdevSubsys *subsys = &match->source.subsys;
+    virDomainHostdevSubsysPCI *pcisrc = &subsys->u.pci;
+    virDomainHostdevDef *hostdev = NULL;
+
+    if (match->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("hot unplug is not supported for hostdev mode '%1$s'"),
+                       virDomainHostdevModeTypeToString(match->mode));
+        return -1;
+    }
+
+    if (virDomainHostdevFind(vm->def, match, &hostdev) < 0) {
+        if (subsys->type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+            g_autofree char *addrStr = virPCIDeviceAddressAsString(&pcisrc->addr);
+
+            virReportError(VIR_ERR_DEVICE_MISSING,
+                           _("host pci device %1$s not found"),
+                           addrStr);
+        } else {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("unexpected hostdev type %1$d"), subsys->type);
+        }
+        return -1;
+    }
+
+    *detach = hostdev;
+
+    return 0;
+}
+
+
+static int
+testDomainDetachPrepNet(virDomainObj *vm,
+                        virDomainNetDef *match,
+                        virDomainNetDef **detach)
+{
+    int detachidx;
+
+    if ((detachidx = virDomainNetFindIdx(vm->def, match)) < 0)
+        return -1;
+
+    *detach = vm->def->nets[detachidx];
+
+    return 0;
+}
+
+
+static int
+testDomainDetachPrepDisk(virDomainObj *vm,
+                         virDomainDiskDef *match,
+                         virDomainDiskDef **detach)
+{
+    virDomainDiskDef *disk;
+
+    if (!(disk = virDomainDiskByTarget(vm->def, match->dst))) {
+        virReportError(VIR_ERR_DEVICE_MISSING,
+                       _("disk %1$s not found"), match->dst);
+        return -1;
+    }
+
+    switch ((virDomainDiskDevice) disk->device) {
+    case VIR_DOMAIN_DISK_DEVICE_DISK:
+    case VIR_DOMAIN_DISK_DEVICE_LUN:
+
+        switch (disk->bus) {
+        case VIR_DOMAIN_DISK_BUS_VIRTIO:
+        case VIR_DOMAIN_DISK_BUS_USB:
+        case VIR_DOMAIN_DISK_BUS_SCSI:
+            break;
+
+        case VIR_DOMAIN_DISK_BUS_IDE:
+        case VIR_DOMAIN_DISK_BUS_FDC:
+        case VIR_DOMAIN_DISK_BUS_XEN:
+        case VIR_DOMAIN_DISK_BUS_UML:
+        case VIR_DOMAIN_DISK_BUS_SATA:
+        case VIR_DOMAIN_DISK_BUS_SD:
+        case VIR_DOMAIN_DISK_BUS_NVME:
+            virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                           _("This type of disk cannot be hot unplugged"));
+            return -1;
+
+        case VIR_DOMAIN_DISK_BUS_NONE:
+        case VIR_DOMAIN_DISK_BUS_LAST:
+        default:
+            virReportEnumRangeError(virDomainDiskBus, disk->bus);
+            return -1;
+        }
+        break;
+
+    case VIR_DOMAIN_DISK_DEVICE_CDROM:
+        if (disk->bus == VIR_DOMAIN_DISK_BUS_USB ||
+            disk->bus == VIR_DOMAIN_DISK_BUS_SCSI) {
+            break;
+        }
+        G_GNUC_FALLTHROUGH;
+
+    case VIR_DOMAIN_DISK_DEVICE_FLOPPY:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("disk device type '%1$s' cannot be detached"),
+                       virDomainDiskDeviceTypeToString(disk->device));
+        return -1;
+
+    case VIR_DOMAIN_DISK_DEVICE_LAST:
+    default:
+        virReportEnumRangeError(virDomainDiskDevice, disk->device);
+        return -1;
+    }
+
+    *detach = disk;
+    return 0;
+}
+
+
+static int
+testDomainRemoveHostDevice(testDriver *driver G_GNUC_UNUSED,
+                           virDomainObj *vm,
+                           virDomainHostdevDef *hostdev)
+{
+    size_t i;
+
+    VIR_DEBUG("Removing host device %s from domain %p %s",
+              hostdev->info->alias, vm, vm->def->name);
+
+    for (i = 0; i < vm->def->nhostdevs; i++) {
+        if (vm->def->hostdevs[i] == hostdev) {
+            virDomainHostdevRemove(vm->def, i);
+            virDomainHostdevDefFree(hostdev);
+            break;
+        }
+    }
+
+    return 0;
+}
+
+
+static int
+testDomainRemoveNetDevice(testDriver *driver G_GNUC_UNUSED,
+                          virDomainObj *vm,
+                          virDomainNetDef *net)
+{
+    size_t i;
+    int actualType = virDomainNetGetActualType(net);
+
+    switch (actualType) {
+    case VIR_DOMAIN_NET_TYPE_ETHERNET:
+    case VIR_DOMAIN_NET_TYPE_BRIDGE:
+        break;
+
+    case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_NETWORK:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_DIRECT:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
+    case VIR_DOMAIN_NET_TYPE_VDPA:
+    case VIR_DOMAIN_NET_TYPE_NULL:
+    case VIR_DOMAIN_NET_TYPE_VDS:
+    case VIR_DOMAIN_NET_TYPE_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("live detach of interface type %1$s is not implemented yet"),
+                       virDomainNetTypeToString(actualType));
+        return -1;
+    }
+
+    VIR_DEBUG("Removing network interface %s from domain %p %s",
+              net->info.alias, vm, vm->def->name);
+
+    for (i = 0; i < vm->def->nnets; i++) {
+        if (vm->def->nets[i] == net) {
+            virDomainNetRemove(vm->def, i);
+            break;
+        }
+    }
+
+    virDomainNetDefFree(net);
+    return 0;
+}
+
+
+static int
+testDomainRemoveDiskDevice(testDriver *driver G_GNUC_UNUSED,
+                           virDomainObj *vm,
+                           virDomainDiskDef *disk)
+{
+    size_t i;
+
+    VIR_DEBUG("Removing disk %s from domain %p %s",
+              disk->info.alias, vm, vm->def->name);
+
+    for (i = 0; i < vm->def->ndisks; i++) {
+        if (vm->def->disks[i] == disk) {
+            virDomainDiskRemove(vm->def, i);
+            break;
+        }
+    }
+
+    virDomainDiskDefFree(disk);
+    return 0;
+}
+
+static int
+testDomainRemoveDevice(testDriver *driver,
+                       virDomainObj *vm,
+                       virDomainDeviceDef *dev)
+{
+    virDomainDeviceInfo *info = NULL;
+    g_autofree char *alias = NULL;
+
+    /*
+     * save the alias to use when sending a DEVICE_REMOVED event after
+     * all other teardown is complete
+     */
+    if ((info = virDomainDeviceGetInfo(dev))) {
+        alias = g_strdup(info->alias);
+    }
+
+    switch (dev->type) {
+    case VIR_DOMAIN_DEVICE_NET:
+        if (testDomainRemoveNetDevice(driver, vm, dev->data.net) < 0)
+            return -1;
+        break;
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+        if (testDomainRemoveHostDevice(driver, vm, dev->data.hostdev) < 0)
+            return -1;
+        break;
+    case VIR_DOMAIN_DEVICE_DISK:
+        if (testDomainRemoveDiskDevice(driver, vm, dev->data.disk) < 0)
+            return -1;
+        break;
+    case VIR_DOMAIN_DEVICE_NONE:
+    case VIR_DOMAIN_DEVICE_LEASE:
+    case VIR_DOMAIN_DEVICE_FS:
+    case VIR_DOMAIN_DEVICE_INPUT:
+    case VIR_DOMAIN_DEVICE_SOUND:
+    case VIR_DOMAIN_DEVICE_VIDEO:
+    case VIR_DOMAIN_DEVICE_WATCHDOG:
+    case VIR_DOMAIN_DEVICE_CONTROLLER:
+    case VIR_DOMAIN_DEVICE_GRAPHICS:
+    case VIR_DOMAIN_DEVICE_HUB:
+    case VIR_DOMAIN_DEVICE_REDIRDEV:
+    case VIR_DOMAIN_DEVICE_SMARTCARD:
+    case VIR_DOMAIN_DEVICE_CHR:
+    case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_NVRAM:
+    case VIR_DOMAIN_DEVICE_RNG:
+    case VIR_DOMAIN_DEVICE_SHMEM:
+    case VIR_DOMAIN_DEVICE_TPM:
+    case VIR_DOMAIN_DEVICE_PANIC:
+    case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_IOMMU:
+    case VIR_DOMAIN_DEVICE_VSOCK:
+    case VIR_DOMAIN_DEVICE_AUDIO:
+    case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
+    case VIR_DOMAIN_DEVICE_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("live detach of device '%1$s' is not supported"),
+                       virDomainDeviceTypeToString(dev->type));
+        return -1;
+    }
+
+    if (alias) {
+        virObjectEvent *event;
+        event = virDomainEventDeviceRemovedNewFromObj(vm, alias);
+        virObjectEventStateQueue(driver->eventState, event);
+    }
+
+    return 0;
+}
+
+
+static int
+testDomainDetachDeviceLive(testDriver *driver,
+                           virDomainObj *vm,
+                           virDomainDeviceDef *match)
+{
+    virDomainDeviceDef detach = { .type = match->type };
+    virDomainDeviceInfo *info = NULL;
+
+    switch (match->type) {
+    case VIR_DOMAIN_DEVICE_NET:
+        if (testDomainDetachPrepNet(vm, match->data.net,
+                                    &detach.data.net) < 0) {
+            return -1;
+        }
+        break;
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+        if (testDomainDetachPrepHostdev(vm, match->data.hostdev,
+                                        &detach.data.hostdev) < 0) {
+            return -1;
+        }
+        break;
+
+    case VIR_DOMAIN_DEVICE_DISK:
+        if (testDomainDetachPrepDisk(vm, match->data.disk,
+                                     &detach.data.disk) < 0) {
+            return -1;
+        }
+        break;
+
+    case VIR_DOMAIN_DEVICE_NONE:
+    case VIR_DOMAIN_DEVICE_LEASE:
+    case VIR_DOMAIN_DEVICE_FS:
+    case VIR_DOMAIN_DEVICE_INPUT:
+    case VIR_DOMAIN_DEVICE_SOUND:
+    case VIR_DOMAIN_DEVICE_VIDEO:
+    case VIR_DOMAIN_DEVICE_WATCHDOG:
+    case VIR_DOMAIN_DEVICE_CONTROLLER:
+    case VIR_DOMAIN_DEVICE_GRAPHICS:
+    case VIR_DOMAIN_DEVICE_HUB:
+    case VIR_DOMAIN_DEVICE_REDIRDEV:
+    case VIR_DOMAIN_DEVICE_SMARTCARD:
+    case VIR_DOMAIN_DEVICE_CHR:
+    case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_NVRAM:
+    case VIR_DOMAIN_DEVICE_RNG:
+    case VIR_DOMAIN_DEVICE_SHMEM:
+    case VIR_DOMAIN_DEVICE_TPM:
+    case VIR_DOMAIN_DEVICE_PANIC:
+    case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_IOMMU:
+    case VIR_DOMAIN_DEVICE_VSOCK:
+    case VIR_DOMAIN_DEVICE_AUDIO:
+    case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
+    case VIR_DOMAIN_DEVICE_LAST:
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED,
+                       _("live detach of device '%1$s' is not supported"),
+                       virDomainDeviceTypeToString(match->type));
+        return -1;
+    }
+
+    /* "detach" now points to the actual device we want to detach */
+
+    if (!(info = virDomainDeviceGetInfo(&detach))) {
+        /*
+         * This should never happen, since all of the device types in
+         * the switch cases that end with a "break" instead of a
+         * return have a virDeviceInfo in them.
+         */
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("device of type '%1$s' has no device info"),
+                       virDomainDeviceTypeToString(detach.type));
+        return -1;
+    }
+
+    /* Make generic validation checks common to all device types */
+
+    if (!info->alias) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Cannot detach %1$s device with no alias"),
+                       virDomainDeviceTypeToString(detach.type));
+        return -1;
+    }
+
+    return testDomainRemoveDevice(driver, vm, &detach);
+}
+
+
+static int
+testDomainDetachDeviceAliasLiveAndConfig(testDriver *driver,
+                                         virDomainObj *vm,
+                                         const char *alias,
+                                         unsigned int flags)
+{
+    virDomainDef *def = NULL;
+
+    virCheckFlags(VIR_DOMAIN_AFFECT_LIVE, -1);
+
+    if (virDomainObjGetDefs(vm, flags, &def, NULL) < 0)
+        return -1;
+
+    if (def) {
+        virDomainDeviceDef dev;
+
+        if (virDomainDefFindDevice(def, alias, &dev, true) < 0)
+            return -1;
+
+        if (testDomainDetachDeviceLive(driver, vm, &dev) < 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+
+static int
+testDomainDetachDeviceAlias(virDomainPtr dom,
+                            const char *alias,
+                            unsigned int flags)
+{
+    testDriver *driver = dom->conn->privateData;
+    virDomainObj *vm = NULL;
+    int ret = -1;
+
+    if (!(vm = testDomObjFromDomain(dom)))
+        return -1;
+
+    if (virDomainObjUpdateModificationImpact(vm, &flags) < 0)
+        goto cleanup;
+
+    if (testDomainDetachDeviceAliasLiveAndConfig(driver, vm, alias, flags) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    virDomainObjEndAPI(&vm);
+    return ret;
+}
+
+
 /*
  * Test driver
  */
@@ -9970,6 +11189,10 @@ static virHypervisorDriver testHypervisorDriver = {
     .connectListDomains = testConnectListDomains, /* 0.1.1 */
     .connectNumOfDomains = testConnectNumOfDomains, /* 0.1.1 */
     .connectListAllDomains = testConnectListAllDomains, /* 0.9.13 */
+    .domainAttachDevice = testDomainAttachDevice, /* 10.0.0 */
+    .domainAttachDeviceFlags = testDomainAttachDeviceFlags, /* 10.0.0 */
+    .domainDetachDeviceAlias = testDomainDetachDeviceAlias, /* 10.0.0 */
+    .domainUpdateDeviceFlags = testDomainUpdateDeviceFlags, /* 10.6.0 */
     .domainCreateXML = testDomainCreateXML, /* 0.1.4 */
     .domainCreateXMLWithFiles = testDomainCreateXMLWithFiles, /* 5.7.0 */
     .domainLookupByID = testDomainLookupByID, /* 0.1.1 */
@@ -10115,6 +11338,7 @@ static virHypervisorDriver testHypervisorDriver = {
     .domainCheckpointGetParent = testDomainCheckpointGetParent, /* 5.6.0 */
     .domainCheckpointDelete = testDomainCheckpointDelete, /* 5.6.0 */
     .domainGetMessages = testDomainGetMessages, /* 7.6.0 */
+    .connectGetDomainCapabilities = testConnectGetDomainCapabilities, /* 9.8.0 */
 };
 
 static virNetworkDriver testNetworkDriver = {
@@ -10141,6 +11365,8 @@ static virNetworkDriver testNetworkDriver = {
     .networkSetAutostart = testNetworkSetAutostart, /* 0.3.2 */
     .networkIsActive = testNetworkIsActive, /* 0.7.3 */
     .networkIsPersistent = testNetworkIsPersistent, /* 0.7.3 */
+    .networkSetMetadata = testNetworkSetMetadata, /* 9.7.0 */
+    .networkGetMetadata = testNetworkGetMetadata, /* 9.7.0 */
 };
 
 static virInterfaceDriver testInterfaceDriver = {
@@ -10217,6 +11443,8 @@ static virNodeDeviceDriver testNodeDeviceDriver = {
     .nodeDeviceListCaps = testNodeDeviceListCaps, /* 0.7.2 */
     .nodeDeviceCreateXML = testNodeDeviceCreateXML, /* 0.7.3 */
     .nodeDeviceDestroy = testNodeDeviceDestroy, /* 0.7.3 */
+    .nodeDeviceIsActive = testNodeDeviceIsActive, /* 10.3.0 */
+    .nodeDeviceIsPersistent = testNodeDeviceIsPersistent, /* 10.3.0 */
 };
 
 static virConnectDriver testConnectDriver = {

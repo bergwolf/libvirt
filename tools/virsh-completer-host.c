@@ -178,8 +178,8 @@ virshNodeSuspendTargetCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_NODE_SUSPEND_TARGET_LAST,
-                             virshNodeSuspendTargetTypeToString);
+    return vshEnumComplete(VIR_NODE_SUSPEND_TARGET_LAST,
+                           virshNodeSuspendTargetTypeToString);
 }
 
 
@@ -190,8 +190,8 @@ virshDomainVirtTypeCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_VIRT_LAST,
-                             virDomainVirtTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_VIRT_LAST,
+                           virDomainVirtTypeToString);
 }
 
 
@@ -202,8 +202,8 @@ virshArchCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_ARCH_LAST,
-                             (const char *(*)(int))virArchToString);
+    return vshEnumComplete(VIR_ARCH_LAST,
+                           (const char *(*)(int))virArchToString);
 }
 
 
@@ -227,10 +227,10 @@ virshCPUModelCompleter(vshControl *ctl,
 
     virCheckFlags(0, NULL);
 
-    if (vshCommandOptStringReq(ctl, cmd, "virttype", &virttype) < 0 ||
-        vshCommandOptStringReq(ctl, cmd, "emulator", &emulator) < 0 ||
-        vshCommandOptStringReq(ctl, cmd, "arch", &arch) < 0 ||
-        vshCommandOptStringReq(ctl, cmd, "machine", &machine) < 0)
+    if (vshCommandOptString(ctl, cmd, "virttype", &virttype) < 0 ||
+        vshCommandOptString(ctl, cmd, "emulator", &emulator) < 0 ||
+        vshCommandOptString(ctl, cmd, "arch", &arch) < 0 ||
+        vshCommandOptString(ctl, cmd, "machine", &machine) < 0)
         return NULL;
 
     if (!priv->conn || virConnectIsAlive(priv->conn) <= 0)

@@ -4,8 +4,7 @@
 }
 
 {
-  "return": {
-  },
+  "return": {},
   "id": "libvirt-1"
 }
 
@@ -1692,8 +1691,7 @@
     },
     {
       "name": "0",
-      "members": [
-      ],
+      "members": [],
       "meta-type": "object"
     },
     {
@@ -20731,8 +20729,7 @@
     },
     {
       "name": "685",
-      "members": [
-      ],
+      "members": [],
       "meta-type": "object"
     },
     {
@@ -21230,667 +21227,8 @@
 }
 
 {
-  "execute": "query-commands",
-  "id": "libvirt-5"
-}
-
-{
-  "return": [
-    {
-      "name": "device_add"
-    },
-    {
-      "name": "x-query-virtio-queue-element"
-    },
-    {
-      "name": "x-query-virtio-vhost-queue-status"
-    },
-    {
-      "name": "x-query-virtio-queue-status"
-    },
-    {
-      "name": "x-query-virtio-status"
-    },
-    {
-      "name": "x-query-virtio"
-    },
-    {
-      "name": "query-stats-schemas"
-    },
-    {
-      "name": "query-stats"
-    },
-    {
-      "name": "query-pci"
-    },
-    {
-      "name": "query-acpi-ospm-status"
-    },
-    {
-      "name": "query-sgx-capabilities"
-    },
-    {
-      "name": "query-sgx"
-    },
-    {
-      "name": "query-sev-attestation-report"
-    },
-    {
-      "name": "sev-inject-launch-secret"
-    },
-    {
-      "name": "query-sev-capabilities"
-    },
-    {
-      "name": "query-sev-launch-measure"
-    },
-    {
-      "name": "query-sev"
-    },
-    {
-      "name": "rtc-reset-reinjection"
-    },
-    {
-      "name": "query-command-line-options"
-    },
-    {
-      "name": "query-fdsets"
-    },
-    {
-      "name": "remove-fd"
-    },
-    {
-      "name": "add-fd"
-    },
-    {
-      "name": "closefd"
-    },
-    {
-      "name": "getfd"
-    },
-    {
-      "name": "human-monitor-command"
-    },
-    {
-      "name": "x-exit-preconfig"
-    },
-    {
-      "name": "cont"
-    },
-    {
-      "name": "stop"
-    },
-    {
-      "name": "query-iothreads"
-    },
-    {
-      "name": "query-name"
-    },
-    {
-      "name": "add_client"
-    },
-    {
-      "name": "query-yank"
-    },
-    {
-      "name": "yank"
-    },
-    {
-      "name": "replay-seek"
-    },
-    {
-      "name": "replay-delete-break"
-    },
-    {
-      "name": "replay-break"
-    },
-    {
-      "name": "query-replay"
-    },
-    {
-      "name": "query-cpu-definitions"
-    },
-    {
-      "name": "query-cpu-model-expansion"
-    },
-    {
-      "name": "dumpdtb"
-    },
-    {
-      "name": "x-query-usb"
-    },
-    {
-      "name": "x-query-roms"
-    },
-    {
-      "name": "x-query-rdma"
-    },
-    {
-      "name": "x-query-ramblock"
-    },
-    {
-      "name": "x-query-profile"
-    },
-    {
-      "name": "x-query-opcount"
-    },
-    {
-      "name": "x-query-numa"
-    },
-    {
-      "name": "x-query-jit"
-    },
-    {
-      "name": "x-query-irq"
-    },
-    {
-      "name": "query-memory-devices"
-    },
-    {
-      "name": "query-memory-size-summary"
-    },
-    {
-      "name": "query-balloon"
-    },
-    {
-      "name": "balloon"
-    },
-    {
-      "name": "set-numa-node"
-    },
-    {
-      "name": "query-hotpluggable-cpus"
-    },
-    {
-      "name": "query-memdev"
-    },
-    {
-      "name": "pmemsave"
-    },
-    {
-      "name": "memsave"
-    },
-    {
-      "name": "query-kvm"
-    },
-    {
-      "name": "inject-nmi"
-    },
-    {
-      "name": "system_wakeup"
-    },
-    {
-      "name": "system_powerdown"
-    },
-    {
-      "name": "system_reset"
-    },
-    {
-      "name": "query-vm-generation-id"
-    },
-    {
-      "name": "query-uuid"
-    },
-    {
-      "name": "query-target"
-    },
-    {
-      "name": "query-current-machine"
-    },
-    {
-      "name": "query-machines"
-    },
-    {
-      "name": "query-cpus-fast"
-    },
-    {
-      "name": "device_del"
-    },
-    {
-      "name": "device-list-properties"
-    },
-    {
-      "name": "object-del"
-    },
-    {
-      "name": "object-add"
-    },
-    {
-      "name": "qom-list-properties"
-    },
-    {
-      "name": "qom-list-types"
-    },
-    {
-      "name": "qom-set"
-    },
-    {
-      "name": "qom-get"
-    },
-    {
-      "name": "qom-list"
-    },
-    {
-      "name": "query-qmp-schema"
-    },
-    {
-      "name": "quit"
-    },
-    {
-      "name": "query-commands"
-    },
-    {
-      "name": "query-version"
-    },
-    {
-      "name": "qmp_capabilities"
-    },
-    {
-      "name": "trace-event-set-state"
-    },
-    {
-      "name": "trace-event-get-state"
-    },
-    {
-      "name": "transaction"
-    },
-    {
-      "name": "snapshot-delete"
-    },
-    {
-      "name": "snapshot-load"
-    },
-    {
-      "name": "snapshot-save"
-    },
-    {
-      "name": "query-vcpu-dirty-limit"
-    },
-    {
-      "name": "cancel-vcpu-dirty-limit"
-    },
-    {
-      "name": "set-vcpu-dirty-limit"
-    },
-    {
-      "name": "query-dirty-rate"
-    },
-    {
-      "name": "calc-dirty-rate"
-    },
-    {
-      "name": "migrate-pause"
-    },
-    {
-      "name": "migrate-recover"
-    },
-    {
-      "name": "query-colo-status"
-    },
-    {
-      "name": "xen-colo-do-checkpoint"
-    },
-    {
-      "name": "query-xen-replication-status"
-    },
-    {
-      "name": "xen-set-replication"
-    },
-    {
-      "name": "xen-load-devices-state"
-    },
-    {
-      "name": "xen-set-global-dirty-log"
-    },
-    {
-      "name": "xen-save-devices-state"
-    },
-    {
-      "name": "migrate-incoming"
-    },
-    {
-      "name": "migrate"
-    },
-    {
-      "name": "migrate-continue"
-    },
-    {
-      "name": "migrate_cancel"
-    },
-    {
-      "name": "x-colo-lost-heartbeat"
-    },
-    {
-      "name": "migrate-start-postcopy"
-    },
-    {
-      "name": "client_migrate_info"
-    },
-    {
-      "name": "query-migrate-parameters"
-    },
-    {
-      "name": "migrate-set-parameters"
-    },
-    {
-      "name": "query-migrate-capabilities"
-    },
-    {
-      "name": "migrate-set-capabilities"
-    },
-    {
-      "name": "query-migrate"
-    },
-    {
-      "name": "display-update"
-    },
-    {
-      "name": "display-reload"
-    },
-    {
-      "name": "query-display-options"
-    },
-    {
-      "name": "input-send-event"
-    },
-    {
-      "name": "send-key"
-    },
-    {
-      "name": "query-mice"
-    },
-    {
-      "name": "change-vnc-password"
-    },
-    {
-      "name": "query-vnc-servers"
-    },
-    {
-      "name": "query-vnc"
-    },
-    {
-      "name": "query-spice"
-    },
-    {
-      "name": "screendump"
-    },
-    {
-      "name": "expire_password"
-    },
-    {
-      "name": "set_password"
-    },
-    {
-      "name": "query-tpm"
-    },
-    {
-      "name": "query-tpm-types"
-    },
-    {
-      "name": "query-tpm-models"
-    },
-    {
-      "name": "query-rocker-of-dpa-groups"
-    },
-    {
-      "name": "query-rocker-of-dpa-flows"
-    },
-    {
-      "name": "query-rocker-ports"
-    },
-    {
-      "name": "query-rocker"
-    },
-    {
-      "name": "announce-self"
-    },
-    {
-      "name": "query-rx-filter"
-    },
-    {
-      "name": "netdev_del"
-    },
-    {
-      "name": "netdev_add"
-    },
-    {
-      "name": "set_link"
-    },
-    {
-      "name": "query-dump-guest-memory-capability"
-    },
-    {
-      "name": "query-dump"
-    },
-    {
-      "name": "dump-guest-memory"
-    },
-    {
-      "name": "chardev-send-break"
-    },
-    {
-      "name": "chardev-remove"
-    },
-    {
-      "name": "chardev-change"
-    },
-    {
-      "name": "chardev-add"
-    },
-    {
-      "name": "ringbuf-read"
-    },
-    {
-      "name": "ringbuf-write"
-    },
-    {
-      "name": "query-chardev-backends"
-    },
-    {
-      "name": "query-chardev"
-    },
-    {
-      "name": "query-block-exports"
-    },
-    {
-      "name": "block-export-del"
-    },
-    {
-      "name": "block-export-add"
-    },
-    {
-      "name": "nbd-server-stop"
-    },
-    {
-      "name": "nbd-server-remove"
-    },
-    {
-      "name": "nbd-server-add"
-    },
-    {
-      "name": "nbd-server-start"
-    },
-    {
-      "name": "query-jobs"
-    },
-    {
-      "name": "job-finalize"
-    },
-    {
-      "name": "job-dismiss"
-    },
-    {
-      "name": "job-complete"
-    },
-    {
-      "name": "job-cancel"
-    },
-    {
-      "name": "job-resume"
-    },
-    {
-      "name": "job-pause"
-    },
-    {
-      "name": "blockdev-snapshot-delete-internal-sync"
-    },
-    {
-      "name": "blockdev-snapshot-internal-sync"
-    },
-    {
-      "name": "x-blockdev-set-iothread"
-    },
-    {
-      "name": "x-blockdev-change"
-    },
-    {
-      "name": "block-set-write-threshold"
-    },
-    {
-      "name": "x-blockdev-amend"
-    },
-    {
-      "name": "blockdev-create"
-    },
-    {
-      "name": "blockdev-del"
-    },
-    {
-      "name": "blockdev-reopen"
-    },
-    {
-      "name": "blockdev-add"
-    },
-    {
-      "name": "block-job-finalize"
-    },
-    {
-      "name": "block-job-dismiss"
-    },
-    {
-      "name": "block-job-complete"
-    },
-    {
-      "name": "block-job-resume"
-    },
-    {
-      "name": "block-job-pause"
-    },
-    {
-      "name": "block-job-cancel"
-    },
-    {
-      "name": "block-job-set-speed"
-    },
-    {
-      "name": "block-stream"
-    },
-    {
-      "name": "blockdev-mirror"
-    },
-    {
-      "name": "x-debug-block-dirty-bitmap-sha256"
-    },
-    {
-      "name": "block-dirty-bitmap-merge"
-    },
-    {
-      "name": "block-dirty-bitmap-disable"
-    },
-    {
-      "name": "block-dirty-bitmap-enable"
-    },
-    {
-      "name": "block-dirty-bitmap-clear"
-    },
-    {
-      "name": "block-dirty-bitmap-remove"
-    },
-    {
-      "name": "block-dirty-bitmap-add"
-    },
-    {
-      "name": "drive-mirror"
-    },
-    {
-      "name": "x-debug-query-block-graph"
-    },
-    {
-      "name": "query-named-block-nodes"
-    },
-    {
-      "name": "blockdev-backup"
-    },
-    {
-      "name": "drive-backup"
-    },
-    {
-      "name": "block-commit"
-    },
-    {
-      "name": "change-backing-file"
-    },
-    {
-      "name": "blockdev-snapshot"
-    },
-    {
-      "name": "blockdev-snapshot-sync"
-    },
-    {
-      "name": "block_resize"
-    },
-    {
-      "name": "query-block-jobs"
-    },
-    {
-      "name": "query-blockstats"
-    },
-    {
-      "name": "query-block"
-    },
-    {
-      "name": "block-latency-histogram-set"
-    },
-    {
-      "name": "block_set_io_throttle"
-    },
-    {
-      "name": "blockdev-change-medium"
-    },
-    {
-      "name": "blockdev-insert-medium"
-    },
-    {
-      "name": "blockdev-remove-medium"
-    },
-    {
-      "name": "blockdev-close-tray"
-    },
-    {
-      "name": "blockdev-open-tray"
-    },
-    {
-      "name": "eject"
-    },
-    {
-      "name": "query-pr-managers"
-    },
-    {
-      "name": "set-action"
-    },
-    {
-      "name": "watchdog-set-action"
-    },
-    {
-      "name": "query-status"
-    }
-  ],
-  "id": "libvirt-5"
-}
-
-{
   "execute": "query-kvm",
-  "id": "libvirt-6"
+  "id": "libvirt-5"
 }
 
 {
@@ -21898,12 +21236,12 @@
     "enabled": true,
     "present": true
   },
-  "id": "libvirt-6"
+  "id": "libvirt-5"
 }
 
 {
   "execute": "qom-list-types",
-  "id": "libvirt-7"
+  "id": "libvirt-6"
 }
 
 {
@@ -24373,7 +23711,7 @@
       "parent": "x86_64-cpu"
     }
   ],
-  "id": "libvirt-7"
+  "id": "libvirt-6"
 }
 
 {
@@ -24381,7 +23719,7 @@
   "arguments": {
     "typename": "virtio-blk-pci"
   },
-  "id": "libvirt-8"
+  "id": "libvirt-7"
 }
 
 {
@@ -24779,7 +24117,7 @@
       "type": "str"
     }
   ],
-  "id": "libvirt-8"
+  "id": "libvirt-7"
 }
 
 {
@@ -24787,7 +24125,7 @@
   "arguments": {
     "typename": "virtio-net-pci"
   },
-  "id": "libvirt-9"
+  "id": "libvirt-8"
 }
 
 {
@@ -25211,7 +24549,7 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-9"
+  "id": "libvirt-8"
 }
 
 {
@@ -25219,7 +24557,7 @@
   "arguments": {
     "typename": "virtio-scsi-pci"
   },
-  "id": "libvirt-10"
+  "id": "libvirt-9"
 }
 
 {
@@ -25473,7 +24811,7 @@
       "type": "child<virtio-scsi-device>"
     }
   ],
-  "id": "libvirt-10"
+  "id": "libvirt-9"
 }
 
 {
@@ -25481,11 +24819,11 @@
   "arguments": {
     "typename": "virtio-net-ccw"
   },
-  "id": "libvirt-11"
+  "id": "libvirt-10"
 }
 
 {
-  "id": "libvirt-11",
+  "id": "libvirt-10",
   "error": {
     "class": "DeviceNotFound",
     "desc": "Device 'virtio-net-ccw' not found"
@@ -25497,11 +24835,11 @@
   "arguments": {
     "typename": "virtio-scsi-ccw"
   },
-  "id": "libvirt-12"
+  "id": "libvirt-11"
 }
 
 {
-  "id": "libvirt-12",
+  "id": "libvirt-11",
   "error": {
     "class": "DeviceNotFound",
     "desc": "Device 'virtio-scsi-ccw' not found"
@@ -25513,7 +24851,7 @@
   "arguments": {
     "typename": "vfio-pci"
   },
-  "id": "libvirt-13"
+  "id": "libvirt-12"
 }
 
 {
@@ -25705,7 +25043,7 @@
       "type": "int32"
     }
   ],
-  "id": "libvirt-13"
+  "id": "libvirt-12"
 }
 
 {
@@ -25713,7 +25051,7 @@
   "arguments": {
     "typename": "scsi-hd"
   },
-  "id": "libvirt-14"
+  "id": "libvirt-13"
 }
 
 {
@@ -25914,7 +25252,7 @@
       "type": "int32"
     }
   ],
-  "id": "libvirt-14"
+  "id": "libvirt-13"
 }
 
 {
@@ -25922,7 +25260,7 @@
   "arguments": {
     "typename": "ide-hd"
   },
-  "id": "libvirt-15"
+  "id": "libvirt-14"
 }
 
 {
@@ -26068,7 +25406,7 @@
       "type": "int32"
     }
   ],
-  "id": "libvirt-15"
+  "id": "libvirt-14"
 }
 
 {
@@ -26076,7 +25414,7 @@
   "arguments": {
     "typename": "PIIX4_PM"
   },
-  "id": "libvirt-16"
+  "id": "libvirt-15"
 }
 
 {
@@ -26187,7 +25525,7 @@
       "type": "link<irq>"
     }
   ],
-  "id": "libvirt-16"
+  "id": "libvirt-15"
 }
 
 {
@@ -26195,7 +25533,7 @@
   "arguments": {
     "typename": "usb-redir"
   },
-  "id": "libvirt-17"
+  "id": "libvirt-16"
 }
 
 {
@@ -26251,7 +25589,7 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-17"
+  "id": "libvirt-16"
 }
 
 {
@@ -26259,7 +25597,7 @@
   "arguments": {
     "typename": "usb-storage"
   },
-  "id": "libvirt-18"
+  "id": "libvirt-17"
 }
 
 {
@@ -26374,7 +25712,7 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-18"
+  "id": "libvirt-17"
 }
 
 {
@@ -26382,7 +25720,7 @@
   "arguments": {
     "typename": "kvm-pit"
   },
-  "id": "libvirt-19"
+  "id": "libvirt-18"
 }
 
 {
@@ -26398,7 +25736,7 @@
       "type": "uint32"
     }
   ],
-  "id": "libvirt-19"
+  "id": "libvirt-18"
 }
 
 {
@@ -26406,7 +25744,7 @@
   "arguments": {
     "typename": "VGA"
   },
-  "id": "libvirt-20"
+  "id": "libvirt-19"
 }
 
 {
@@ -26516,7 +25854,7 @@
       "type": "uint32"
     }
   ],
-  "id": "libvirt-20"
+  "id": "libvirt-19"
 }
 
 {
@@ -26524,7 +25862,7 @@
   "arguments": {
     "typename": "vmware-svga"
   },
-  "id": "libvirt-21"
+  "id": "libvirt-20"
 }
 
 {
@@ -26587,7 +25925,7 @@
       "type": "uint32"
     }
   ],
-  "id": "libvirt-21"
+  "id": "libvirt-20"
 }
 
 {
@@ -26595,7 +25933,7 @@
   "arguments": {
     "typename": "qxl"
   },
-  "id": "libvirt-22"
+  "id": "libvirt-21"
 }
 
 {
@@ -26723,7 +26061,7 @@
       "type": "int32"
     }
   ],
-  "id": "libvirt-22"
+  "id": "libvirt-21"
 }
 
 {
@@ -26731,7 +26069,7 @@
   "arguments": {
     "typename": "virtio-gpu-pci"
   },
-  "id": "libvirt-23"
+  "id": "libvirt-22"
 }
 
 {
@@ -26976,7 +26314,7 @@
       "type": "child<virtio-gpu-device>"
     }
   ],
-  "id": "libvirt-23"
+  "id": "libvirt-22"
 }
 
 {
@@ -26984,7 +26322,7 @@
   "arguments": {
     "typename": "virtio-gpu-device"
   },
-  "id": "libvirt-24"
+  "id": "libvirt-23"
 }
 
 {
@@ -27079,7 +26417,7 @@
       "type": "size"
     }
   ],
-  "id": "libvirt-24"
+  "id": "libvirt-23"
 }
 
 {
@@ -27087,7 +26425,7 @@
   "arguments": {
     "typename": "ICH9-LPC"
   },
-  "id": "libvirt-25"
+  "id": "libvirt-24"
 }
 
 {
@@ -27228,7 +26566,7 @@
       "type": "uint32"
     }
   ],
-  "id": "libvirt-25"
+  "id": "libvirt-24"
 }
 
 {
@@ -27236,7 +26574,7 @@
   "arguments": {
     "typename": "virtio-balloon-pci"
   },
-  "id": "libvirt-26"
+  "id": "libvirt-25"
 }
 
 {
@@ -27479,7 +26817,7 @@
       "type": "child<virtio-balloon-device>"
     }
   ],
-  "id": "libvirt-26"
+  "id": "libvirt-25"
 }
 
 {
@@ -27487,11 +26825,11 @@
   "arguments": {
     "typename": "virtio-balloon-ccw"
   },
-  "id": "libvirt-27"
+  "id": "libvirt-26"
 }
 
 {
-  "id": "libvirt-27",
+  "id": "libvirt-26",
   "error": {
     "class": "DeviceNotFound",
     "desc": "Device 'virtio-balloon-ccw' not found"
@@ -27503,7 +26841,7 @@
   "arguments": {
     "typename": "virtio-balloon-device"
   },
-  "id": "libvirt-28"
+  "id": "libvirt-27"
 }
 
 {
@@ -27607,7 +26945,7 @@
       "type": "guest statistics"
     }
   ],
-  "id": "libvirt-28"
+  "id": "libvirt-27"
 }
 
 {
@@ -27615,7 +26953,7 @@
   "arguments": {
     "typename": "intel-iommu"
   },
-  "id": "libvirt-29"
+  "id": "libvirt-28"
 }
 
 {
@@ -27688,7 +27026,7 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-29"
+  "id": "libvirt-28"
 }
 
 {
@@ -27696,7 +27034,7 @@
   "arguments": {
     "typename": "mch"
   },
-  "id": "libvirt-30"
+  "id": "libvirt-29"
 }
 
 {
@@ -27759,7 +27097,7 @@
       "type": "uint16"
     }
   ],
-  "id": "libvirt-30"
+  "id": "libvirt-29"
 }
 
 {
@@ -27767,7 +27105,7 @@
   "arguments": {
     "typename": "nvdimm"
   },
-  "id": "libvirt-31"
+  "id": "libvirt-30"
 }
 
 {
@@ -27809,7 +27147,7 @@
       "type": "uint64"
     }
   ],
-  "id": "libvirt-31"
+  "id": "libvirt-30"
 }
 
 {
@@ -27817,7 +27155,7 @@
   "arguments": {
     "typename": "pcie-root-port"
   },
-  "id": "libvirt-32"
+  "id": "libvirt-31"
 }
 
 {
@@ -27953,7 +27291,7 @@
       "type": "size"
     }
   ],
-  "id": "libvirt-32"
+  "id": "libvirt-31"
 }
 
 {
@@ -27961,7 +27299,7 @@
   "arguments": {
     "typename": "usb-host"
   },
-  "id": "libvirt-33"
+  "id": "libvirt-32"
 }
 
 {
@@ -28057,7 +27395,7 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-33"
+  "id": "libvirt-32"
 }
 
 {
@@ -28065,7 +27403,7 @@
   "arguments": {
     "typename": "vhost-user-fs-device"
   },
-  "id": "libvirt-34"
+  "id": "libvirt-33"
 }
 
 {
@@ -28151,7 +27489,7 @@
       "type": "int32"
     }
   ],
-  "id": "libvirt-34"
+  "id": "libvirt-33"
 }
 
 {
@@ -28159,7 +27497,7 @@
   "arguments": {
     "typename": "virtio-mem-pci"
   },
-  "id": "libvirt-35"
+  "id": "libvirt-34"
 }
 
 {
@@ -28398,7 +27736,7 @@
       "type": "child<virtio-mem>"
     }
   ],
-  "id": "libvirt-35"
+  "id": "libvirt-34"
 }
 
 {
@@ -28406,7 +27744,7 @@
   "arguments": {
     "typename": "virtio-iommu-pci"
   },
-  "id": "libvirt-36"
+  "id": "libvirt-35"
 }
 
 {
@@ -28627,7 +27965,77 @@
       "type": "link<PCI>"
     }
   ],
+  "id": "libvirt-35"
+}
+
+{
+  "execute": "device-list-properties",
+  "arguments": {
+    "typename": "amd-iommu"
+  },
   "id": "libvirt-36"
+}
+
+{
+  "return": [
+    {
+      "default-value": true,
+      "name": "pt",
+      "description": "on/off",
+      "type": "bool"
+    },
+    {
+      "default-value": false,
+      "name": "device-iotlb",
+      "description": "on/off",
+      "type": "bool"
+    },
+    {
+      "default-value": "auto",
+      "name": "intremap",
+      "description": "on/off/auto",
+      "type": "OnOffAuto"
+    },
+    {
+      "default-value": false,
+      "name": "xtsup",
+      "description": "on/off",
+      "type": "bool"
+    }
+  ],
+  "id": "libvirt-36"
+}
+
+{
+  "execute": "device-list-properties",
+  "arguments": {
+    "typename": "scsi-block"
+  },
+  "id": "libvirt-37"
+}
+
+{
+  "error": {
+    "class": "DeviceNotFound",
+    "desc": "The libvirt device dump was not collected for this version+device tuple"
+  },
+  "id": "libvirt-37"
+}
+
+{
+  "execute": "device-list-properties",
+  "arguments": {
+    "typename": "scsi-generic"
+  },
+  "id": "libvirt-38"
+}
+
+{
+  "error": {
+    "class": "DeviceNotFound",
+    "desc": "The libvirt device dump was not collected for this version+device tuple"
+  },
+  "id": "libvirt-38"
 }
 
 {
@@ -28635,7 +28043,7 @@
   "arguments": {
     "typename": "memory-backend-file"
   },
-  "id": "libvirt-37"
+  "id": "libvirt-39"
 }
 
 {
@@ -28719,7 +28127,7 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-37"
+  "id": "libvirt-39"
 }
 
 {
@@ -28727,7 +28135,7 @@
   "arguments": {
     "typename": "memory-backend-memfd"
   },
-  "id": "libvirt-38"
+  "id": "libvirt-40"
 }
 
 {
@@ -28806,7 +28214,7 @@
       "type": "int"
     }
   ],
-  "id": "libvirt-38"
+  "id": "libvirt-40"
 }
 
 {
@@ -28814,7 +28222,7 @@
   "arguments": {
     "typename": "max-x86_64-cpu"
   },
-  "id": "libvirt-39"
+  "id": "libvirt-41"
 }
 
 {
@@ -30607,12 +30015,12 @@
       "type": "bool"
     }
   ],
-  "id": "libvirt-39"
+  "id": "libvirt-41"
 }
 
 {
   "execute": "query-machines",
-  "id": "libvirt-40"
+  "id": "libvirt-42"
 }
 
 {
@@ -31149,7 +30557,7 @@
       "default-ram-id": "pc.ram"
     }
   ],
-  "id": "libvirt-40"
+  "id": "libvirt-42"
 }
 
 {
@@ -31157,7 +30565,7 @@
   "arguments": {
     "typename": "none-machine"
   },
-  "id": "libvirt-41"
+  "id": "libvirt-43"
 }
 
 {
@@ -31270,12 +30678,212 @@
       "type": "child<container>"
     }
   ],
-  "id": "libvirt-41"
+  "id": "libvirt-43"
+}
+
+{
+  "execute": "qom-list-properties",
+  "arguments": {
+    "typename": "generic-pc-machine"
+  },
+  "id": "libvirt-44"
+}
+
+{
+  "return": [
+    {
+      "name": "type",
+      "type": "string"
+    },
+    {
+      "name": "kernel",
+      "description": "Linux kernel image file",
+      "type": "string"
+    },
+    {
+      "name": "dt-compatible",
+      "description": "Overrides the \"compatible\" property of the dt root node",
+      "type": "string"
+    },
+    {
+      "name": "boot",
+      "description": "Boot configuration",
+      "type": "BootConfiguration"
+    },
+    {
+      "name": "memory",
+      "description": "Memory size configuration",
+      "type": "MemorySizeConfiguration"
+    },
+    {
+      "name": "initrd",
+      "description": "Linux initial ramdisk file",
+      "type": "string"
+    },
+    {
+      "name": "confidential-guest-support",
+      "description": "Set confidential guest scheme to support",
+      "type": "link<confidential-guest-support>"
+    },
+    {
+      "name": "graphics",
+      "description": "Set on/off to enable/disable graphics emulation",
+      "type": "bool"
+    },
+    {
+      "name": "usb",
+      "description": "Set on/off to enable/disable usb",
+      "type": "bool"
+    },
+    {
+      "name": "firmware",
+      "description": "Firmware image",
+      "type": "string"
+    },
+    {
+      "name": "memory-encryption",
+      "description": "Set memory encryption object to use",
+      "type": "string"
+    },
+    {
+      "name": "smp",
+      "description": "CPU topology",
+      "type": "SMPConfiguration"
+    },
+    {
+      "name": "dump-guest-core",
+      "description": "Include guest memory in a core dump",
+      "type": "bool"
+    },
+    {
+      "name": "phandle-start",
+      "description": "The first phandle ID we may generate dynamically",
+      "type": "int"
+    },
+    {
+      "name": "dumpdtb",
+      "description": "Dump current dtb to a file and quit",
+      "type": "string"
+    },
+    {
+      "name": "memory-backend",
+      "description": "Set RAM backendValid value is ID of hostmem based backend",
+      "type": "link<memory-backend>"
+    },
+    {
+      "name": "dtb",
+      "description": "Linux kernel device tree file",
+      "type": "string"
+    },
+    {
+      "name": "mem-merge",
+      "description": "Enable/disable memory merge support",
+      "type": "bool"
+    },
+    {
+      "name": "append",
+      "description": "Linux kernel command line",
+      "type": "string"
+    },
+    {
+      "name": "suppress-vmdesc",
+      "description": "Set on to disable self-describing migration",
+      "type": "bool"
+    },
+    {
+      "name": "smm",
+      "description": "Enable SMM",
+      "type": "OnOffAuto"
+    },
+    {
+      "name": "acpi",
+      "description": "Enable ACPI",
+      "type": "OnOffAuto"
+    },
+    {
+      "name": "pit",
+      "description": "Enable i8254 PIT",
+      "type": "OnOffAuto"
+    },
+    {
+      "name": "pic",
+      "description": "Enable i8259 PIC",
+      "type": "OnOffAuto"
+    },
+    {
+      "name": "x-oem-table-id",
+      "description": "Override the default value of field OEM Table ID in ACPI table header.The string may be up to 8 bytes in size",
+      "type": "string"
+    },
+    {
+      "name": "bus-lock-ratelimit",
+      "description": "Set the ratelimit for the bus locks acquired in VMs",
+      "type": "uint64_t"
+    },
+    {
+      "name": "sgx-epc",
+      "description": "SGX EPC device",
+      "type": "SgxEPC"
+    },
+    {
+      "name": "x-oem-id",
+      "description": "Override the default value of field OEMID in ACPI table header.The string may be up to 6 bytes in size",
+      "type": "string"
+    },
+    {
+      "name": "max-fw-size",
+      "description": "Maximum combined firmware size",
+      "type": "size"
+    },
+    {
+      "name": "default-bus-bypass-iommu",
+      "type": "bool"
+    },
+    {
+      "name": "device-memory-region-size",
+      "type": "int"
+    },
+    {
+      "name": "sata",
+      "description": "Enable/disable Serial ATA bus",
+      "type": "bool"
+    },
+    {
+      "name": "vmport",
+      "description": "Enable vmport (pc & q35)",
+      "type": "OnOffAuto"
+    },
+    {
+      "name": "i8042",
+      "type": "bool"
+    },
+    {
+      "name": "hpet",
+      "description": "Enable/disable high precision event timer emulation",
+      "type": "bool"
+    },
+    {
+      "name": "smbios-entry-point-type",
+      "description": "SMBIOS Entry Point type [32, 64]",
+      "type": "str"
+    },
+    {
+      "name": "max-ram-below-4g",
+      "description": "Maximum ram below the 4G boundary (32bit boundary)",
+      "type": "size"
+    },
+    {
+      "name": "smbus",
+      "description": "Enable/disable system management bus",
+      "type": "bool"
+    }
+  ],
+  "id": "libvirt-44"
 }
 
 {
   "execute": "query-cpu-definitions",
-  "id": "libvirt-42"
+  "id": "libvirt-45"
 }
 
 {
@@ -31283,8 +30891,7 @@
     {
       "name": "max",
       "typename": "max-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": false,
       "deprecated": false
@@ -31292,8 +30899,7 @@
     {
       "name": "host",
       "typename": "host-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": false,
       "deprecated": false
@@ -31301,8 +30907,7 @@
     {
       "name": "base",
       "typename": "base-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": true,
       "migration-safe": true,
       "deprecated": false
@@ -31310,8 +30915,7 @@
     {
       "name": "qemu64-v1",
       "typename": "qemu64-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31319,8 +30923,7 @@
     {
       "name": "qemu64",
       "typename": "qemu64-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "qemu64-v1",
       "static": false,
       "migration-safe": true,
@@ -31329,8 +30932,7 @@
     {
       "name": "qemu32-v1",
       "typename": "qemu32-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31338,8 +30940,7 @@
     {
       "name": "qemu32",
       "typename": "qemu32-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "qemu32-v1",
       "static": false,
       "migration-safe": true,
@@ -31371,8 +30972,7 @@
     {
       "name": "pentium3-v1",
       "typename": "pentium3-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31380,8 +30980,7 @@
     {
       "name": "pentium3",
       "typename": "pentium3-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "pentium3-v1",
       "static": false,
       "migration-safe": true,
@@ -31390,8 +30989,7 @@
     {
       "name": "pentium2-v1",
       "typename": "pentium2-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31399,8 +30997,7 @@
     {
       "name": "pentium2",
       "typename": "pentium2-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "pentium2-v1",
       "static": false,
       "migration-safe": true,
@@ -31409,8 +31006,7 @@
     {
       "name": "pentium-v1",
       "typename": "pentium-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31418,8 +31014,7 @@
     {
       "name": "pentium",
       "typename": "pentium-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "pentium-v1",
       "static": false,
       "migration-safe": true,
@@ -31449,8 +31044,7 @@
     {
       "name": "kvm64-v1",
       "typename": "kvm64-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31458,8 +31052,7 @@
     {
       "name": "kvm64",
       "typename": "kvm64-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "kvm64-v1",
       "static": false,
       "migration-safe": true,
@@ -31468,8 +31061,7 @@
     {
       "name": "kvm32-v1",
       "typename": "kvm32-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31477,8 +31069,7 @@
     {
       "name": "kvm32",
       "typename": "kvm32-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "kvm32-v1",
       "static": false,
       "migration-safe": true,
@@ -31562,8 +31153,7 @@
     {
       "name": "Westmere-v1",
       "typename": "Westmere-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -31582,8 +31172,7 @@
     {
       "name": "Westmere",
       "typename": "Westmere-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Westmere-v1",
       "static": false,
       "migration-safe": true,
@@ -31985,8 +31574,7 @@
     {
       "name": "SandyBridge-v1",
       "typename": "SandyBridge-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32005,8 +31593,7 @@
     {
       "name": "SandyBridge",
       "typename": "SandyBridge-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "SandyBridge-v1",
       "static": false,
       "migration-safe": true,
@@ -32015,8 +31602,7 @@
     {
       "name": "Penryn-v1",
       "typename": "Penryn-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32024,8 +31610,7 @@
     {
       "name": "Penryn",
       "typename": "Penryn-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Penryn-v1",
       "static": false,
       "migration-safe": true,
@@ -32082,8 +31667,7 @@
     {
       "name": "Opteron_G3-v1",
       "typename": "Opteron_G3-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32091,8 +31675,7 @@
     {
       "name": "Opteron_G3",
       "typename": "Opteron_G3-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Opteron_G3-v1",
       "static": false,
       "migration-safe": true,
@@ -32101,8 +31684,7 @@
     {
       "name": "Opteron_G2-v1",
       "typename": "Opteron_G2-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32110,8 +31692,7 @@
     {
       "name": "Opteron_G2",
       "typename": "Opteron_G2-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Opteron_G2-v1",
       "static": false,
       "migration-safe": true,
@@ -32120,8 +31701,7 @@
     {
       "name": "Opteron_G1-v1",
       "typename": "Opteron_G1-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32129,8 +31709,7 @@
     {
       "name": "Opteron_G1",
       "typename": "Opteron_G1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Opteron_G1-v1",
       "static": false,
       "migration-safe": true,
@@ -32149,8 +31728,7 @@
     {
       "name": "Nehalem-v1",
       "typename": "Nehalem-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32169,8 +31747,7 @@
     {
       "name": "Nehalem",
       "typename": "Nehalem-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Nehalem-v1",
       "static": false,
       "migration-safe": true,
@@ -32654,8 +32231,7 @@
     {
       "name": "EPYC-v3",
       "typename": "EPYC-v3-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32663,8 +32239,7 @@
     {
       "name": "EPYC-v2",
       "typename": "EPYC-v2-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32672,8 +32247,7 @@
     {
       "name": "EPYC-v1",
       "typename": "EPYC-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32691,8 +32265,7 @@
     {
       "name": "EPYC-Rome-v1",
       "typename": "EPYC-Rome-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32700,8 +32273,7 @@
     {
       "name": "EPYC-Rome",
       "typename": "EPYC-Rome-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "EPYC-Rome-v1",
       "static": false,
       "migration-safe": true,
@@ -32743,8 +32315,7 @@
     {
       "name": "EPYC-IBPB",
       "typename": "EPYC-IBPB-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "EPYC-v2",
       "static": false,
       "migration-safe": true,
@@ -32753,8 +32324,7 @@
     {
       "name": "EPYC",
       "typename": "EPYC-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "EPYC-v1",
       "static": false,
       "migration-safe": true,
@@ -32763,8 +32333,7 @@
     {
       "name": "Dhyana-v2",
       "typename": "Dhyana-v2-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32772,8 +32341,7 @@
     {
       "name": "Dhyana-v1",
       "typename": "Dhyana-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32781,8 +32349,7 @@
     {
       "name": "Dhyana",
       "typename": "Dhyana-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Dhyana-v1",
       "static": false,
       "migration-safe": true,
@@ -32930,8 +32497,7 @@
     {
       "name": "Conroe-v1",
       "typename": "Conroe-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -32939,8 +32505,7 @@
     {
       "name": "Conroe",
       "typename": "Conroe-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Conroe-v1",
       "static": false,
       "migration-safe": true,
@@ -33242,8 +32807,7 @@
     {
       "name": "486-v1",
       "typename": "486-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -33251,46 +32815,19 @@
     {
       "name": "486",
       "typename": "486-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "486-v1",
       "static": false,
       "migration-safe": true,
       "deprecated": false
     }
   ],
-  "id": "libvirt-42"
-}
-
-{
-  "execute": "query-tpm-models",
-  "id": "libvirt-43"
-}
-
-{
-  "return": [
-    "tpm-crb",
-    "tpm-tis"
-  ],
-  "id": "libvirt-43"
-}
-
-{
-  "execute": "query-tpm-types",
-  "id": "libvirt-44"
-}
-
-{
-  "return": [
-    "passthrough",
-    "emulator"
-  ],
-  "id": "libvirt-44"
+  "id": "libvirt-45"
 }
 
 {
   "execute": "query-command-line-options",
-  "id": "libvirt-45"
+  "id": "libvirt-46"
 }
 
 {
@@ -33783,13 +33320,11 @@
       "option": "fsdev"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "smbios"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "acpi"
     },
     {
@@ -33932,8 +33467,7 @@
       "option": "fw_cfg"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": ""
     },
     {
@@ -33966,8 +33500,7 @@
       "option": "icount"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "numa"
     },
     {
@@ -34018,13 +33551,11 @@
       "option": "overcommit"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "tpmdev"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "object"
     },
     {
@@ -34131,8 +33662,7 @@
       "option": "memory"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "accel"
     },
     {
@@ -34149,8 +33679,7 @@
       "option": "option-rom"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "plugin"
     },
     {
@@ -34222,23 +33751,19 @@
       "option": "rtc"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "net"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "nic"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "netdev"
     },
     {
-      "parameters": [
-      ],
+      "parameters": [],
       "option": "device"
     },
     {
@@ -34624,101 +34149,6 @@
         }
       ],
       "option": "drive"
-    }
-  ],
-  "id": "libvirt-45"
-}
-
-{
-  "execute": "query-migrate-capabilities",
-  "id": "libvirt-46"
-}
-
-{
-  "return": [
-    {
-      "state": false,
-      "capability": "xbzrle"
-    },
-    {
-      "state": false,
-      "capability": "rdma-pin-all"
-    },
-    {
-      "state": false,
-      "capability": "auto-converge"
-    },
-    {
-      "state": false,
-      "capability": "zero-blocks"
-    },
-    {
-      "state": false,
-      "capability": "compress"
-    },
-    {
-      "state": false,
-      "capability": "events"
-    },
-    {
-      "state": false,
-      "capability": "postcopy-ram"
-    },
-    {
-      "state": false,
-      "capability": "x-colo"
-    },
-    {
-      "state": false,
-      "capability": "release-ram"
-    },
-    {
-      "state": false,
-      "capability": "block"
-    },
-    {
-      "state": false,
-      "capability": "return-path"
-    },
-    {
-      "state": false,
-      "capability": "pause-before-switchover"
-    },
-    {
-      "state": false,
-      "capability": "multifd"
-    },
-    {
-      "state": false,
-      "capability": "dirty-bitmaps"
-    },
-    {
-      "state": false,
-      "capability": "postcopy-blocktime"
-    },
-    {
-      "state": false,
-      "capability": "late-block-activate"
-    },
-    {
-      "state": false,
-      "capability": "x-ignore-shared"
-    },
-    {
-      "state": false,
-      "capability": "validate-uuid"
-    },
-    {
-      "state": false,
-      "capability": "background-snapshot"
-    },
-    {
-      "state": false,
-      "capability": "zero-copy-send"
-    },
-    {
-      "state": false,
-      "capability": "postcopy-preempt"
     }
   ],
   "id": "libvirt-46"
@@ -35810,8 +35240,7 @@
 }
 
 {
-  "return": {
-  },
+  "return": {},
   "id": "libvirt-1"
 }
 
@@ -35825,8 +35254,7 @@
     {
       "name": "max",
       "typename": "max-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": false,
       "deprecated": false
@@ -35844,8 +35272,7 @@
     {
       "name": "base",
       "typename": "base-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": true,
       "migration-safe": true,
       "deprecated": false
@@ -35853,8 +35280,7 @@
     {
       "name": "qemu64-v1",
       "typename": "qemu64-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35862,8 +35288,7 @@
     {
       "name": "qemu64",
       "typename": "qemu64-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "qemu64-v1",
       "static": false,
       "migration-safe": true,
@@ -35872,8 +35297,7 @@
     {
       "name": "qemu32-v1",
       "typename": "qemu32-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35881,8 +35305,7 @@
     {
       "name": "qemu32",
       "typename": "qemu32-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "qemu32-v1",
       "static": false,
       "migration-safe": true,
@@ -35912,8 +35335,7 @@
     {
       "name": "pentium3-v1",
       "typename": "pentium3-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35921,8 +35343,7 @@
     {
       "name": "pentium3",
       "typename": "pentium3-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "pentium3-v1",
       "static": false,
       "migration-safe": true,
@@ -35931,8 +35352,7 @@
     {
       "name": "pentium2-v1",
       "typename": "pentium2-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35940,8 +35360,7 @@
     {
       "name": "pentium2",
       "typename": "pentium2-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "pentium2-v1",
       "static": false,
       "migration-safe": true,
@@ -35950,8 +35369,7 @@
     {
       "name": "pentium-v1",
       "typename": "pentium-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35959,8 +35377,7 @@
     {
       "name": "pentium",
       "typename": "pentium-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "pentium-v1",
       "static": false,
       "migration-safe": true,
@@ -35969,8 +35386,7 @@
     {
       "name": "n270-v1",
       "typename": "n270-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35978,8 +35394,7 @@
     {
       "name": "n270",
       "typename": "n270-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "n270-v1",
       "static": false,
       "migration-safe": true,
@@ -35988,8 +35403,7 @@
     {
       "name": "kvm64-v1",
       "typename": "kvm64-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -35997,8 +35411,7 @@
     {
       "name": "kvm64",
       "typename": "kvm64-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "kvm64-v1",
       "static": false,
       "migration-safe": true,
@@ -36007,8 +35420,7 @@
     {
       "name": "kvm32-v1",
       "typename": "kvm32-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36016,8 +35428,7 @@
     {
       "name": "kvm32",
       "typename": "kvm32-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "kvm32-v1",
       "static": false,
       "migration-safe": true,
@@ -36026,8 +35437,7 @@
     {
       "name": "coreduo-v1",
       "typename": "coreduo-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36035,8 +35445,7 @@
     {
       "name": "coreduo",
       "typename": "coreduo-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "coreduo-v1",
       "static": false,
       "migration-safe": true,
@@ -36045,8 +35454,7 @@
     {
       "name": "core2duo-v1",
       "typename": "core2duo-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36054,8 +35462,7 @@
     {
       "name": "core2duo",
       "typename": "core2duo-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "core2duo-v1",
       "static": false,
       "migration-safe": true,
@@ -36064,8 +35471,7 @@
     {
       "name": "athlon-v1",
       "typename": "athlon-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36073,8 +35479,7 @@
     {
       "name": "athlon",
       "typename": "athlon-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "athlon-v1",
       "static": false,
       "migration-safe": true,
@@ -36093,8 +35498,7 @@
     {
       "name": "Westmere-v1",
       "typename": "Westmere-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36113,8 +35517,7 @@
     {
       "name": "Westmere",
       "typename": "Westmere-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Westmere-v1",
       "static": false,
       "migration-safe": true,
@@ -36607,8 +36010,7 @@
     {
       "name": "Penryn-v1",
       "typename": "Penryn-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36616,8 +36018,7 @@
     {
       "name": "Penryn",
       "typename": "Penryn-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Penryn-v1",
       "static": false,
       "migration-safe": true,
@@ -36707,8 +36108,7 @@
     {
       "name": "Opteron_G2-v1",
       "typename": "Opteron_G2-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36716,8 +36116,7 @@
     {
       "name": "Opteron_G2",
       "typename": "Opteron_G2-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Opteron_G2-v1",
       "static": false,
       "migration-safe": true,
@@ -36726,8 +36125,7 @@
     {
       "name": "Opteron_G1-v1",
       "typename": "Opteron_G1-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36735,8 +36133,7 @@
     {
       "name": "Opteron_G1",
       "typename": "Opteron_G1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Opteron_G1-v1",
       "static": false,
       "migration-safe": true,
@@ -36755,8 +36152,7 @@
     {
       "name": "Nehalem-v1",
       "typename": "Nehalem-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -36775,8 +36171,7 @@
     {
       "name": "Nehalem",
       "typename": "Nehalem-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Nehalem-v1",
       "static": false,
       "migration-safe": true,
@@ -37778,8 +37173,7 @@
     {
       "name": "Conroe-v1",
       "typename": "Conroe-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -37787,8 +37181,7 @@
     {
       "name": "Conroe",
       "typename": "Conroe-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "Conroe-v1",
       "static": false,
       "migration-safe": true,
@@ -38135,8 +37528,7 @@
     {
       "name": "486-v1",
       "typename": "486-v1-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "static": false,
       "migration-safe": true,
       "deprecated": false
@@ -38144,8 +37536,7 @@
     {
       "name": "486",
       "typename": "486-x86_64-cpu",
-      "unavailable-features": [
-      ],
+      "unavailable-features": [],
       "alias-of": "486-v1",
       "static": false,
       "migration-safe": true,

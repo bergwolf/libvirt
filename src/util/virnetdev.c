@@ -182,8 +182,7 @@ virNetDevSetupControl(const char *ifname G_GNUC_UNUSED,
                       void *ifr G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
-                         _("Network device configuration is not supported "
-                           "on this platform"));
+                         _("Network device configuration is not supported on this platform"));
     return -1;
 }
 #endif /* WITH_STRUCT_IFREQ */
@@ -812,9 +811,7 @@ virNetDevGetRcvAllMulti(const char *ifname,
 #if defined(WITH_IF_INDEXTONAME)
 char *virNetDevGetName(int ifindex)
 {
-    char name[IFNAMSIZ];
-
-    memset(&name, 0, sizeof(name));
+    char name[IFNAMSIZ] = { 0 };
 
     if (!if_indextoname(ifindex, name)) {
         virReportSystemError(errno,
@@ -847,7 +844,7 @@ char *virNetDevGetName(int ifindex)
 #if defined(SIOCGIFINDEX) && defined(WITH_STRUCT_IFREQ)
 int virNetDevGetIndex(const char *ifname, int *ifindex)
 {
-    struct ifreq ifreq;
+    struct ifreq ifreq = { 0 };
     VIR_AUTOCLOSE fd = socket(VIR_NETDEV_FAMILY, SOCK_DGRAM, 0);
 
     if (fd < 0) {
@@ -855,8 +852,6 @@ int virNetDevGetIndex(const char *ifname, int *ifindex)
                              _("Unable to open control socket"));
         return -1;
     }
-
-    memset(&ifreq, 0, sizeof(ifreq));
 
     if (virStrcpyStatic(ifreq.ifr_name, ifname) < 0) {
         virReportSystemError(ERANGE,
@@ -2252,8 +2247,7 @@ virNetDevSetNetConfig(const char *linkdev, int vf,
         if (vlan) {
             if (vlan->nTags != 1 || vlan->trunk) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("vlan trunking is not supported "
-                                 "by SR-IOV network devices"));
+                               _("vlan trunking is not supported by SR-IOV network devices"));
                 return -1;
             }
 
@@ -2655,8 +2649,7 @@ int virNetDevAddMulti(const char *ifname G_GNUC_UNUSED,
                       virMacAddr *macaddr G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
-                         _("Unable to add address to interface "
-                           "multicast list on this platform"));
+                         _("Unable to add address to interface multicast list on this platform"));
     return -1;
 }
 #endif
@@ -2700,8 +2693,7 @@ int virNetDevDelMulti(const char *ifname G_GNUC_UNUSED,
                       virMacAddr *macaddr G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
-                         _("Unable to delete address from interface "
-                           "multicast list on this platform"));
+                         _("Unable to delete address from interface multicast list on this platform"));
     return -1;
 }
 #endif

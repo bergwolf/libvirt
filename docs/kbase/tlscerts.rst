@@ -75,6 +75,25 @@ in the path specified, otherwise the connection will fail with a fatal error. If
 
 -  For the root user, the global default locations will always be used.
 
+Multiple parallel certificate identities
+----------------------------------------
+
+Any scenario that requires a certificate identify (``servercert.pem`` /
+``serverkey.pem`` and ``clientcert.pem`` / ``clientkey.pem``) can optionally
+provide multiple parallel identities via a new indexed file naming
+scheme. The new filenames are ``servercertNN.pem`` / ``serverkeyNN.pem``
+and ``clientcertNN.pem`` / ``clientkeyNN.pem``, for values of ``NN`` between
+0 and 3 inclusive.
+
+The new naming can be used instead of the old naming, or concurrently
+with the old naming. The old file names will be loaded first (if
+present), followed by the indexed file names. Loading will stop at
+the first missing index value. ie if ``servercert1.pem`` is not present,
+then no attempt will be made to load ``servercert2.pem`` or ``servercert3.pem``.
+
+If multiple CA certificates are required they must all be concatenated
+into the single ``cacert.pem`` file.
+
 Background to TLS certificates
 ------------------------------
 
@@ -103,6 +122,18 @@ libvirtd <../remote.html#libvirtd-configuration-file>`__ allows any client to
 connect provided they have a valid certificate issued by the CA for their own IP
 address. You may want to change this to make it less (or more) permissive,
 depending on your needs.
+
+The following sections will describe how to created the data needed for the TLS
+setup. They use templates to create Certificate Authority, server and client
+certificates.
+
+Important: versions of libvirt before 11.6.0 also required the ``encryption_key``
+flag in the server and client template. This is no longer mandated since it is
+not applicable for use with many modern cryptographic algorithms, but it is
+harmless if present as it will be ignored. If compatibility with both old and
+new libvirt versions is required, then this extra flag must be added when
+creating the certificate.
+
 
 Setting up a Certificate Authority (CA)
 ---------------------------------------
@@ -204,7 +235,6 @@ define the server as follows:
    ip_address = 2001:cafe::74
    ip_address = fe20::24
    tls_www_server
-   encryption_key
    signing_key
 
 The 'cn' field should refer to the fully qualified public hostname of the
@@ -298,7 +328,6 @@ briefly cover the steps.
       organization = Libvirt Project
       cn = client1
       tls_www_client
-      encryption_key
       signing_key
 
    and sign by doing:
@@ -316,13 +345,104 @@ briefly cover the steps.
       cp clientkey.pem /etc/pki/libvirt/private/clientkey.pem
       cp clientcert.pem /etc/pki/libvirt/clientcert.pem
 
+Configuring for Post-Quantum Cryptography
+-----------------------------------------
+
+Given a new enough gnutls release, suitably integrated & configured with the
+operating system crypto policies, libvirt is able to support post-quantum
+crytography on TLS enabled services, either exclusively or in a hybrid mode.
+
+In exclusive mode, only a single set of certificates need to be configured
+for libvirt, with PQC compliant algorithms. Such a libvirt configuration will
+only be able to interoperate with other libvirt daemons that also have PQC
+enabled. This can result in compatibility concerns during the period of
+transition over to PQC compliant algorithms.
+
+In hybrid mode, multiple sets of certificates need to be configured for libvirt,
+at least one set with traditional (non-PQC compliant) algorithms, and at least
+one other set with modern (PQC compliant) algorithms. At time of the TLS
+handshake, the GNUTLS algorithm priorities should ensure that PQC compliant
+algorithms are negotiated if both sides of the connection support PQC. If one
+side lacks PQC, the TLS handshake should fallback to the non-PQC algorithms.
+This can assist with interoperability during the transition to PQC, but has a
+potential weakness wrt downgrade attacks forcing use of non-PQC algorithms.
+Exclusive PQC mode should be preferred where both peers in the TLS connections
+are known to support PQC.
+
+Key generation parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To create certificates with PQC compliant algorithms, the ``--key-type``
+argument must be passed to ``certtool`` when creating private keys. No
+extra arguments are required for the other ``certtool`` commands, as
+their behaviour will be determined by the private key type.
+
+The typical PQC compliant algorithms to use are ``ML-DSA-44``, ``ML-DSA-65``
+and ``ML-DSA-87``, with ``ML-DSA-65`` being a suitable default choice in
+the absence of explicit requirements.
+
+Taking the example earlier, for creating a key for a client certificate,
+to use ``ML-DSA-65`` the command line would be modified to look like::
+
+   # certtool --generate-privkey --key-type=mldsa65 > clientkey.pem
+
+The equivalent modification applies to the creation of the private keys
+used for server certs, or root/intermediate CA certs.
+
+For hybrid mode, the additional indexed certificate naming must be used.
+If multiple configured certificates are compatible with the mutually
+supported crypto algorithms between the client and server, then the
+first matching certificate will be used.
+
+IOW, to ensure that PQC certificates are preferred, they must use a
+non-index based filename, or use an index that is smaller than any
+non-PQC certificates. ie, ``servercert.pem`` for PQC and ``servercert0.pem``
+for non-PQC, or ``servercert0.pem`` for PQC and ``servercert1.pem`` for
+non-PQC.
+
+Force disabling PQC via crypto priority
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If the OS configuration for system crypto algorithm priorities has
+enabled PQC, this can (optionally) be overriden in libvirt server
+configuration. To disable use of PQC set the ``tls_priority``
+parameter in the ``libvirtd.conf`` / ``virtproxyd.conf`` files:
+
+  tls_priority = "@SYSTEM:-SIGN-ML-DSA-65:-SIGN-ML-DSA-44:-SIGN-ML-DSA-87:-GROUP-X25519-MLKEM768:-GROUP-SECP256R1-MLKEM768:-GROUP-SECP384R1-MLKEM1024"
+
+On the client side this can be overriden using the ``tls_priority``
+URI parameter in the libvirt connection address.
+
+
 Troubleshooting TLS certificate problems
 ----------------------------------------
 
-failed to verify client's certificate
-   On the server side, run the libvirtd server with the '--listen' and
-   '--verbose' options while the client is connecting. The verbose log messages
-   should tell you enough to diagnose the problem.
+* TLS socket
+
+  After setting up your sever certificates you'll have to start libvirt's
+  tls socket and restart the corresponding daemon if it was already running,
+  i.e.
+
+ * for modular daemon setup run
+
+   ::
+
+       systemctl start virtproxyd-tls.socket
+       systemctl try-start virtproxyd.service
+
+ * for monolithic daemon setup run
+
+   ::
+
+       systemctl start libvirtd-tls.socket
+       systemctl try-start libvirtd.service
+
+
+* failed to verify client's certificate
+
+  On the server side, run the libvirtd server with the '--listen' and
+  '--verbose' options while the client is connecting. The verbose log messages
+  should tell you enough to diagnose the problem.
 
 You can use the virt-pki-validate shell script to analyze the setup on the
 client or server machines, preferably as root. It will try to point out the

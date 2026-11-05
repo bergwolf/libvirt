@@ -23,6 +23,7 @@
 
 #include "qemu_conf.h"
 #include "qemu_domain.h"
+#include "qemu_saveimage.h"
 #include "vireventthread.h"
 
 int qemuProcessPrepareMonitorChr(virDomainChrSourceDef *monConfig,
@@ -42,8 +43,7 @@ int qemuProcessBuildDestroyMemoryPaths(virQEMUDriver *driver,
                                        virDomainMemoryDef *mem,
                                        bool build);
 
-int qemuProcessDestroyMemoryBackingPath(virQEMUDriver *driver,
-                                        virDomainObj *vm,
+int qemuProcessDestroyMemoryBackingPath(virDomainObj *vm,
                                         virDomainMemoryDef *mem);
 
 void qemuProcessReconnectAll(virQEMUDriver *driver);
@@ -53,14 +53,19 @@ struct _qemuProcessIncomingDef {
     char *address; /* address where QEMU is supposed to listen */
     char *uri; /* used when calling migrate-incoming QMP command */
     int fd; /* for fd:N URI */
+    qemuFDPass *fdPassMigrate; /* for file:/dev/fdset/n,offset=x URI */
     const char *path; /* path associated with fd */
 };
 
-qemuProcessIncomingDef *qemuProcessIncomingDefNew(virQEMUCaps *qemuCaps,
-                                                    const char *listenAddress,
-                                                    const char *migrateFrom,
-                                                    int fd,
-                                                    const char *path);
+qemuProcessIncomingDef *qemuProcessIncomingDefNew(virQEMUDriver *driver,
+                                                  virDomainObj *vm,
+                                                  const char *listenAddress,
+                                                  const char *migrateFrom,
+                                                  int *fd,
+                                                  const char *path,
+                                                  virQEMUSaveData *data,
+                                                  qemuMigrationParams *migParams);
+
 void qemuProcessIncomingDefFree(qemuProcessIncomingDef *inc);
 
 int qemuProcessBeginJob(virDomainObj *vm,
@@ -83,12 +88,26 @@ int qemuProcessStart(virConnectPtr conn,
                      virDomainObj *vm,
                      virCPUDef *updatedCPU,
                      virDomainAsyncJob asyncJob,
-                     const char *migrateFrom,
+                     qemuProcessIncomingDef *incoming,
                      int stdin_fd,
                      const char *stdin_path,
-                     virDomainMomentObj *snapshot,
+                     virDomainMomentObj *internalSnapshotRevert,
+                     qemuMigrationParams *migParams,
                      virNetDevVPortProfileOp vmop,
                      unsigned int flags);
+
+int qemuProcessStartWithMemoryState(virConnectPtr conn,
+                                    virQEMUDriver *driver,
+                                    virDomainObj *vm,
+                                    int *fd,
+                                    const char *path,
+                                    virDomainMomentObj *snapshot,
+                                    virQEMUSaveData *data,
+                                    qemuMigrationParams *migParams,
+                                    virDomainAsyncJob asyncJob,
+                                    unsigned int start_flags,
+                                    const char *reason,
+                                    bool *started);
 
 int qemuProcessCreatePretendCmdPrepare(virQEMUDriver *driver,
                                        virDomainObj *vm,
@@ -113,12 +132,26 @@ int qemuProcessOpenVhostVsock(virDomainVsockDef *vsock);
 
 int qemuProcessPrepareHostBackendChardevHotplug(virDomainObj *vm,
                                                 virDomainDeviceDef *dev)
-    G_NO_INLINE;
+    ATTRIBUTE_MOCKABLE;
 
+int qemuProcessOpenIommuFd(virDomainObj *vm);
+
+int qemuProcessOpenVfioDeviceFd(virDomainObj *vm,
+                                virDomainHostdevDef *hostdev);
 
 int qemuProcessPrepareHost(virQEMUDriver *driver,
                            virDomainObj *vm,
                            unsigned int flags);
+
+int qemuProcessPrepareHostStorageSource(virDomainObj *vm,
+                                        virStorageSource *src);
+int qemuProcessPrepareHostStorageSourceChain(virDomainObj *vm,
+                                             virStorageSource *chain);
+int qemuProcessPrepareHostStorageDisk(virDomainObj *vm,
+                                  virDomainDiskDef *disk);
+
+int qemuProcessSetupDiskPropsRuntime(qemuMonitor *mon,
+                                     virDomainDiskDef *disk);
 
 int qemuProcessDeleteThreadContext(virDomainObj *vm);
 
@@ -127,7 +160,7 @@ int qemuProcessLaunch(virConnectPtr conn,
                       virDomainObj *vm,
                       virDomainAsyncJob asyncJob,
                       qemuProcessIncomingDef *incoming,
-                      virDomainMomentObj *snapshot,
+                      virDomainMomentObj *internalSnapshotRevert,
                       virNetDevVPortProfileOp vmop,
                       unsigned int flags);
 
@@ -137,8 +170,7 @@ int qemuProcessFinishStartup(virQEMUDriver *driver,
                              bool startCPUs,
                              virDomainPausedReason pausedReason);
 
-int qemuProcessRefreshState(virQEMUDriver *driver,
-                            virDomainObj *vm,
+int qemuProcessRefreshState(virDomainObj *vm,
                             virDomainAsyncJob asyncJob);
 
 typedef enum {
@@ -149,8 +181,8 @@ typedef enum {
 int qemuProcessBeginStopJob(virDomainObj *vm,
                             virDomainJob job,
                             bool forceKill);
-void qemuProcessStop(virQEMUDriver *driver,
-                     virDomainObj *vm,
+void qemuProcessEndStopJob(virDomainObj *vm);
+void qemuProcessStop(virDomainObj *vm,
                      virDomainShutoffReason reason,
                      virDomainAsyncJob asyncJob,
                      unsigned int flags);
@@ -159,17 +191,18 @@ typedef enum {
    VIR_QEMU_PROCESS_KILL_FORCE  = 1 << 0,
    VIR_QEMU_PROCESS_KILL_NOWAIT = 1 << 1,
    VIR_QEMU_PROCESS_KILL_NOCHECK = 1 << 2, /* bypass the running vm check */
+   VIR_QEMU_PROCESS_KILL_MONITOR_ON_ERROR = 1 << 3, /* on error enable process monitor */
 } virQemuProcessKillMode;
 
 int qemuProcessKill(virDomainObj *vm, unsigned int flags);
 
-void qemuProcessShutdownOrReboot(virDomainObj *vm);
+int qemuProcessFakeRebootViaRecreate(virDomainObj *vm, bool locked);
+
+bool qemuProcessShutdownOrReboot(virDomainObj *vm)
+    G_GNUC_WARN_UNUSED_RESULT;
 
 void qemuProcessAutoDestroy(virDomainObj *dom,
                             virConnectPtr conn);
-
-int qemuProcessSetSchedParams(int id, pid_t pid, size_t nsp,
-                              virDomainThreadSchedParam *sp);
 
 virDomainDiskDef *qemuProcessFindDomainDiskByAliasOrQOM(virDomainObj *vm,
                                                           const char *alias,
@@ -191,12 +224,9 @@ int qemuRefreshVirtioChannelState(virQEMUDriver *driver,
 int qemuProcessRefreshBalloonState(virDomainObj *vm,
                                    int asyncJob);
 
-int qemuProcessRefreshDisks(virDomainObj *vm,
-                            virDomainAsyncJob asyncJob);
+int qemuProcessStartManagedPRDaemon(virDomainObj *vm) ATTRIBUTE_MOCKABLE;
 
-int qemuProcessStartManagedPRDaemon(virDomainObj *vm) G_NO_INLINE;
-
-void qemuProcessKillManagedPRDaemon(virDomainObj *vm) G_NO_INLINE;
+void qemuProcessKillManagedPRDaemon(virDomainObj *vm) ATTRIBUTE_MOCKABLE;
 
 typedef struct _qemuProcessQMP qemuProcessQMP;
 struct _qemuProcessQMP {
@@ -228,13 +258,16 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(qemuProcessQMP, qemuProcessQMPFree);
 
 int qemuProcessQMPStart(qemuProcessQMP *proc);
 
-bool qemuProcessRebootAllowed(const virDomainDef *def);
-
 void qemuProcessCleanupMigrationJob(virQEMUDriver *driver,
                                     virDomainObj *vm);
 
-void qemuProcessRefreshDiskProps(virDomainDiskDef *disk,
-                                 struct qemuDomainDiskInfo *info);
+int qemuProcessSetupEmulator(virDomainObj *vm);
 
-int qemuProcessSetupEmulator(virDomainObj *vm,
-                             bool unionMems);
+void qemuProcessHandleNbdkitExit(qemuNbdkitProcess *nbdkit,
+                                 virDomainObj *vm);
+
+int qemuPrepareNVRAM(virQEMUDriver *driver,
+                     virDomainDef *def,
+                     bool reset_nvram);
+
+int qemuProcessGetAllCpuAffinity(virBitmap **cpumapRet);

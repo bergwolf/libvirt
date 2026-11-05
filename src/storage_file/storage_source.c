@@ -45,8 +45,8 @@ VIR_LOG_INIT("storage_source");
 static bool
 virStorageSourceBackinStoreStringIsFile(const char *backing)
 {
-    char *colon;
-    char *slash;
+    const char *colon;
+    const char *slash;
 
     if (!backing)
         return false;
@@ -392,8 +392,6 @@ virStorageSourceNewFromBackingRelative(virStorageSource *parent,
 
             def->nhosts = parent->nhosts;
         }
-
-        def->volume = g_strdup(parent->volume);
     } else {
         /* set the type to _FILE, the caller shall update it to the actual type */
         def->type = VIR_STORAGE_TYPE_FILE;
@@ -544,6 +542,49 @@ virStorageSourceNewFromBacking(virStorageSource *parent,
 
 
 /**
+ * virStorageSourceNewFromDataFile:
+ * @parent: storage source parent
+ *
+ * Creates a storage source which describes the data file image of @parent.
+ * Returned storage source format is VIR_STORAGE_FILE_RAW, and, unlike
+ * backing storage creation, readonly flag is copied from @parent.
+ */
+static virStorageSource *
+virStorageSourceNewFromDataFile(virStorageSource *parent)
+{
+    g_autoptr(virStorageSource) dataFile = NULL;
+    int rc;
+
+    /* 'qemu-img' records an empty string as 'data_file' field in certain buggy
+     * cases. Note that it can't happen for 'backing store' as absence of the
+     * string equals to no backing store. */
+    if (STREQ(parent->dataFileRaw, "")) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("invalid empty data-file definition in '%1$s'"),
+                       NULLSTR(parent->path));
+        return NULL;
+    }
+
+    if ((rc = virStorageSourceNewFromChild(parent,
+                                           parent->dataFileRaw,
+                                           &dataFile)) < 0)
+        return NULL;
+
+    if (rc == 1) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("can't use data file definition '%1$s'"),
+                       parent->dataFileRaw);
+        return NULL;
+    }
+
+    dataFile->format = VIR_STORAGE_FILE_RAW;
+    dataFile->readonly = parent->readonly;
+
+    return g_steal_pointer(&dataFile);
+}
+
+
+/**
  * @src: disk source definition structure
  * @fd: file descriptor
  * @sb: stat buffer
@@ -583,6 +624,8 @@ virStorageSourceUpdatePhysicalSize(virStorageSource *src,
     case VIR_STORAGE_TYPE_VOLUME:
     case VIR_STORAGE_TYPE_NVME:
     case VIR_STORAGE_TYPE_VHOST_USER:
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
+    case VIR_STORAGE_TYPE_CTL:
     case VIR_STORAGE_TYPE_NONE:
     case VIR_STORAGE_TYPE_LAST:
         return -1;
@@ -762,8 +805,7 @@ virStorageSourceGetRelativeBackingPath(virStorageSource *top,
 
     if (next != base) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("failed to resolve relative backing name: "
-                         "base image is not in backing chain"));
+                       _("failed to resolve relative backing name: base image is not in backing chain"));
         return -1;
     }
 
@@ -1384,11 +1426,20 @@ virStorageSourceGetMetadataRecurse(virStorageSource *src,
     /* If we probed the format we MUST ensure that nothing else than the current
      * image is considered for security labelling and/or recursion. */
     if (orig_format == VIR_STORAGE_FILE_AUTO) {
-        if (src->backingStoreRaw) {
+        if (src->backingStoreRaw || src->dataFileRaw) {
             src->format = VIR_STORAGE_FILE_RAW;
             VIR_FREE(src->backingStoreRaw);
+            VIR_FREE(src->dataFileRaw);
             return -2;
         }
+    }
+
+    /* The image we're detecting on can have a '<dataStore>' explicitly
+     * configured without a '<backingStore/>' terminator so we must not
+     * overwrite it */
+    if (!src->dataFileStore && src->dataFileRaw) {
+        if (!(src->dataFileStore = virStorageSourceNewFromDataFile(src)))
+            return -1;
     }
 
     if (src->backingStoreRaw) {
@@ -1420,6 +1471,7 @@ virStorageSourceGetMetadataRecurse(virStorageSource *src,
     } else {
         /* add terminator */
         src->backingStore = virStorageSourceNew();
+        src->backingStore->detected = true;
     }
 
     return 0;

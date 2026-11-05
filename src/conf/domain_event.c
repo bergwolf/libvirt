@@ -53,10 +53,13 @@ static virClass *virDomainEventDeviceAddedClass;
 static virClass *virDomainEventMigrationIterationClass;
 static virClass *virDomainEventJobCompletedClass;
 static virClass *virDomainEventDeviceRemovalFailedClass;
+static virClass *virDomainEventVcpuRemovedClass;
 static virClass *virDomainEventMetadataChangeClass;
 static virClass *virDomainEventBlockThresholdClass;
 static virClass *virDomainEventMemoryFailureClass;
 static virClass *virDomainEventMemoryDeviceSizeChangeClass;
+static virClass *virDomainEventNICMACChangeClass;
+static virClass *virDomainEventChannelLifecycleClass;
 
 static void virDomainEventDispose(void *obj);
 static void virDomainEventLifecycleDispose(void *obj);
@@ -77,10 +80,13 @@ static void virDomainEventDeviceAddedDispose(void *obj);
 static void virDomainEventMigrationIterationDispose(void *obj);
 static void virDomainEventJobCompletedDispose(void *obj);
 static void virDomainEventDeviceRemovalFailedDispose(void *obj);
+static void virDomainEventVcpuRemovedDispose(void *obj);
 static void virDomainEventMetadataChangeDispose(void *obj);
 static void virDomainEventBlockThresholdDispose(void *obj);
 static void virDomainEventMemoryFailureDispose(void *obj);
 static void virDomainEventMemoryDeviceSizeChangeDispose(void *obj);
+static void virDomainEventNICMACChangeDispose(void *obj);
+static void virDomainEventChannelLifecycleDispose(void *obj);
 
 static void
 virDomainEventDispatchDefaultFunc(virConnectPtr conn,
@@ -249,6 +255,13 @@ struct _virDomainEventDeviceRemovalFailed {
 };
 typedef struct _virDomainEventDeviceRemovalFailed virDomainEventDeviceRemovalFailed;
 
+struct _virDomainEventVcpuRemoved {
+    virDomainEvent parent;
+
+    unsigned int vcpuid;
+};
+typedef struct _virDomainEventVcpuRemoved virDomainEventVcpuRemoved;
+
 struct _virDomainEventMetadataChange {
     virDomainEvent parent;
 
@@ -284,7 +297,36 @@ struct _virDomainEventMemoryDeviceSizeChange {
     unsigned long long size;
 };
 typedef struct _virDomainEventMemoryDeviceSizeChange virDomainEventMemoryDeviceSizeChange;
-typedef virDomainEventMemoryDeviceSizeChange *virDomainEventMemoryDeviceSizeChangePtr;
+
+struct _virDomainEventNICMACChange {
+    virDomainEvent parent;
+
+    char *alias;
+    char *oldMAC;
+    char *newMAC;
+};
+typedef struct _virDomainEventNICMACChange virDomainEventNICMACChange;
+
+struct _virDomainEventChannelLifecycle {
+    virDomainEvent parent;
+
+    char *channelName;
+    int state;
+    int reason;
+};
+typedef struct _virDomainEventChannelLifecycle virDomainEventChannelLifecycle;
+
+/* Make sure the AGENT and CHANNEL lifecycle enums stay in sync with each other. */
+G_STATIC_ASSERT((int)VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_DOMAIN_STARTED ==
+                (int)VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_DOMAIN_STARTED);
+G_STATIC_ASSERT((int)VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_CHANNEL ==
+                (int)VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_CHANNEL);
+G_STATIC_ASSERT((int)VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_LAST ==
+                (int)VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_LAST);
+G_STATIC_ASSERT((int)VIR_DOMAIN_CHR_DEVICE_STATE_CONNECTED ==
+                (int)VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_STATE_CONNECTED);
+G_STATIC_ASSERT((int)VIR_DOMAIN_CHR_DEVICE_STATE_DISCONNECTED ==
+                (int)VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_STATE_DISCONNECTED);
 
 static int
 virDomainEventsOnceInit(void)
@@ -327,6 +369,8 @@ virDomainEventsOnceInit(void)
         return -1;
     if (!VIR_CLASS_NEW(virDomainEventDeviceRemovalFailed, virDomainEventClass))
         return -1;
+    if (!VIR_CLASS_NEW(virDomainEventVcpuRemoved, virDomainEventClass))
+        return -1;
     if (!VIR_CLASS_NEW(virDomainEventMetadataChange, virDomainEventClass))
         return -1;
     if (!VIR_CLASS_NEW(virDomainEventBlockThreshold, virDomainEventClass))
@@ -334,6 +378,10 @@ virDomainEventsOnceInit(void)
     if (!VIR_CLASS_NEW(virDomainEventMemoryFailure, virDomainEventClass))
         return -1;
     if (!VIR_CLASS_NEW(virDomainEventMemoryDeviceSizeChange, virDomainEventClass))
+        return -1;
+    if (!VIR_CLASS_NEW(virDomainEventNICMACChange, virDomainEventClass))
+        return -1;
+    if (!VIR_CLASS_NEW(virDomainEventChannelLifecycle, virDomainEventClass))
         return -1;
     return 0;
 }
@@ -472,6 +520,13 @@ virDomainEventDeviceRemovalFailedDispose(void *obj)
     g_free(event->devAlias);
 }
 
+static void
+virDomainEventVcpuRemovedDispose(void *obj)
+{
+    virDomainEventVcpuRemoved *event = obj;
+    VIR_DEBUG("obj=%p", event);
+}
+
 
 static void
 virDomainEventPMDispose(void *obj)
@@ -554,10 +609,28 @@ virDomainEventMemoryFailureDispose(void *obj)
 static void
 virDomainEventMemoryDeviceSizeChangeDispose(void *obj)
 {
-    virDomainEventMemoryDeviceSizeChangePtr event = obj;
+    virDomainEventMemoryDeviceSizeChange *event = obj;
     VIR_DEBUG("obj=%p", event);
 
     g_free(event->alias);
+}
+
+static void
+virDomainEventNICMACChangeDispose(void *obj)
+{
+    virDomainEventNICMACChange *event = obj;
+
+    g_free(event->alias);
+    g_free(event->oldMAC);
+    g_free(event->newMAC);
+}
+
+static void
+virDomainEventChannelLifecycleDispose(void *obj)
+{
+    virDomainEventChannelLifecycle *event = obj;
+
+    g_free(event->channelName);
 }
 
 static void *
@@ -1360,6 +1433,43 @@ virDomainEventDeviceRemovalFailedNewFromDom(virDomainPtr dom,
                                                 devAlias);
 }
 
+static virObjectEvent *
+virDomainEventVcpuRemovedNew(int id,
+                             const char *name,
+                             unsigned char *uuid,
+                             unsigned int vcpuid)
+{
+    virDomainEventVcpuRemoved *ev;
+
+    if (virDomainEventsInitialize() < 0)
+        return NULL;
+
+    if (!(ev = virDomainEventNew(virDomainEventVcpuRemovedClass,
+                                 VIR_DOMAIN_EVENT_ID_VCPU_REMOVED,
+                                 id, name, uuid)))
+        return NULL;
+
+    ev->vcpuid = vcpuid;
+
+    return (virObjectEvent *)ev;
+}
+
+virObjectEvent *
+virDomainEventVcpuRemovedNewFromObj(virDomainObj *obj,
+                                    unsigned int vcpuid)
+{
+    return virDomainEventVcpuRemovedNew(obj->def->id, obj->def->name,
+                                        obj->def->uuid, vcpuid);
+}
+
+virObjectEvent *
+virDomainEventVcpuRemovedNewFromDom(virDomainPtr dom,
+                                    unsigned int vcpuid)
+{
+    return virDomainEventVcpuRemovedNew(dom->id, dom->name, dom->uuid,
+                                        vcpuid);
+}
+
 
 static virObjectEvent *
 virDomainEventAgentLifecycleNew(int id,
@@ -1562,8 +1672,7 @@ virDomainEventMetadataChangeNew(int id,
         return NULL;
 
     ev->type = type;
-    if (nsuri)
-        ev->nsuri = g_strdup(nsuri);
+    ev->nsuri = g_strdup(nsuri);
 
     return (virObjectEvent *)ev;
 }
@@ -1692,7 +1801,7 @@ virDomainEventMemoryDeviceSizeChangeNew(int id,
                                         const char *alias,
                                         unsigned long long size)
 {
-    virDomainEventMemoryDeviceSizeChangePtr ev;
+    virDomainEventMemoryDeviceSizeChange *ev;
 
     if (virDomainEventsInitialize() < 0)
         return NULL;
@@ -1734,6 +1843,117 @@ virDomainEventMemoryDeviceSizeChangeNewFromDom(virDomainPtr dom,
                                                    size);
 }
 
+
+static virObjectEvent *
+virDomainEventNICMACChangeNew(int id,
+                              const char *name,
+                              unsigned char *uuid,
+                              const char *alias,
+                              const char *oldMAC,
+                              const char *newMAC)
+
+{
+    virDomainEventNICMACChange *ev;
+
+    if (virDomainEventsInitialize() < 0)
+        return NULL;
+
+    if (!(ev = virDomainEventNew(virDomainEventNICMACChangeClass,
+                                 VIR_DOMAIN_EVENT_ID_NIC_MAC_CHANGE,
+                                 id, name, uuid)))
+        return NULL;
+
+    ev->alias = g_strdup(alias);
+    ev->oldMAC = g_strdup(oldMAC);
+    ev->newMAC = g_strdup(newMAC);
+
+    return (virObjectEvent *)ev;
+}
+
+
+virObjectEvent *
+virDomainEventNICMACChangeNewFromObj(virDomainObj *obj,
+                                     const char *alias,
+                                     const char *oldMAC,
+                                     const char *newMAC)
+{
+    return virDomainEventNICMACChangeNew(obj->def->id,
+                                         obj->def->name,
+                                         obj->def->uuid,
+                                         alias,
+                                         oldMAC,
+                                         newMAC);
+}
+
+virObjectEvent *
+virDomainEventNICMACChangeNewFromDom(virDomainPtr dom,
+                                     const char *alias,
+                                     const char *oldMAC,
+                                     const char *newMAC)
+{
+    return virDomainEventNICMACChangeNew(dom->id,
+                                         dom->name,
+                                         dom->uuid,
+                                         alias,
+                                         oldMAC,
+                                         newMAC);
+
+}
+
+
+static virObjectEvent *
+virDomainEventChannelLifecycleNew(int id,
+                                  const char *name,
+                                  const unsigned char *uuid,
+                                  const char *channelName,
+                                  int state,
+                                  int reason)
+{
+    virDomainEventChannelLifecycle *ev;
+
+    if (virDomainEventsInitialize() < 0)
+        return NULL;
+
+    if (!(ev = virDomainEventNew(virDomainEventChannelLifecycleClass,
+                                 VIR_DOMAIN_EVENT_ID_CHANNEL_LIFECYCLE,
+                                 id, name, uuid)))
+        return NULL;
+
+    ev->channelName = g_strdup(channelName);
+    ev->state = state;
+    ev->reason = reason;
+
+    return (virObjectEvent *)ev;
+}
+
+
+virObjectEvent *
+virDomainEventChannelLifecycleNewFromObj(virDomainObj *obj,
+                                         const char *channelName,
+                                         int state,
+                                         int reason)
+{
+    return virDomainEventChannelLifecycleNew(obj->def->id,
+                                             obj->def->name,
+                                             obj->def->uuid,
+                                             channelName,
+                                             state,
+                                             reason);
+}
+
+virObjectEvent *
+virDomainEventChannelLifecycleNewFromDom(virDomainPtr dom,
+                                         const char *channelName,
+                                         int state,
+                                         int reason)
+{
+    return virDomainEventChannelLifecycleNew(dom->id,
+                                             dom->name,
+                                             dom->uuid,
+                                             channelName,
+                                             state,
+                                             reason);
+}
 
 static void
 virDomainEventDispatchDefaultFunc(virConnectPtr conn,
@@ -2033,13 +2253,51 @@ virDomainEventDispatchDefaultFunc(virConnectPtr conn,
 
     case VIR_DOMAIN_EVENT_ID_MEMORY_DEVICE_SIZE_CHANGE:
         {
-            virDomainEventMemoryDeviceSizeChangePtr memoryDeviceSizeChangeEvent;
+            virDomainEventMemoryDeviceSizeChange *memoryDeviceSizeChangeEvent;
 
-            memoryDeviceSizeChangeEvent = (virDomainEventMemoryDeviceSizeChangePtr)event;
+            memoryDeviceSizeChangeEvent = (virDomainEventMemoryDeviceSizeChange *)event;
             ((virConnectDomainEventMemoryDeviceSizeChangeCallback)cb)(conn, dom,
                                                                       memoryDeviceSizeChangeEvent->alias,
                                                                       memoryDeviceSizeChangeEvent->size,
                                                                       cbopaque);
+            goto cleanup;
+        }
+
+    case VIR_DOMAIN_EVENT_ID_NIC_MAC_CHANGE:
+        {
+            virDomainEventNICMACChange *nicMacChangeEvent;
+
+            nicMacChangeEvent = (virDomainEventNICMACChange *)event;
+            ((virConnectDomainEventNICMACChangeCallback)cb)(conn, dom,
+                                                            nicMacChangeEvent->alias,
+                                                            nicMacChangeEvent->oldMAC,
+                                                            nicMacChangeEvent->newMAC,
+                                                            cbopaque);
+
+            goto cleanup;
+        }
+
+    case VIR_DOMAIN_EVENT_ID_VCPU_REMOVED:
+        {
+            virDomainEventVcpuRemoved *vcpuRemovedEvent;
+
+            vcpuRemovedEvent = (virDomainEventVcpuRemoved *)event;
+            ((virConnectDomainEventVcpuRemovedCallback)cb)(conn, dom,
+                                                           vcpuRemovedEvent->vcpuid,
+                                                           cbopaque);
+            goto cleanup;
+        }
+
+    case VIR_DOMAIN_EVENT_ID_CHANNEL_LIFECYCLE:
+        {
+            virDomainEventChannelLifecycle *channelLifecycleEvent;
+
+            channelLifecycleEvent = (virDomainEventChannelLifecycle *)event;
+            ((virConnectDomainEventChannelLifecycleCallback)cb)(conn, dom,
+                                                                channelLifecycleEvent->channelName,
+                                                                channelLifecycleEvent->state,
+                                                                channelLifecycleEvent->reason,
+                                                                cbopaque);
             goto cleanup;
         }
 
@@ -2380,14 +2638,12 @@ virDomainQemuMonitorEventStateRegisterID(virConnectPtr conn,
         return -1;
 
     if (flags != -1)
-        virCheckFlags(VIR_CONNECT_DOMAIN_QEMU_MONITOR_EVENT_REGISTER_REGEX |
-                      VIR_CONNECT_DOMAIN_QEMU_MONITOR_EVENT_REGISTER_NOCASE,
-                      -1);
+        virCheckFlags(VIR_CONNECT_DOMAIN_QEMU_MONITOR_EVENT_REGISTER_FLAGS, -1);
     data = g_new0(virDomainQemuMonitorEventData, 1);
     data->flags = flags;
     if (event && flags != -1) {
         if (flags & VIR_CONNECT_DOMAIN_QEMU_MONITOR_EVENT_REGISTER_REGEX) {
-            int cflags = G_REGEX_OPTIMIZE;
+            int cflags = 0;
             g_autoptr(GError) err = NULL;
 
             if (flags & VIR_CONNECT_DOMAIN_QEMU_MONITOR_EVENT_REGISTER_NOCASE)

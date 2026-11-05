@@ -22,7 +22,7 @@
 
 #include "vircommand.h"
 
-int qemuExtTPMInitPaths(virQEMUDriver *driver,
+int qemuExtTPMInitPaths(virQEMUDriverConfig *cfg,
                         virDomainDef *def,
                         virDomainTPMDef *tpm)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
@@ -35,22 +35,24 @@ int qemuExtTPMPrepareHost(virQEMUDriver *driver,
     ATTRIBUTE_NONNULL(3)
     G_GNUC_WARN_UNUSED_RESULT;
 
-void qemuExtTPMCleanupHost(virDomainTPMDef *tpm,
+void qemuExtTPMCleanupHost(virQEMUDriverConfig *cfg,
+                           virDomainTPMDef *tpm,
                            virDomainUndefineFlagsValues flags,
-                           bool outgoingMigration)
-    ATTRIBUTE_NONNULL(1);
+                           bool migration)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int qemuExtTPMStart(virQEMUDriver *driver,
                     virDomainObj *vm,
                     virDomainTPMDef *def,
+                    virDomainTPMDef *persistentDefTPM,
                     bool incomingMigration)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
-    ATTRIBUTE_NONNULL(3)
+    ATTRIBUTE_NONNULL(3) ATTRIBUTE_NONNULL(4)
     G_GNUC_WARN_UNUSED_RESULT;
 
 void qemuExtTPMStop(virQEMUDriver *driver,
                     virDomainObj *vm,
-                    bool outgoingMigration)
+                    bool migration)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int qemuExtTPMSetupCgroup(virQEMUDriver *driver,
@@ -59,8 +61,9 @@ int qemuExtTPMSetupCgroup(virQEMUDriver *driver,
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3)
     G_GNUC_WARN_UNUSED_RESULT;
 
-bool qemuTPMHasSharedStorage(virDomainDef *def)
-    ATTRIBUTE_NONNULL(1)
+bool qemuTPMDomainHasSharedStorage(virQEMUDriver *driver,
+                                   virDomainDef *def)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
     G_GNUC_WARN_UNUSED_RESULT;
 
 bool qemuTPMCanMigrateSharedStorage(virDomainDef *def)

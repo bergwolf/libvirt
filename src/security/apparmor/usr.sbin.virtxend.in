@@ -5,8 +5,10 @@ profile virtxend @sbindir@/virtxend flags=(attach_disconnected) {
   #include <abstractions/dbus>
 
   capability kill,
+  capability net_admin,
   capability setgid,
   capability setuid,
+  capability sys_admin,
   capability sys_pacct,
   capability ipc_lock,
 
@@ -52,4 +54,6 @@ profile virtxend @sbindir@/virtxend flags=(attach_disconnected) {
   @libexecdir@/libvirt_iohelper ix,
   /etc/libvirt/hooks/** rmix,
   /etc/xen/scripts/** rmix,
+
+  include if exists <local/usr.sbin.virtxend>
 }

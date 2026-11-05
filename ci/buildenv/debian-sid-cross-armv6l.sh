@@ -12,6 +12,7 @@ function install_buildenv() {
             augeas-lenses \
             augeas-tools \
             bash-completion \
+            black \
             ca-certificates \
             ccache \
             codespell \
@@ -23,30 +24,24 @@ function install_buildenv() {
             gettext \
             git \
             grep \
-            iproute2 \
-            iptables \
-            kmod \
-            libc-dev-bin \
+            libclang-rt-dev \
+            libnbd-dev \
             libxml2-utils \
             locales \
-            lvm2 \
             make \
             meson \
-            nfs-common \
             ninja-build \
-            numad \
-            open-iscsi \
             perl-base \
             pkgconf \
-            policykit-1 \
             python3 \
             python3-docutils \
+            python3-pytest \
             qemu-utils \
-            scrub \
             sed \
             xsltproc
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen
     dpkg-reconfigure locales
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
     export DEBIAN_FRONTEND=noninteractive
     dpkg --add-architecture armel
     apt-get update
@@ -63,28 +58,26 @@ function install_buildenv() {
             libcap-ng-dev:armel \
             libcurl4-gnutls-dev:armel \
             libdevmapper-dev:armel \
-            libfuse-dev:armel \
+            libfuse3-dev:armel \
             libglib2.0-dev:armel \
-            libglusterfs-dev:armel \
             libgnutls28-dev:armel \
             libiscsi-dev:armel \
+            libjson-c-dev:armel \
             libnl-3-dev:armel \
             libnl-route-3-dev:armel \
             libnuma-dev:armel \
             libparted-dev:armel \
             libpcap0.8-dev:armel \
             libpciaccess-dev:armel \
-            librbd-dev:armel \
             libreadline-dev:armel \
             libsanlock-dev:armel \
             libsasl2-dev:armel \
-            libselinux1-dev:armel \
-            libssh-gcrypt-dev:armel \
+            libselinux-dev:armel \
+            libssh-dev:armel \
             libssh2-1-dev:armel \
             libtirpc-dev:armel \
             libudev-dev:armel \
             libxml2-dev:armel \
-            libyajl-dev:armel \
             systemtap-sdt-dev:armel
     mkdir -p /usr/local/share/meson/cross
     printf "[binaries]\n\

@@ -24,7 +24,10 @@
 #include <math.h>               /* for isnan() */
 #include <sys/stat.h>
 
+#include <libxml/xmlsave.h>
 #include <libxml/xpathInternals.h>
+#include <libxml/xmlschemastypes.h>
+#include <libxml/catalog.h>
 
 #include "virerror.h"
 #include "virxml.h"
@@ -34,6 +37,7 @@
 #include "virstring.h"
 #include "virutil.h"
 #include "viruuid.h"
+#include "virthread.h"
 #include "configmake.h"
 
 #define VIR_FROM_THIS VIR_FROM_XML
@@ -45,8 +49,31 @@
 /* Internal data to be passed to SAX parser and used by error handler. */
 struct virParserData {
     int domcode;
+    const char *filename;
 };
 
+
+static int
+virXMLSchemaOnceInit(void)
+{
+#if LIBXML_VERSION >= 21100
+    if (xmlSchemaInitTypes() < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to initialize libxml2 schema types"));
+        return -1;
+    }
+#else
+    xmlSchemaInitTypes();
+#endif
+    if (xmlRelaxNGInitTypes() < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to initialize libxml2 RelaxNG data"));
+        return -1;
+    }
+    return 0;
+}
+
+VIR_ONCE_GLOBAL_INIT(virXMLSchema);
 
 static xmlXPathContextPtr
 virXMLXPathContextNew(xmlDocPtr xml)
@@ -258,6 +285,74 @@ virXPathLongLong(const char *xpath,
 
 
 /**
+ * virXPathTristateSwitch:
+ * @xpath: the XPath string to evaluate
+ * @ctxt: an XPath context
+ * @value: the returned virTristateSwitch value
+ *
+ * Convenience function to evaluate an XPath tristate value. The @xpath
+ * expression must ensure that the evaluated value is returned as a
+ * string (use the 'string()' conversion in the expression).
+ *
+ * Returns 0 in case of success in which case @value is set,
+ *         or -1 if the XPath evaluation failed or -2 if the
+ *         value isn't of a virTristateSwitch value.
+ */
+int
+virXPathTristateSwitch(const char *xpath,
+                       xmlXPathContextPtr ctxt,
+                       virTristateSwitch *value)
+{
+    g_autoptr(xmlXPathObject) obj = NULL;
+    int rc;
+
+    if (!(obj = virXPathEvalString(xpath, ctxt)))
+        return -1;
+
+    rc = virTristateSwitchTypeFromString((char *)obj->stringval);
+    if (rc < 0)
+        return -2;
+
+    *value = rc;
+    return 0;
+}
+
+
+/**
+ * virXPathTristateBool:
+ * @xpath: the XPath string to evaluate
+ * @ctxt: an XPath context
+ * @value: the returned virTristateBool value
+ *
+ * Convenience function to evaluate an XPath tristate value. The @xpath
+ * expression must ensure that the evaluated value is returned as a
+ * string (use the 'string()' conversion in the expression).
+ *
+ * Returns 0 in case of success in which case @value is set,
+ *         or -1 if the XPath evaluation failed or -2 if the
+ *         value isn't of a virTristateBool value.
+ */
+int
+virXPathTristateBool(const char *xpath,
+                     xmlXPathContextPtr ctxt,
+                     virTristateBool *value)
+{
+    g_autoptr(xmlXPathObject) obj = NULL;
+    int rc;
+
+    if (!(obj = virXPathEvalString(xpath, ctxt)))
+        return -1;
+
+    rc = virTristateBoolTypeFromString((char *)obj->stringval);
+    if (rc < 0)
+        return -2;
+
+    *value = rc;
+    return 0;
+}
+
+
+/**
  * virXMLCheckIllegalChars:
  * @nodeName: Name of checked node
  * @str: string to check
@@ -273,7 +368,8 @@ virXMLCheckIllegalChars(const char *nodeName,
                         const char *str,
                         const char *illegal)
 {
-    char *c;
+    const char *c;
+
     if ((c = strpbrk(str, illegal))) {
         virReportError(VIR_ERR_XML_DETAIL,
                        _("invalid char in %1$s: %2$c"), nodeName, *c);
@@ -429,13 +525,13 @@ virXMLPropTristateBool(xmlNodePtr node,
 }
 
 
-/* Same as virXMLPropTristateBoolAllowDefault, but will accept the
- * value 'default' and convert it to VIR_TRISTATE_BOOL_ABSENT instead
- * of rejecting it with an error. Should only be used for backwards
- * compatibility reasons, and specifically to parse XML files where a
- * property having value VIR_TRISTATE_BOOL_ABSENT has historically
- * resulted in it being formatted with value 'default' instead of
- * being omitted entirely */
+/* Same as virXMLPropTristateBool, but will accept the value 'default'
+ * and convert it to VIR_TRISTATE_BOOL_ABSENT instead of rejecting it
+ * with an error. Should only be used for backwards compatibility
+ * reasons, and specifically to parse XML files where a property
+ * having value VIR_TRISTATE_BOOL_ABSENT has historically resulted in
+ * it being formatted with value 'default' instead of being omitted
+ * entirely. */
 int
 virXMLPropTristateBoolAllowDefault(xmlNodePtr node,
                                    const char *name,
@@ -903,33 +999,30 @@ virXMLNodeGetSubelement(xmlNodePtr node,
  * virXMLNodeGetSubelementList:
  * @node: node to get subelement of
  * @name: name of subelement to fetch (NULL to fetch all sub-elements)
- * @list: If non-NULL, filled with a list of pointers to the nodes. Caller is
- *        responsible for freeing the list but not the members.
  *
- * Find and return a sub-elements node of @node named @name in a list.
- * Returns the number of subelements with @name
+ * Find and return a sub-elements node of @node named @name in a GPtrArray
+ * populated with the xmlNodePtr objects. Caller is responsible for freeing the
+ * array but not the contained xmlNode objects.
+ *
+ * Note: The returned GPtrArray is non-NULL even if @node doesn't contain such sub-elements
  */
-size_t
+GPtrArray *
 virXMLNodeGetSubelementList(xmlNodePtr node,
-                            const char *name,
-                            xmlNodePtr **list)
+                            const char *name)
 {
+    GPtrArray *ret = g_ptr_array_new();
     xmlNodePtr n;
-    size_t nelems = 0;
 
     for (n = node->children; n; n = n->next) {
         if (n->type == XML_ELEMENT_NODE) {
             if (name && !virXMLNodeNameEqual(n, name))
                 continue;
 
-            if (list)
-                VIR_APPEND_ELEMENT_COPY(*list, nelems, n);
-            else
-                nelems++;
+            g_ptr_array_add(ret, n);
         }
     }
 
-    return nelems;
+    return ret;
 }
 
 
@@ -1026,29 +1119,38 @@ static void
 catchXMLError(void *ctx, const char *msg G_GNUC_UNUSED, ...)
 {
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
-
+    struct virParserData *private = ctxt->_private;
     const xmlChar *cur, *base;
     unsigned int n, col;        /* GCC warns if signed, because compared with sizeof() */
     int domcode = VIR_FROM_XML;
     g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
     g_autofree char *contextstr = NULL;
     g_autofree char *pointerstr = NULL;
+    const xmlError *lastError = xmlCtxtGetLastError(ctxt);
+    const char *filename = NULL;
 
+    if (private)
+        filename = private->filename;
 
     /* conditions for error printing */
     if (!ctxt ||
         (virGetLastErrorCode()) ||
         ctxt->input == NULL ||
-        ctxt->lastError.level != XML_ERR_FATAL ||
-        ctxt->lastError.message == NULL)
+        lastError == NULL ||
+        lastError->level != XML_ERR_FATAL ||
+        lastError->message == NULL)
         return;
 
-    if (ctxt->_private)
-        domcode = ((struct virParserData *) ctxt->_private)->domcode;
-
+    if (private)
+        domcode = private->domcode;
 
     cur = ctxt->input->cur;
     base = ctxt->input->base;
+
+    /* skip backwards over NUL terminator, in case we failed
+     * parsing at the EOF position */
+    if ((cur > base) && *cur == '\0')
+        cur--;
 
     /* skip backwards over any end-of-lines */
     while ((cur > base) && ((*(cur) == '\n') || (*(cur) == '\r')))
@@ -1071,7 +1173,8 @@ catchXMLError(void *ctx, const char *msg G_GNUC_UNUSED, ...)
     contextstr = virBufferContentAndReset(&buf);
 
     /* (leave buffer space for pointer + line terminator) */
-    for  (n = 0; (n<col) && (contextstr[n] != 0); n++) {
+
+    for  (n = 0; (n<col) && contextstr && contextstr[n]; n++) {
         if (contextstr[n] == '\t')
             virBufferAddChar(&buf, '\t');
         else
@@ -1082,21 +1185,36 @@ catchXMLError(void *ctx, const char *msg G_GNUC_UNUSED, ...)
 
     pointerstr = virBufferContentAndReset(&buf);
 
-    if (ctxt->lastError.file) {
-        virGenericReportError(domcode, VIR_ERR_XML_DETAIL,
-                              _("%1$s:%2$d: %3$s%4$s\n%5$s"),
-                              ctxt->lastError.file,
-                              ctxt->lastError.line,
-                              ctxt->lastError.message,
-                              contextstr,
-                              pointerstr);
+    if (contextstr) {
+        if (filename) {
+            virGenericReportError(domcode, VIR_ERR_XML_DETAIL,
+                                  _("%1$s:%2$d: %3$s%4$s\n%5$s"),
+                                  filename,
+                                  lastError->line,
+                                  lastError->message,
+                                  contextstr,
+                                  pointerstr);
+        } else {
+            virGenericReportError(domcode, VIR_ERR_XML_DETAIL,
+                                  _("at line %1$d: %2$s%3$s\n%4$s"),
+                                  lastError->line,
+                                  lastError->message,
+                                  contextstr,
+                                  pointerstr);
+        }
     } else {
-        virGenericReportError(domcode, VIR_ERR_XML_DETAIL,
-                              _("at line %1$d: %2$s%3$s\n%4$s"),
-                              ctxt->lastError.line,
-                              ctxt->lastError.message,
-                              contextstr,
-                              pointerstr);
+        if (filename) {
+            virGenericReportError(domcode, VIR_ERR_XML_DETAIL,
+                                  _("%1$s:%2$d: %3$s"),
+                                  filename,
+                                  lastError->line,
+                                  lastError->message);
+        } else {
+            virGenericReportError(domcode, VIR_ERR_XML_DETAIL,
+                                  _("at line %1$d: %2$s"),
+                                  lastError->line,
+                                  lastError->message);
+        }
     }
 }
 
@@ -1128,20 +1246,23 @@ virXMLParseHelper(int domcode,
                   const char *rootelement,
                   xmlXPathContextPtr *ctxt,
                   const char *schemafile,
-                  bool validate)
+                  bool validate,
+                  bool keepindent)
 {
     struct virParserData private;
     g_autoptr(xmlParserCtxt) pctxt = NULL;
     g_autoptr(xmlDoc) xml = NULL;
     xmlNodePtr rootnode;
     const char *docname;
+    int parseFlags = XML_PARSE_NONET | XML_PARSE_NOWARNING;
+    g_autofree char *xmlStrPtr = NULL;
 
     if (filename)
         docname = filename;
     else if (url)
         docname = url;
     else
-        docname = "[inline data]";
+        docname = "[inline data]"; /* exempt from syntax-check */
 
     /* Set up a parser context so we can catch the details of XML errors. */
     pctxt = xmlNewParserCtxt();
@@ -1149,18 +1270,20 @@ virXMLParseHelper(int domcode,
         abort();
 
     private.domcode = domcode;
+    private.filename = filename;
     pctxt->_private = &private;
     pctxt->sax->error = catchXMLError;
 
-    if (filename) {
-        xml = xmlCtxtReadFile(pctxt, filename, NULL,
-                              XML_PARSE_NONET |
-                              XML_PARSE_NOWARNING);
-    } else {
-        xml = xmlCtxtReadDoc(pctxt, BAD_CAST xmlStr, url, NULL,
-                             XML_PARSE_NONET |
-                             XML_PARSE_NOWARNING);
+    if (keepindent) {
+        parseFlags |= XML_PARSE_NOBLANKS;
     }
+
+    if (filename) {
+        if (virFileReadAll(filename, 1024*1024*10, &xmlStrPtr) < 0)
+            return NULL;
+        xmlStr = xmlStrPtr;
+    }
+    xml = xmlCtxtReadDoc(pctxt, BAD_CAST xmlStr, url, NULL, parseFlags);
 
     if (!xml) {
         if (virGetLastErrorCode() == VIR_ERR_OK) {
@@ -1590,6 +1713,9 @@ virXMLValidatorInit(const char *schemafile)
 {
     g_autoptr(virXMLValidator) validator = NULL;
 
+    if (virXMLSchemaInitialize() < 0)
+        return NULL;
+
     validator = g_new0(virXMLValidator, 1);
 
     validator->schemafile = g_strdup(schemafile);
@@ -1710,7 +1836,7 @@ virXMLValidatorFree(virXMLValidator *validator)
  *
  * Both passed buffers are always consumed and freed.
  */
-void
+static void
 virXMLFormatElementInternal(virBuffer *buf,
                             const char *name,
                             virBuffer *attrBuf,
@@ -1757,6 +1883,20 @@ virXMLFormatElementEmpty(virBuffer *buf,
 
 
 /**
+ * Same as virXMLFormatElement but the child is direct value without
+ * subelements.
+ */
+void
+virXMLFormatElementDirect(virBuffer *buf,
+                          const char *name,
+                          virBuffer *attrBuf,
+                          virBuffer *childBuf)
+{
+    virXMLFormatElementInternal(buf, name, attrBuf, childBuf, false, false);
+}
+
+
+/**
  * virXMLFormatElement
  * @buf: the parent buffer where the element will be placed
  * @name: the name of the element
@@ -1797,23 +1937,14 @@ virXMLFormatMetadata(virBuffer *buf,
 {
     g_autoptr(xmlBuffer) xmlbuf = NULL;
     const char *xmlbufContent = NULL;
-    int oldIndentTreeOutput = xmlIndentTreeOutput;
 
     if (!metadata)
         return 0;
 
-    /* Indentation on output requires that we previously set
-     * xmlKeepBlanksDefault to 0 when parsing; also, libxml does 2
-     * spaces per level of indentation of intermediate elements,
-     * but no leading indentation before the starting element.
-     * Thankfully, libxml maps what looks like globals into
-     * thread-local uses, so we are thread-safe.  */
-    xmlIndentTreeOutput = 1;
     xmlbuf = virXMLBufferCreate();
 
     if (xmlNodeDump(xmlbuf, metadata->doc, metadata,
                     virBufferGetIndent(buf) / 2, 1) < 0) {
-        xmlIndentTreeOutput = oldIndentTreeOutput;
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Unable to format metadata element"));
         return -1;
@@ -1825,7 +1956,6 @@ virXMLFormatMetadata(virBuffer *buf,
     virSkipSpaces(&xmlbufContent);
 
     virBufferAsprintf(buf, "%s\n", xmlbufContent);
-    xmlIndentTreeOutput = oldIndentTreeOutput;
 
     return 0;
 }

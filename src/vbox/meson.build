@@ -1,5 +1,4 @@
 vbox_driver_sources = [
-  'vbox_V6_1.c',
   'vbox_V7_0.c',
   'vbox_common.c',
   'vbox_driver.c',
@@ -57,10 +56,13 @@ if conf.has('WITH_VBOX')
 
   virt_daemon_units += {
     'service': 'virtvboxd',
-    'service_in': files('virtvboxd.service.in'),
-    'name': 'Libvirt vbox',
-    'sockprefix': 'virtvboxd',
-    'sockets': [ 'main', 'ro', 'admin' ],
+    'name': 'VirtualBox',
+    'service_extra_in': [
+      files('virtvboxd.service.extra.in'),
+    ],
+    'socket_extra_in': [
+      files('virtvboxd.socket.extra.in'),
+    ],
   }
 
   openrc_init_files += {

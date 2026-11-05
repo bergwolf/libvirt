@@ -79,13 +79,22 @@ VIR_ENUM_IMPL(virResctrl,
               "DATA",
 );
 
-/* Monitor feature name prefix mapping for monitor naming */
+/* Monitor feature prefix/type mapping for monitor naming */
 VIR_ENUM_IMPL(virResctrlMonitorPrefix,
               VIR_RESCTRL_MONITOR_TYPE_LAST,
               "__unsupported__",
               "llc_",
               "mbm_",
+              "energy",
 );
+
+
+/* PERF_PKG_MON features that report energy data (floating-point) */
+static const char *virResctrlEnergyFeatures[] = {
+    "core_energy",
+    "activity",
+    NULL,
+};
 
 
 /* All private typedefs so that they exist for all later definitions.  This way
@@ -121,6 +130,8 @@ struct _virResctrlInfoPerType {
     unsigned int bits;
     unsigned int max_cache_id;
 
+    virBitmap *cache_ids;
+
     /* In order to be self-sufficient we need size information per cache.
      * Funnily enough, one of the outcomes of the resctrl design is that it
      * does not account for different sizes per cache on the same level.  So
@@ -146,11 +157,8 @@ struct _virResctrlInfoMemBW {
     unsigned int max_allocation;
     /* level number of last level cache */
     unsigned int last_level_cache;
-    /* max id of last level cache, this is used to track
-     * how many last level cache available in host system,
-     * the number of memory bandwidth allocation controller
-     * is identical with last level cache. */
-    unsigned int max_id;
+
+    virBitmap *cache_ids;
 };
 
 struct _virResctrlInfoMongrp {
@@ -184,7 +192,33 @@ struct _virResctrlInfo {
     virResctrlInfoMemBW *membw_info;
 
     virResctrlInfoMongrp *monitor_info;
+
+    virResctrlInfoMongrp *perf_monitor_info;
 };
+
+static void
+virResctrlInfoMemBWFree(virResctrlInfoMemBW *ptr)
+{
+    if (!ptr)
+        return;
+
+    virBitmapFree(ptr->cache_ids);
+    g_free(ptr);
+}
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virResctrlInfoMemBW, virResctrlInfoMemBWFree);
+
+static void
+virResctrlInfoPerTypeFree(virResctrlInfoPerType *ptr)
+{
+    if (!ptr)
+        return;
+
+    virBitmapFree(ptr->cache_ids);
+    g_free(ptr);
+}
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virResctrlInfoPerType, virResctrlInfoPerTypeFree);
 
 
 static void
@@ -203,7 +237,7 @@ virResctrlInfoDispose(void *obj)
 
         if (level->types) {
             for (j = 0; j < VIR_CACHE_TYPE_LAST; j++)
-                g_free(level->types[j]);
+                virResctrlInfoPerTypeFree(level->types[j]);
         }
         g_free(level->types);
         g_free(level);
@@ -212,9 +246,14 @@ virResctrlInfoDispose(void *obj)
     if (resctrl->monitor_info)
         g_strfreev(resctrl->monitor_info->features);
 
-    g_free(resctrl->membw_info);
+    if (resctrl->perf_monitor_info)
+        g_strfreev(resctrl->perf_monitor_info->features);
+
+    virResctrlInfoMemBWFree(resctrl->membw_info);
+
     g_free(resctrl->levels);
     g_free(resctrl->monitor_info);
+    g_free(resctrl->perf_monitor_info);
 }
 
 
@@ -496,8 +535,7 @@ static int
 virResctrlLock(void)
 {
     virReportSystemError(ENOSYS, "%s",
-                         _("resctrl locking is not supported "
-                           "on this platform"));
+                         _("resctrl locking is not supported on this platform"));
     return -1;
 }
 
@@ -506,8 +544,7 @@ static int
 virResctrlUnlock(int fd G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
-                         _("resctrl locking is not supported "
-                           "on this platform"));
+                         _("resctrl locking is not supported on this platform"));
     return -1;
 }
 
@@ -529,7 +566,7 @@ virResctrlGetCacheInfo(virResctrlInfo *resctrl,
         int type = 0;
         unsigned int level = 0;
         virResctrlInfoPerLevel *i_level = NULL;
-        g_autofree virResctrlInfoPerType *i_type = NULL;
+        g_autoptr(virResctrlInfoPerType) i_type = NULL;
 
         VIR_DEBUG("Parsing info type '%s'", ent->d_name);
         if (ent->d_name[0] != 'L')
@@ -630,7 +667,7 @@ static int
 virResctrlGetMemoryBandwidthInfo(virResctrlInfo *resctrl)
 {
     int rv = -1;
-    g_autofree virResctrlInfoMemBW *i_membw = NULL;
+    g_autoptr(virResctrlInfoMemBW) i_membw = NULL;
 
     /* query memory bandwidth allocation info */
     i_membw = g_new0(virResctrlInfoMemBW, 1);
@@ -750,6 +787,52 @@ virResctrlGetMonitorInfo(virResctrlInfo *resctrl)
 
 
 static int
+virResctrlGetPerfMonitorInfo(virResctrlInfo *resctrl)
+{
+    int rv = -1;
+    g_autofree char *featurestr = NULL;
+    g_autofree virResctrlInfoMongrp *info_monitor = NULL;
+
+    info_monitor = g_new0(virResctrlInfoMongrp, 1);
+
+    rv = virFileReadValueUint(&info_monitor->max_monitor,
+                              SYSFS_RESCTRL_PATH
+                              "/info/PERF_PKG_MON/num_rmids");
+    if (rv == -2) {
+        VIR_DEBUG("The file '" SYSFS_RESCTRL_PATH "/info/PERF_PKG_MON/num_rmids' "
+                  "does not exist");
+        return 0;
+    } else if (rv < 0) {
+        return -1;
+    }
+
+    rv = virFileReadValueString(&featurestr,
+                                SYSFS_RESCTRL_PATH
+                                "/info/PERF_PKG_MON/mon_features");
+    if (rv == -2)
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Cannot get mon_features from resctrl PERF_PKG_MON"));
+    if (rv < 0)
+        return -1;
+
+    if (!*featurestr) {
+        VIR_DEBUG("Got empty feature list from PERF_PKG_MON; "
+                  "energy monitoring will not be available");
+        return 0;
+    }
+
+    info_monitor->features = g_strsplit(featurestr, "\n", 0);
+    info_monitor->nfeatures = g_strv_length(info_monitor->features);
+    VIR_DEBUG("Resctrl supported %zd PERF_PKG_MON monitoring features",
+              info_monitor->nfeatures);
+
+    resctrl->perf_monitor_info = g_steal_pointer(&info_monitor);
+
+    return 0;
+}
+
+
+static int
 virResctrlGetInfo(virResctrlInfo *resctrl)
 {
     g_autoptr(DIR) dirp = NULL;
@@ -766,6 +849,9 @@ virResctrlGetInfo(virResctrlInfo *resctrl)
         return -1;
 
     if ((ret = virResctrlGetMonitorInfo(resctrl)) < 0)
+        return -1;
+
+    if ((ret = virResctrlGetPerfMonitorInfo(resctrl)) < 0)
         return -1;
 
     return 0;
@@ -808,6 +894,9 @@ virResctrlInfoIsEmpty(virResctrlInfo *resctrl)
     if (resctrl->monitor_info)
         return false;
 
+    if (resctrl->perf_monitor_info)
+        return false;
+
     for (i = 0; i < resctrl->nlevels; i++) {
         virResctrlInfoPerLevel *i_level = resctrl->levels[i];
 
@@ -827,6 +916,7 @@ virResctrlInfoIsEmpty(virResctrlInfo *resctrl)
 int
 virResctrlInfoGetMemoryBandwidth(virResctrlInfo *resctrl,
                                  unsigned int level,
+                                 unsigned int id,
                                  virResctrlInfoMemBWPerNode *control)
 {
     virResctrlInfoMemBW *membw_info = resctrl->membw_info;
@@ -837,6 +927,13 @@ virResctrlInfoGetMemoryBandwidth(virResctrlInfo *resctrl,
     if (membw_info->last_level_cache != level)
         return 0;
 
+    /* This "should not happen", but resctrl code is constantly full of
+     * surprises.  Warning might make us aware in the future. */
+    if (!virBitmapIsBitSet(membw_info->cache_ids, id)) {
+        VIR_WARN("Memory bandwidth for cache id %u is not recorded in list of cache IDs",
+                 id);
+    }
+
     control->granularity = membw_info->bandwidth_granularity;
     control->min = membw_info->min_bandwidth;
     control->max_allocation = membw_info->max_allocation;
@@ -846,6 +943,7 @@ virResctrlInfoGetMemoryBandwidth(virResctrlInfo *resctrl,
 
 int
 virResctrlInfoGetCache(virResctrlInfo *resctrl,
+                       unsigned int id,
                        unsigned int level,
                        unsigned long long size,
                        size_t *ncontrols,
@@ -864,12 +962,15 @@ virResctrlInfoGetCache(virResctrlInfo *resctrl,
     if (resctrl->membw_info) {
         virResctrlInfoMemBW *membw_info = resctrl->membw_info;
 
+        if (!membw_info->cache_ids)
+            membw_info->cache_ids = virBitmapNew(0);
+
         if (level > membw_info->last_level_cache) {
             membw_info->last_level_cache = level;
-            membw_info->max_id = 0;
-        } else if (membw_info->last_level_cache == level) {
-            membw_info->max_id++;
+            virBitmapShrink(membw_info->cache_ids, 0);
         }
+
+        virBitmapSetBitExpand(membw_info->cache_ids, id);
     }
 
     if (level >= resctrl->nlevels)
@@ -883,6 +984,11 @@ virResctrlInfoGetCache(virResctrlInfo *resctrl,
         i_type = i_level->types[i];
         if (!i_type)
             continue;
+
+        if (!i_type->cache_ids)
+            i_type->cache_ids = virBitmapNew(id);
+
+        virBitmapSetBitExpand(i_type->cache_ids, id);
 
         /* Let's take the opportunity to update our internal information about
          * the cache size */
@@ -898,7 +1004,6 @@ virResctrlInfoGetCache(virResctrlInfo *resctrl,
                                level, i_type->size, size);
                 goto error;
             }
-            i_type->max_cache_id++;
         }
 
         VIR_EXPAND_N(*controls, *ncontrols, 1);
@@ -948,13 +1053,6 @@ virResctrlInfoGetMonitorPrefix(virResctrlInfo *resctrl,
     if (virResctrlInfoIsEmpty(resctrl))
         return 0;
 
-    mongrp_info = resctrl->monitor_info;
-
-    if (!mongrp_info) {
-        VIR_INFO("Monitor is not supported in host");
-        return 0;
-    }
-
     for (i = 0; i < VIR_RESCTRL_MONITOR_TYPE_LAST; i++) {
         if (STREQ(prefix, virResctrlMonitorPrefixTypeToString(i))) {
             mon = g_new0(virResctrlInfoMon, 1);
@@ -970,6 +1068,19 @@ virResctrlInfoGetMonitorPrefix(virResctrlInfo *resctrl,
         return -1;
     }
 
+    if (mon->type == VIR_RESCTRL_MONITOR_TYPE_ENERGY)
+        mongrp_info = resctrl->perf_monitor_info;
+    else
+        mongrp_info = resctrl->monitor_info;
+
+    if (!mongrp_info) {
+        VIR_DEBUG("Monitor prefix '%s' is not supported in host", prefix);
+        virResctrlInfoMonFree(*monitor);
+        *monitor = NULL;
+        ret = 0;
+        goto cleanup;
+    }
+
     mon->max_monitor = mongrp_info->max_monitor;
 
     if (mon->type == VIR_RESCTRL_MONITOR_TYPE_CACHE) {
@@ -980,8 +1091,12 @@ virResctrlInfoGetMonitorPrefix(virResctrlInfo *resctrl,
     mon->features = g_new0(char *, mongrp_info->nfeatures + 1);
 
     for (i = 0; i < mongrp_info->nfeatures; i++) {
-        if (STRPREFIX(mongrp_info->features[i], prefix))
+        if (mon->type == VIR_RESCTRL_MONITOR_TYPE_ENERGY) {
+            if (g_strv_contains(virResctrlEnergyFeatures, mongrp_info->features[i]))
+                mon->features[mon->nfeatures++] = g_strdup(mongrp_info->features[i]);
+        } else if (STRPREFIX(mongrp_info->features[i], prefix)) {
             mon->features[mon->nfeatures++] = g_strdup(mongrp_info->features[i]);
+        }
     }
 
     mon->features = g_renew(char *, mon->features, mon->nfeatures + 1);
@@ -1271,12 +1386,6 @@ virResctrlAllocSetMemoryBandwidth(virResctrlAlloc *alloc,
 {
     virResctrlAllocMemBW *mem_bw = alloc->mem_bw;
 
-    if (memory_bandwidth > 100) {
-        virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("Memory Bandwidth value exceeding 100 is invalid."));
-        return -1;
-    }
-
     if (!mem_bw) {
         mem_bw = g_new0(virResctrlAllocMemBW, 1);
         alloc->mem_bw = mem_bw;
@@ -1403,8 +1512,7 @@ virResctrlAllocMemoryBandwidthFormat(virResctrlAlloc *alloc,
 
 
 static int
-virResctrlAllocParseProcessMemoryBandwidth(virResctrlInfo *resctrl,
-                                           virResctrlAlloc *alloc,
+virResctrlAllocParseProcessMemoryBandwidth(virResctrlAlloc *alloc,
                                            char *mem_bw)
 {
     unsigned int bandwidth;
@@ -1425,13 +1533,6 @@ virResctrlAllocParseProcessMemoryBandwidth(virResctrlInfo *resctrl,
     if (virStrToLong_uip(tmp, NULL, 10, &bandwidth) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Invalid bandwidth %1$u"), bandwidth);
-        return -1;
-    }
-    if (bandwidth < resctrl->membw_info->min_bandwidth ||
-        id > resctrl->membw_info->max_id) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Missing or inconsistent resctrl info for memory bandwidth node '%1$u'"),
-                       id);
         return -1;
     }
     if (alloc->mem_bw->nbandwidths <= id) {
@@ -1465,11 +1566,9 @@ virResctrlAllocParseMemoryBandwidthLine(virResctrlInfo *resctrl,
         return 0;
 
     if (!resctrl || !resctrl->membw_info ||
-        !resctrl->membw_info->min_bandwidth ||
         !resctrl->membw_info->bandwidth_granularity) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Missing or inconsistent resctrl info for "
-                         "memory bandwidth allocation"));
+                       _("Missing or inconsistent resctrl info for memory bandwidth allocation"));
         return -1;
     }
 
@@ -1483,7 +1582,7 @@ virResctrlAllocParseMemoryBandwidthLine(virResctrlInfo *resctrl,
 
     mbs = g_strsplit(tmp, ";", 0);
     for (next = mbs; *next; next++) {
-        if (virResctrlAllocParseProcessMemoryBandwidth(resctrl, alloc, *next) < 0)
+        if (virResctrlAllocParseProcessMemoryBandwidth(alloc, *next) < 0)
             return -1;
     }
 
@@ -1585,7 +1684,8 @@ virResctrlAllocParseProcessCache(virResctrlInfo *resctrl,
     if (!resctrl ||
         level >= resctrl->nlevels ||
         !resctrl->levels[level] ||
-        !resctrl->levels[level]->types[type]) {
+        !resctrl->levels[level]->types[type] ||
+        !virBitmapIsBitSet(resctrl->levels[level]->types[type]->cache_ids, cache_id)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Missing or inconsistent resctrl info for level '%1$u' type '%2$s'"),
                        level, virCacheTypeToString(type));
@@ -1778,7 +1878,7 @@ virResctrlAllocNewFromInfo(virResctrlInfo *info)
         for (j = 0; j < VIR_CACHE_TYPE_LAST; j++) {
             virResctrlInfoPerType *i_type = i_level->types[j];
             g_autoptr(virBitmap) mask = NULL;
-            size_t k = 0;
+            ssize_t bit = -1;
 
             if (!i_type)
                 continue;
@@ -1786,28 +1886,58 @@ virResctrlAllocNewFromInfo(virResctrlInfo *info)
             mask = virBitmapNew(i_type->bits);
             virBitmapSetAll(mask);
 
-            for (k = 0; k <= i_type->max_cache_id; k++) {
-                if (virResctrlAllocUpdateMask(ret, i, j, k, mask) < 0)
+            while ((bit = virBitmapNextSetBit(i_type->cache_ids, bit)) >= 0) {
+                if (virResctrlAllocUpdateMask(ret, i, j, bit, mask) < 0)
                     return NULL;
             }
         }
     }
 
-    /* set default free memory bandwidth to 100% */
-    if (info->membw_info) {
-        ret->mem_bw = g_new0(virResctrlAllocMemBW, 1);
+    return g_steal_pointer(&ret);
+}
 
-        VIR_EXPAND_N(ret->mem_bw->bandwidths, ret->mem_bw->nbandwidths,
-                     info->membw_info->max_id + 1);
 
-        for (i = 0; i < ret->mem_bw->nbandwidths; i++) {
-            ret->mem_bw->bandwidths[i] = g_new0(unsigned int, 1);
-            *(ret->mem_bw->bandwidths[i]) = 100;
+static int
+virResctrlAllocCopyMemBW(virResctrlAlloc *dst,
+                         virResctrlAlloc *src)
+{
+    size_t i = 0;
+    virResctrlAllocMemBW *dst_bw = NULL;
+    virResctrlAllocMemBW *src_bw = src->mem_bw;
+
+    if (!src->mem_bw)
+        return 0;
+
+    if (!dst->mem_bw)
+        dst->mem_bw = g_new0(virResctrlAllocMemBW, 1);
+
+    dst_bw = dst->mem_bw;
+
+    if (src_bw->nbandwidths > dst_bw->nbandwidths)
+        VIR_EXPAND_N(dst_bw->bandwidths, dst_bw->nbandwidths,
+                     src_bw->nbandwidths - dst_bw->nbandwidths);
+
+    for (i = 0; i < src_bw->nbandwidths; i++) {
+        if (!src_bw->bandwidths[i]) {
+            if (!dst_bw->bandwidths[i])
+                continue;
+
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("bandwidth controller id %1$zd does not exist"),
+                           i);
+            return -1;
+        }
+
+        if (!dst_bw->bandwidths[i]) {
+            dst_bw->bandwidths[i] = g_new0(unsigned int, 1);
+            *dst_bw->bandwidths[i] = *src_bw->bandwidths[i];
+            continue;
         }
     }
 
-    return g_steal_pointer(&ret);
+    return 0;
 }
+
 
 /*
  * This function creates an allocation that represents all unused parts of all
@@ -1845,6 +1975,9 @@ virResctrlAllocGetUnused(virResctrlInfo *resctrl)
     alloc_default = virResctrlAllocGetDefault(resctrl);
     if (!alloc_default)
         return NULL;
+
+    /* Take MBA maximums from the root allocation */
+    virResctrlAllocCopyMemBW(ret, alloc_default);
 
     virResctrlAllocSubtract(ret, alloc_default);
 
@@ -2031,44 +2164,7 @@ virResctrlAllocMemoryBandwidth(virResctrlInfo *resctrl,
                            mem_bw_info->min_bandwidth);
             return -1;
         }
-        if (i > mem_bw_info->max_id) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("bandwidth controller id %1$zd does not exist, max controller id %2$u"),
-                           i, mem_bw_info->max_id);
-            return -1;
-        }
     }
-    return 0;
-}
-
-
-static int
-virResctrlAllocCopyMemBW(virResctrlAlloc *dst,
-                         virResctrlAlloc *src)
-{
-    size_t i = 0;
-    virResctrlAllocMemBW *dst_bw = NULL;
-    virResctrlAllocMemBW *src_bw = src->mem_bw;
-
-    if (!src->mem_bw)
-        return 0;
-
-    if (!dst->mem_bw)
-        dst->mem_bw = g_new0(virResctrlAllocMemBW, 1);
-
-    dst_bw = dst->mem_bw;
-
-    if (src_bw->nbandwidths > dst_bw->nbandwidths)
-        VIR_EXPAND_N(dst_bw->bandwidths, dst_bw->nbandwidths,
-                     src_bw->nbandwidths - dst_bw->nbandwidths);
-
-    for (i = 0; i < src_bw->nbandwidths; i++) {
-        if (dst_bw->bandwidths[i])
-            continue;
-        dst_bw->bandwidths[i] = g_new0(unsigned int, 1);
-        *dst_bw->bandwidths[i] = *src_bw->bandwidths[i];
-    }
-
     return 0;
 }
 
@@ -2139,9 +2235,6 @@ virResctrlAllocAssign(virResctrlInfo *resctrl,
     if (virResctrlAllocCopyMasks(alloc, alloc_default) < 0)
         return -1;
 
-    if (virResctrlAllocCopyMemBW(alloc, alloc_default) < 0)
-        return -1;
-
     for (level = 0; level < alloc->nlevels; level++) {
         virResctrlAllocPerLevel *a_level = alloc->levels[level];
         virResctrlAllocPerLevel *f_level = NULL;
@@ -2194,12 +2287,10 @@ virResctrlDeterminePath(const char *parentpath,
                         const char *prefix,
                         const char *id)
 {
-    if (!id) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Resctrl ID must be set before determining resctrl parentpath='%1$s' prefix='%2$s'"),
-                       parentpath, prefix);
-        return NULL;
-    }
+    /* A NULL id denotes a whole-process group, which uses the bare machine
+     * name with no id suffix. */
+    if (!id)
+        return g_strdup_printf("%s/%s", parentpath, prefix);
 
     return g_strdup_printf("%s/%s-%s", parentpath, prefix, id);
 }
@@ -2494,6 +2585,16 @@ virResctrlMonitorGetID(virResctrlMonitor *monitor)
 }
 
 
+char *
+virResctrlMonitorGetName(virResctrlMonitor *monitor)
+{
+    if (!monitor->path)
+        return NULL;
+
+    return g_path_get_basename(monitor->path);
+}
+
+
 void
 virResctrlMonitorSetAlloc(virResctrlMonitor *monitor,
                           virResctrlAlloc *alloc)
@@ -2525,7 +2626,8 @@ virResctrlMonitorRemove(virResctrlMonitor *monitor)
 
 static int
 virResctrlMonitorStatsSorter(const void *a,
-                             const void *b)
+                             const void *b,
+                             void *opaque G_GNUC_UNUSED)
 {
     return (*(virResctrlMonitorStats **)a)->id
         - (*(virResctrlMonitorStats **)b)->id;
@@ -2541,7 +2643,7 @@ virResctrlMonitorStatsSorter(const void *a,
  * memory bandwidth usage data.
  * @nstats: A size_t pointer to hold the returned array length of @stats
  *
- * Get cache or memory bandwidth utilization information.
+ * Get cache, memory bandwidth or energy utilization information.
  *
  * Returns 0 on success, -1 on error.
  */
@@ -2576,6 +2678,7 @@ virResctrlMonitorGetStats(virResctrlMonitor *monitor,
     while (virDirRead(dirp, &ent, datapath) > 0) {
         g_autofree char *filepath = NULL;
         char *node_id = NULL;
+        bool is_energy = false;
 
         /* Looking for directory that contains resource utilization
          * information file. The directory name is arranged in format
@@ -2588,18 +2691,17 @@ virResctrlMonitorGetStats(virResctrlMonitor *monitor,
         if (!virFileIsDir(filepath))
             continue;
 
-        /* Looking for directory has a prefix 'mon_L' */
-        if (!(node_id = STRSKIP(ent->d_name, "mon_L")))
+        if ((node_id = STRSKIP(ent->d_name, "mon_PERF_PKG_"))) {
+            is_energy = true;
+        } else if ((node_id = STRSKIP(ent->d_name, "mon_L"))) {
+            node_id = strchr(node_id, '_');
+            if (!node_id)
+                continue;
+            if (!(node_id = STRSKIP(node_id, "_")))
+                continue;
+        } else {
             continue;
-
-        /* Looking for directory has another '_' */
-        node_id = strchr(node_id, '_');
-        if (!node_id)
-            continue;
-
-        /* Skip the character '_' */
-        if (!(node_id = STRSKIP(node_id, "_")))
-            continue;
+        }
 
         stat = g_new0(virResctrlMonitorStats, 1);
         stat->features = g_new0(char *, nresources + 1);
@@ -2609,27 +2711,69 @@ virResctrlMonitorGetStats(virResctrlMonitor *monitor,
             goto cleanup;
 
         for (i = 0; resources[i]; i++) {
-            rv = virFileReadValueUllong(&val, "%s/%s/%s", datapath,
-                                        ent->d_name, resources[i]);
-            if (rv == -2) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("File '%1$s/%2$s/%3$s' does not exist."),
-                               datapath, ent->d_name, resources[i]);
-            }
-            if (rv < 0)
-                goto cleanup;
+            if (is_energy) {
+                g_autofree char *valstr = NULL;
+                double dval = 0.0;
+                char *endp = NULL;
 
-            VIR_APPEND_ELEMENT(stat->vals, stat->nvals, val);
+                rv = virFileReadValueString(&valstr, "%s/%s/%s", datapath,
+                                            ent->d_name, resources[i]);
+                if (rv == -2) {
+                    if (i == 0)
+                        break;
+                    virReportError(VIR_ERR_INTERNAL_ERROR,
+                                   _("File '%1$s/%2$s/%3$s' does not exist."),
+                                   datapath, ent->d_name, resources[i]);
+                    goto cleanup;
+                }
+                if (rv < 0)
+                    goto cleanup;
+
+                g_strstrip(valstr);
+                errno = 0;
+                dval = g_ascii_strtod(valstr, &endp);
+                if (endp == valstr || *endp != '\0' || errno != 0) {
+                    virReportError(VIR_ERR_INTERNAL_ERROR,
+                                   _("Cannot parse resctrl monitor value '%1$s' from '%2$s/%3$s/%4$s'"),
+                                   valstr, datapath, ent->d_name, resources[i]);
+                    goto cleanup;
+                }
+
+                VIR_APPEND_ELEMENT(stat->dvals, stat->ndvals, dval);
+            } else {
+                rv = virFileReadValueUllong(&val, "%s/%s/%s", datapath,
+                                            ent->d_name, resources[i]);
+                if (rv == -2) {
+                    if (i == 0)
+                        break;
+                    virReportError(VIR_ERR_INTERNAL_ERROR,
+                                   _("File '%1$s/%2$s/%3$s' does not exist."),
+                                   datapath, ent->d_name, resources[i]);
+                    goto cleanup;
+                }
+                if (rv < 0)
+                    goto cleanup;
+
+                VIR_APPEND_ELEMENT(stat->vals, stat->nvals, val);
+            }
 
             stat->features[i] = g_strdup(resources[i]);
+        }
+
+        if (resources[i]) {
+            virResctrlMonitorStatsFree(stat);
+            stat = NULL;
+            continue;
         }
 
         VIR_APPEND_ELEMENT(*stats, *nstats, stat);
     }
 
     /* Sort in id's ascending order */
-    if (*nstats)
-        qsort(*stats, *nstats, sizeof(**stats), virResctrlMonitorStatsSorter);
+    if (*nstats) {
+        g_qsort_with_data(*stats, *nstats, sizeof(**stats),
+                          virResctrlMonitorStatsSorter, NULL);
+    }
 
     ret = 0;
  cleanup:
@@ -2646,5 +2790,6 @@ virResctrlMonitorStatsFree(virResctrlMonitorStats *stat)
 
     g_strfreev(stat->features);
     g_free(stat->vals);
+    g_free(stat->dvals);
     g_free(stat);
 }

@@ -396,8 +396,11 @@ virNetServerClientNewInternal(unsigned long long id,
 
     client->sockTimer = virEventAddTimeout(-1, virNetServerClientSockTimerFunc,
                                            client, NULL);
-    if (client->sockTimer < 0)
+    if (client->sockTimer < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to add socket timer"));
         goto error;
+    }
 
     /* Prepare one for packet receive */
     if (!(client->rx = virNetMessageNew(true)))
@@ -531,8 +534,7 @@ virNetServerClient *virNetServerClientNewPostExecRestart(virNetServer *srv,
     } else {
         if (virJSONValueObjectGetNumberLong(object, "conn_time", &timestamp) < 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Malformed conn_time field in JSON "
-                             "state document"));
+                           _("Malformed conn_time field in JSON state document"));
             return NULL;
         }
     }
@@ -1264,9 +1266,8 @@ static virNetMessage *virNetServerClientDispatchRead(virNetServerClient *client)
         } else if (!client->nrequests_warning &&
                    client->nrequests_max > 1) {
             client->nrequests_warning = true;
-            VIR_WARN("Client hit max requests limit %zd. This may result "
-                     "in keep-alive timeouts. Consider tuning the "
-                     "max_client_requests server parameter", client->nrequests);
+            VIR_WARN("Client hit max requests limit %zd. This may result in keep-alive timeouts. Consider tuning the max_client_requests server parameter",
+                     client->nrequests);
         }
         virNetServerClientUpdateEvent(client);
 

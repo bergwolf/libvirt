@@ -40,3 +40,9 @@ virBhyveProcessBuildDestroyCmd(struct _bhyveConn *driver,
 virCommand *
 virBhyveProcessBuildLoadCmd(struct _bhyveConn *driver, virDomainDef *def,
                             const char *devmap_file, char **devicesmap_out);
+
+virCommand *
+virBhyveProcessBuildResetCmd(struct _bhyveConn *driver, virDomainDef *def);
+
+virCommand *
+virBhyveProcessBuildGetVMPidCmd(struct _bhyveConn *driver, virDomainDef *def);

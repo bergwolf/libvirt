@@ -73,10 +73,10 @@ static int virTestUseTerminalColors(void)
 static unsigned int
 virTestGetFlag(const char *name)
 {
-    char *flagStr;
+    const char *flagStr;
     unsigned int flag;
 
-    if ((flagStr = getenv(name)) == NULL)
+    if ((flagStr = g_getenv(name)) == NULL)
         return 0;
 
     if (virStrToLong_ui(flagStr, NULL, 10, &flag) < 0)
@@ -123,7 +123,7 @@ virTestRun(const char *title,
 
     /* Some test are fragile about environ settings.  If that's
      * the case, don't poison it. */
-    if (getenv("VIR_TEST_MOCK_PROGNAME"))
+    if (g_getenv("VIR_TEST_MOCK_PROGNAME"))
         g_setenv("VIR_TEST_MOCK_TESTNAME", title, TRUE);
 
     if (testCounter == 0 && !virTestGetVerbose())
@@ -290,6 +290,152 @@ virTestLoadFileGetPath(const char *p,
         VIR_TEST_VERBOSE("failed to format file path");
 
     return path;
+}
+
+
+static virTestDummyFDContext *dummyFDContext;
+
+void
+virTestDummyFDContextFree(virTestDummyFDContext *ctxt G_GNUC_UNUSED)
+{
+    if (!dummyFDContext)
+        return;
+
+    g_clear_pointer(&dummyFDContext->hints, g_hash_table_unref);
+    g_slist_free_full(g_steal_pointer(&dummyFDContext->errors), g_free);
+
+    g_clear_pointer(&dummyFDContext, g_free);
+}
+
+
+/**
+ * virTestDummyFDContextNew:
+ *
+ * Create a new context for marking dummy FDs so that they can be later
+ * cross-referenced and stripped from test output. Marked FDs are recorded
+ * in the returned context's 'hints' field, where keys are stringified
+ * FD numbers and the passed 'hint' strings are recorded as values.
+ *
+ * The 'errors' GSList is a list of error strings that can be added if the test
+ * case notices invalid operations with FDs.
+ *
+ * The context uses a global variable 'dummyFDContext' so that mocked functions
+ * which don't allow custom data can use this infrastructure.
+ *
+ * Note that in order to be able to track FDs across duplication via dup(), any
+ * test program must install a mock for dup() which calls virTestMakeDummyMarkDup.
+ * VIR_TEST_MAKE_DUMMY_FD_INSTALL_DUP_MOCK macro can be used to install one.
+ */
+virTestDummyFDContext *
+virTestDummyFDContextNew(void)
+{
+    if (dummyFDContext)
+        return dummyFDContext;
+
+    dummyFDContext = g_new0(virTestDummyFDContext, 1);
+    dummyFDContext->hints = virHashNew(g_free);
+
+    return dummyFDContext;
+}
+
+
+/**
+ * virTestDummyFDContextMarkFD:
+ * @fd: file descriptor to mark
+ * @hint: allocated buffer containing the name of @fd; the pointer is stolen and freed later
+ *
+ * Records @hint as a reference to @fd in the global 'dummyFDContext' table.
+ */
+void
+virTestDummyFDContextMarkFD(int fd,
+                            char *hint)
+{
+    if (!dummyFDContext) {
+        g_free(hint);
+        return;
+    }
+
+    g_hash_table_insert(dummyFDContext->hints, g_strdup_printf("%d", fd), hint);
+}
+
+
+/**
+ * virTestMakeDummyMarkDup:
+ * @newfd: new fd number
+ * @oldfd: old fd number
+ *
+ * Mark @newfd as a duplicate of @oldfd, e.g. when dup() is mocked. Transfers
+ * the hint from @oldfd to @newfd with a suffix marking that it's a dup'd fd.
+ */
+void
+virTestMakeDummyMarkDup(int newfd,
+                        int oldfd)
+{
+    const char *oldhint;
+    g_autofree char *oldlabel = NULL;
+
+    if (!dummyFDContext)
+        return;
+
+    oldlabel = g_strdup_printf("%d", oldfd);
+
+    if (!(oldhint = g_hash_table_lookup(dummyFDContext->hints, oldlabel)))
+        return;
+
+    virTestDummyFDContextMarkFD(newfd, g_strdup_printf("%s-dup", oldhint));
+}
+
+
+/**
+ * virTestDummyFDContextMarkError:
+ * @error: error message to record against the global 'dummyFDContext'
+ *
+ * Records @error in list of errors the global 'dummyFDContext' object
+ */
+void
+virTestDummyFDContextMarkError(char *error)
+{
+    if (!dummyFDContext) {
+        g_free(error);
+        return;
+    }
+
+    dummyFDContext->errors = g_slist_prepend(dummyFDContext->errors, error);
+}
+
+void virTestDummyFDContextMarkError(char *error);
+
+
+/**
+ * virTestMakeDummyFD:
+ * @hint: name for the FD to record into @hints
+ *
+ * Create a dummy file and return FD to it. The file is removed directly. This
+ * is useful for code where FDs are needed but will not be actually used.
+ *
+ * If 'virTestMakeDummyFDContextNew' was called @hint is recorded in the hash
+ * table corresponding to the contex. @hint is used as-is, caller must pass
+ * an allocated string which will be onwned by the context, or NULL.
+ */
+int
+virTestMakeDummyFD(char *hint)
+{
+    int fd = -1;
+    char path[] = abs_builddir "dummyfd.XXXXXXXX";
+
+    if ((fd = g_mkstemp_full(path, O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)) < 0) {
+        VIR_TEST_VERBOSE("failed create dummy file/fd at '%s'", path);
+        abort();
+    }
+
+    if (unlink(path) < 0) {
+        VIR_TEST_VERBOSE("failed to unlink dummy file '%s' used for fd", path);
+        abort();
+    }
+
+    virTestDummyFDContextMarkFD(fd, hint);
+
+    return fd;
 }
 
 
@@ -582,6 +728,7 @@ virTestCompareToFileFull(const char *actual,
     g_autofree char *filecontent = NULL;
     g_autofree char *fixedcontent = NULL;
     const char *cmpcontent = actual;
+    size_t cmpcontentLen;
 
     if (!cmpcontent)
         cmpcontent = "";
@@ -594,16 +741,12 @@ virTestCompareToFileFull(const char *actual,
             return -1;
     }
 
-    if (filecontent) {
-        size_t filecontentLen = strlen(filecontent);
-        size_t cmpcontentLen = strlen(cmpcontent);
+    cmpcontentLen = strlen(cmpcontent);
 
-        if (filecontentLen > 0 &&
-            filecontent[filecontentLen - 1] == '\n' &&
-            (cmpcontentLen == 0 || cmpcontent[cmpcontentLen - 1] != '\n')) {
-            fixedcontent = g_strdup_printf("%s\n", cmpcontent);
-            cmpcontent = fixedcontent;
-        }
+    if (cmpcontentLen > 0 &&
+        cmpcontent[cmpcontentLen - 1] != '\n') {
+        fixedcontent = g_strdup_printf("%s\n", cmpcontent);
+        cmpcontent = fixedcontent;
     }
 
     if (STRNEQ_NULLABLE(cmpcontent, filecontent)) {
@@ -683,7 +826,7 @@ virtTestLogOutput(virLogSource *source G_GNUC_UNUSED,
                   int lineno G_GNUC_UNUSED,
                   const char *funcname G_GNUC_UNUSED,
                   const char *timestamp,
-                  struct _virLogMetadata *metadata G_GNUC_UNUSED,
+                  virLogMetadata *metadata G_GNUC_UNUSED,
                   const char *rawstr G_GNUC_UNUSED,
                   const char *str,
                   void *data)
@@ -746,10 +889,24 @@ virTestGetRegenerate(void)
     return testRegenerate;
 }
 
+
+/**
+ * virTestHasRangeBitmap:
+ *
+ * Returns whether the test was invoked with VIR_TEST_RANGE declared thus
+ * limiting the run only on specific test cases.
+ */
+bool
+virTestHasRangeBitmap(void)
+{
+    return !!testBitmap;
+}
+
+
 static int
 virTestSetEnvPath(void)
 {
-    const char *path = getenv("PATH");
+    const char *path = g_getenv("PATH");
     g_autofree char *new_path = NULL;
 
     if (path) {
@@ -768,6 +925,20 @@ virTestSetEnvPath(void)
 
 #define FAKEROOTDIRTEMPLATE abs_builddir "/fakerootdir-XXXXXX"
 
+static int
+virTestFakeEnvSubDirInit(const char *envName, const char *fakeRootName, const char *fakeSubDirName)
+{
+    g_autofree char *envVal = g_build_filename(fakeRootName, fakeSubDirName, NULL);
+
+    if (g_mkdir(envVal, 0777) < 0) {
+        fprintf(stderr, "Cannot create fake %s directory at %s", envName, envVal);
+        return -1;
+    }
+
+    g_setenv(envName, envVal, TRUE);
+    return 0;
+}
+
 char*
 virTestFakeRootDirInit(void)
 {
@@ -779,6 +950,22 @@ virTestFakeRootDirInit(void)
     }
 
     g_setenv("LIBVIRT_FAKE_ROOT_DIR", fakerootdir, TRUE);
+
+    /* the glib g_get_user_*_dir() functions use these environment variables to
+     * determine locations for various data/log/config files. Setting them here
+     * will assure that code under test that is using those directories won't pollute
+     * the system under test.
+     */
+    if (virTestFakeEnvSubDirInit("HOME", fakerootdir, "home") < 0)
+        return NULL;
+    if (virTestFakeEnvSubDirInit("XDG_RUNTIME_DIR", fakerootdir, "user-runtime-dir") < 0)
+        return NULL;
+    if (virTestFakeEnvSubDirInit("XDG_DATA_HOME", fakerootdir, "user-data-home") < 0)
+        return NULL;
+    if (virTestFakeEnvSubDirInit("XDG_CACHE_HOME", fakerootdir, "user-cache-home") < 0)
+        return NULL;
+    if (virTestFakeEnvSubDirInit("XDG_CONFIG_HOME", fakerootdir, "user-config-home") < 0)
+        return NULL;
 
     return g_steal_pointer(&fakerootdir);
 }
@@ -802,7 +989,7 @@ int virTestMain(int argc,
     const char *lib;
     va_list ap;
     int ret;
-    char *testRange = NULL;
+    const char *testRange = NULL;
     size_t noutputs = 0;
     virLogOutput *output = NULL;
     virLogOutput **outputs = NULL;
@@ -812,22 +999,18 @@ int virTestMain(int argc,
     g_autofree char *mock = NULL;
     g_autofree char *fakerootdir = NULL;
 
-    if (getenv("VIR_TEST_FILE_ACCESS")) {
+    if (g_getenv("VIR_TEST_FILE_ACCESS")) {
         preloads = g_renew(const char *, preloads, npreloads + 2);
         preloads[npreloads++] = VIR_TEST_MOCK("virtest");
         preloads[npreloads] = NULL;
     }
 
-    g_setenv("HOME", "/bad-test-used-env-home", TRUE);
-    g_setenv("XDG_RUNTIME_DIR", "/bad-test-used-env-xdg-runtime-dir", TRUE);
-    g_setenv("XDG_DATA_HOME", "/bad-test-used-env-xdg-data-home", TRUE);
-    g_setenv("XDG_CACHE_HOME", "/bad-test-used-env-xdg-cache-home", TRUE);
-    g_setenv("XDG_CONFIG_HOME", "/bad-test-used-env-xdg-config-home", TRUE);
-
     va_start(ap, func);
     while ((lib = va_arg(ap, const char *))) {
-        if (!virFileIsExecutable(lib)) {
-            perror(lib);
+        g_autofree char *abs_lib_path = g_strdup_printf("%s/%s", abs_builddir, lib);
+
+        if (!virFileIsExecutable(abs_lib_path)) {
+            perror(abs_lib_path);
             va_end(ap);
             return EXIT_FAILURE;
         }
@@ -871,7 +1054,7 @@ int virTestMain(int argc,
     if (virLogSetFromEnv() < 0)
         return EXIT_FAILURE;
 
-    if (!getenv("LIBVIRT_DEBUG") && !virLogGetNbOutputs()) {
+    if (!g_getenv("LIBVIRT_DEBUG") && !virLogGetNbOutputs()) {
         if (!(output = virLogOutputNew(virtTestLogOutput, virtTestLogClose,
                                        &testLog, VIR_LOG_DEBUG,
                                        VIR_LOG_TO_STDERR, NULL)))
@@ -885,7 +1068,7 @@ int virTestMain(int argc,
         }
     }
 
-    if ((testRange = getenv("VIR_TEST_RANGE")) != NULL) {
+    if ((testRange = g_getenv("VIR_TEST_RANGE")) != NULL) {
         if (!(testBitmap = virBitmapParseUnlimited(testRange))) {
             fprintf(stderr, "Cannot parse range %s\n", testRange);
             return EXIT_FAILURE;
@@ -922,7 +1105,7 @@ int virTestMain(int argc,
 
     if (ret == EXIT_FAILURE && !virBitmapIsAllClear(failedTests)) {
         g_autofree char *failed = virBitmapFormat(failedTests);
-        fprintf(stderr, "Some tests failed. Run them using:\n");
+        fprintf(stderr, "%zu tests failed. Run them using:\n", virBitmapCountBits(failedTests));
         fprintf(stderr, "VIR_TEST_DEBUG=1 VIR_TEST_RANGE=%s %s\n", failed, argv[0]);
     }
 
@@ -1034,25 +1217,24 @@ int
 testCompareDomXML2XMLFiles(virCaps *caps G_GNUC_UNUSED,
                            virDomainXMLOption *xmlopt,
                            const char *infile, const char *outfile, bool live,
-                           unsigned int parseFlags,
+                           unsigned int parse_flags,
                            testCompareDomXML2XMLResult expectResult)
 {
     g_autofree char *actual = NULL;
     int ret = -1;
     testCompareDomXML2XMLResult result;
     g_autoptr(virDomainDef) def = NULL;
-    unsigned int parse_flags = live ? 0 : VIR_DOMAIN_DEF_PARSE_INACTIVE;
     unsigned int format_flags = VIR_DOMAIN_DEF_FORMAT_SECURE;
-
-    parse_flags |= parseFlags;
 
     if (!virFileExists(infile)) {
         VIR_TEST_DEBUG("Test input file '%s' is missing", infile);
         return -1;
     }
 
-    if (!live)
+    if (!live) {
         format_flags |= VIR_DOMAIN_DEF_FORMAT_INACTIVE;
+        parse_flags |= VIR_DOMAIN_DEF_PARSE_INACTIVE;
+    }
 
     if (!(def = virDomainDefParseFile(infile, xmlopt, NULL, parse_flags))) {
         result = TEST_COMPARE_DOM_XML2XML_RESULT_FAIL_PARSE;
@@ -1209,3 +1391,61 @@ virCreateAnonymousFile(const uint8_t *data, size_t len)
     return -1;
 }
 #endif
+
+int
+virTestEnumerateTestCases(const char *path,
+                          virTestEnumerateTestCasesCB cb,
+                          GHashTable **existingTestCases)
+{
+    g_autoptr(GHashTable) etc = virHashNew(NULL);
+    struct dirent *ent;
+    g_autoptr(DIR) dir = NULL;
+    int rc;
+
+    /* If VIR_TEST_RANGE is in use don't bother filling in the data. */
+    if (virTestHasRangeBitmap())
+        return 0;
+
+    if (virDirOpen(&dir, path) < 0)
+        return -1;
+
+    while ((rc = virDirRead(dir, &ent, path)) > 0) {
+        if (cb(ent)) {
+            g_hash_table_insert(etc,
+                                g_strdup_printf("%s/%s", path, ent->d_name),
+                                NULL);
+        }
+    }
+
+    if (rc == 0)
+        *existingTestCases = g_steal_pointer(&etc);
+
+    return rc;
+}
+
+void
+virTestCaseMarkUsed(GHashTable *existingTestCases,
+                    const char *file)
+{
+    if (existingTestCases && file)
+        g_hash_table_remove(existingTestCases, file);
+}
+
+int
+virTestCheckUnusedTestCases(GHashTable *existingTestCases)
+{
+    g_autofree virHashKeyValuePair *items = virHashGetItems(existingTestCases, NULL, true);
+    size_t i;
+    int ret = 0;
+
+    for (i = 0; items && items[i].key; i++) {
+        if (ret == 0) {
+            fprintf(stderr, "\n");
+            ret = -1;
+        }
+
+        fprintf(stderr, "unused file: %s\n", (const char *) items[i].key);
+    }
+
+    return ret;
+}

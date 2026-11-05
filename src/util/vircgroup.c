@@ -517,7 +517,7 @@ int
 virCgroupSetValueRaw(const char *path,
                      const char *value)
 {
-    char *tmp;
+    const char *tmp;
 
     VIR_DEBUG("Set path '%s' to value '%s'", path, value);
     if (virFileWriteStr(path, value, 0) < 0) {
@@ -1274,6 +1274,7 @@ virCgroupNewMachineSystemd(const char *name,
                            const char *partition,
                            int controllers,
                            unsigned int maxthreads,
+                           bool daemonDomainShutdown,
                            virCgroup **group)
 {
     int rv;
@@ -1293,7 +1294,8 @@ virCgroupNewMachineSystemd(const char *name,
                                       nnicindexes,
                                       nicindexes,
                                       partition,
-                                      maxthreads)) < 0)
+                                      maxthreads,
+                                      daemonDomainShutdown)) < 0)
         return rv;
 
     if (controllers != -1)
@@ -1406,6 +1408,7 @@ virCgroupNewMachine(const char *name,
                     const char *partition,
                     int controllers,
                     unsigned int maxthreads,
+                    bool daemonDomainShutdown,
                     virCgroup **group)
 {
     int rv;
@@ -1423,6 +1426,7 @@ virCgroupNewMachine(const char *name,
                                          partition,
                                          controllers,
                                          maxthreads,
+                                         daemonDomainShutdown,
                                          group)) == 0)
         return 0;
 
@@ -2898,7 +2902,8 @@ virCgroupGetCpuacctStat(virCgroup *group, unsigned long long *user,
 
 
 int
-virCgroupSetFreezerState(virCgroup *group, const char *state)
+virCgroupSetFreezerState(virCgroup *group,
+                         virCgroupFreezerState state)
 {
     virCgroup *parent = virCgroupGetNested(group);
 
@@ -2908,7 +2913,8 @@ virCgroupSetFreezerState(virCgroup *group, const char *state)
 
 
 int
-virCgroupGetFreezerState(virCgroup *group, char **state)
+virCgroupGetFreezerState(virCgroup *group,
+                         virCgroupFreezerState *state)
 {
     virCgroup *parent = virCgroupGetNested(group);
 
@@ -3143,6 +3149,7 @@ virCgroupNewMachine(const char *name G_GNUC_UNUSED,
                     const char *partition G_GNUC_UNUSED,
                     int controllers G_GNUC_UNUSED,
                     unsigned int maxthreads G_GNUC_UNUSED,
+                    bool daemonDomainShutdown G_GNUC_UNUSED,
                     virCgroup **group G_GNUC_UNUSED)
 {
     virReportSystemError(ENXIO, "%s",
@@ -3720,7 +3727,7 @@ virCgroupGetDomainTotalCpuStats(virCgroup *group G_GNUC_UNUSED,
 
 int
 virCgroupSetFreezerState(virCgroup *group G_GNUC_UNUSED,
-                         const char *state G_GNUC_UNUSED)
+                         virCgroupFreezerState state G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
                          _("Control groups not supported on this platform"));
@@ -3730,7 +3737,7 @@ virCgroupSetFreezerState(virCgroup *group G_GNUC_UNUSED,
 
 int
 virCgroupGetFreezerState(virCgroup *group G_GNUC_UNUSED,
-                         char **state G_GNUC_UNUSED)
+                         virCgroupFreezerState *state G_GNUC_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
                          _("Control groups not supported on this platform"));
@@ -3946,10 +3953,7 @@ virCgroupSetupBlkioDeviceWriteBps(virCgroup *cgroup, const char *path,
 int
 virCgroupSetupCpusetCpus(virCgroup *cgroup, virBitmap *cpumask)
 {
-    g_autofree char *new_cpus = NULL;
-
-    if (!(new_cpus = virBitmapFormat(cpumask)))
-        return -1;
+    g_autofree char *new_cpus = virBitmapFormat(cpumask);
 
     if (virCgroupSetCpusetCpus(cgroup, new_cpus) < 0)
         return -1;

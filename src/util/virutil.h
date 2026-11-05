@@ -44,6 +44,11 @@ int virScaleInteger(unsigned long long *value, const char *suffix,
                     unsigned long long scale, unsigned long long limit)
     ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT;
 
+int virStrToBytes(const char *str,
+                  unsigned long long limit,
+                  unsigned long long *result)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3) G_GNUC_WARN_UNUSED_RESULT;
+
 char *virFormatIntDecimal(char *buf, size_t buflen, int val)
     ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT;
 
@@ -51,9 +56,12 @@ unsigned long long
 virFormatIntPretty(unsigned long long val,
                    const char **unit);
 
-int virDiskNameParse(const char *name, int *disk, int *partition);
+int virDiskNameParse(const char *name, int *nvme_ctrl,
+                     int *disk, int *partition);
 int virDiskNameToIndex(const char* str);
-char *virIndexToDiskName(unsigned int idx, const char *prefix);
+char *virIndexToDiskName(unsigned int nvme_ctrl,
+                         unsigned int idx,
+                         const char *prefix);
 
 /* No-op workarounds for functionality missing in mingw.  */
 #ifndef WITH_GETUID
@@ -89,19 +97,31 @@ static inline int pthread_sigmask(int how,
 }
 #endif
 
-char *virGetHostname(void) G_NO_INLINE;
+char *virGetHostname(void) ATTRIBUTE_MOCKABLE;
 char *virGetHostnameQuiet(void);
 
-char *virGetUserDirectory(void);
-char *virGetUserDirectoryByUID(uid_t uid);
+char *virGetUserHomeDirectory(void);
+char *virGetUserHomeDirectoryByUID(uid_t uid);
 char *virGetUserConfigDirectory(void);
 char *virGetUserCacheDirectory(void);
-char *virGetUserRuntimeDirectory(void) G_NO_INLINE;
+char *virGetUserRuntimeDirectory(void) ATTRIBUTE_MOCKABLE;
 char *virGetUserShell(uid_t uid);
-char *virGetUserName(uid_t uid) G_NO_INLINE;
-char *virGetGroupName(gid_t gid) G_NO_INLINE;
+char *virGetUserName(uid_t uid) ATTRIBUTE_MOCKABLE;
+char *virGetGroupName(gid_t gid) ATTRIBUTE_MOCKABLE;
 int virGetGroupList(uid_t uid, gid_t group, gid_t **groups)
     ATTRIBUTE_NONNULL(3);
+
+typedef struct _virSubID {
+    uid_t id;
+    char *idstr;
+    uid_t start;
+    uid_t range;
+} virSubID;
+
+int virGetSubIDs(virSubID **ret, const char *file);
+void virSubIDsFree(virSubID **uids, size_t n);
+
+
 int virGetUserID(const char *name,
                  uid_t *uid) G_GNUC_WARN_UNUSED_RESULT;
 int virGetGroupID(const char *name,
@@ -119,16 +139,16 @@ int virParseOwnershipIds(const char *label, uid_t *uidPtr, gid_t *gidPtr);
 time_t virGetSelfLastChanged(void);
 void virUpdateSelfLastChanged(const char *path);
 
-long virGetSystemPageSize(void) G_NO_INLINE;
-long virGetSystemPageSizeKB(void) G_NO_INLINE;
+long virGetSystemPageSize(void) ATTRIBUTE_MOCKABLE;
+long virGetSystemPageSizeKB(void) ATTRIBUTE_MOCKABLE;
 
 unsigned long long virMemoryLimitTruncate(unsigned long long value);
 bool virMemoryLimitIsSet(unsigned long long value);
-unsigned long long virMemoryMaxValue(bool ulong) G_NO_INLINE;
+unsigned long long virMemoryMaxValue(bool ulong) ATTRIBUTE_MOCKABLE;
 
-bool virHostHasIOMMU(void);
+bool virHostHasIOMMU(void) ATTRIBUTE_MOCKABLE;
 
-char *virHostGetDRMRenderNode(void) G_NO_INLINE;
+char *virHostGetDRMRenderNode(void) ATTRIBUTE_MOCKABLE;
 
 /* Kernel cmdline match and comparison strategy for arg=value pairs */
 typedef enum {

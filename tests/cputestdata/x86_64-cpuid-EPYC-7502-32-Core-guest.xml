@@ -1,9 +1,9 @@
 <cpu mode='custom' match='exact'>
   <model fallback='forbid'>EPYC-Rome</model>
   <vendor>AMD</vendor>
-  <feature policy='require' name='ht'/>
   <feature policy='require' name='monitor'/>
   <feature policy='require' name='osxsave'/>
+  <feature policy='require' name='ht'/>
   <feature policy='require' name='cmt'/>
   <feature policy='require' name='xsaves'/>
   <feature policy='require' name='mbm_total'/>
@@ -16,6 +16,8 @@
   <feature policy='require' name='tce'/>
   <feature policy='require' name='topoext'/>
   <feature policy='require' name='perfctr_nb'/>
+  <feature policy='require' name='overflow-recov'/>
+  <feature policy='require' name='succor'/>
   <feature policy='require' name='invtsc'/>
   <feature policy='require' name='ibrs'/>
   <feature policy='require' name='amd-ssbd'/>
@@ -30,6 +32,7 @@
   <feature policy='require' name='avic'/>
   <feature policy='require' name='v-vmsave-vmload'/>
   <feature policy='require' name='vgif'/>
+  <feature policy='require' name='gmet'/>
   <feature policy='require' name='rdctl-no'/>
   <feature policy='require' name='skip-l1dfl-vmentry'/>
   <feature policy='require' name='mds-no'/>

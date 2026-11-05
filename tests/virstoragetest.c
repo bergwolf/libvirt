@@ -179,27 +179,52 @@ testStorageChain(const void *args)
     for (elt = meta; virStorageSourceIsBacking(elt); elt = elt->backingStore) {
         g_autofree char *strippedPath = virTestStablePath(elt->path);
         g_autofree char *strippedBackingStoreRaw = virTestStablePath(elt->backingStoreRaw);
+        g_autofree char *strippedDataFileRaw = virTestStablePath(elt->dataFileRaw);
         g_autofree char *strippedRelPath = virTestStablePath(elt->relPath);
 
         virBufferAsprintf(&buf,
                           "path:%s\n"
                           "backingStoreRaw: %s\n"
+                          "backingStoreRawFormat: %s(%d)\n"
+                          "dataFileRaw: %s\n"
                           "capacity: %lld\n"
                           "encryption: %d\n"
                           "relPath:%s\n"
-                          "type:%d\n"
-                          "format:%d\n"
+                          "type:%s\n"
+                          "format:%s\n"
                           "protocol:%s\n"
                           "hostname:%s\n\n",
                           strippedPath,
                           strippedBackingStoreRaw,
+                          NULLSTR(virStorageFileFormatTypeToString(elt->backingStoreRawFormat)),
+                          elt->backingStoreRawFormat,
+                          strippedDataFileRaw,
                           elt->capacity,
                           !!elt->encryption,
                           strippedRelPath,
-                          elt->type,
-                          elt->format,
+                          NULLSTR(virStorageTypeToString(elt->type)),
+                          NULLSTR(virStorageFileFormatTypeToString(elt->format)),
                           virStorageNetProtocolTypeToString(elt->protocol),
                           NULLSTR(elt->nhosts ? elt->hosts[0].name : NULL));
+
+        if (elt->dataFileStore) {
+            g_autofree char *strippedPathDataFile = virTestStablePath(elt->dataFileStore->path);
+
+            virBufferAsprintf(&buf,
+                              " dataFileStoreSource for '%s':\n"
+                              "  path: %s\n"
+                              "  capacity: %lld\n"
+                              "  encryption: %d\n"
+                              "  type:%s\n"
+                              "  format:%s\n"
+                              "\n\n",
+                              strippedPath,
+                              strippedPathDataFile,
+                              elt->dataFileStore->capacity,
+                              !!elt->dataFileStore->encryption,
+                              NULLSTR(virStorageTypeToString(elt->dataFileStore->type)),
+                              NULLSTR(virStorageFileFormatTypeToString(elt->dataFileStore->format)));
+        }
     }
 
     virBufferTrim(&buf, "\n");
@@ -461,6 +486,26 @@ mymain(void)
 
     testCleanupImages();
 
+    /* qcow2 + datafile
+     * 1) qcow2 image with data file
+     * 2) qcow2 -> qcow2 backing image with data file
+     * 3) qcow2 (with no backing file format specified) -> qcow2 backing image with data file
+     */
+    TEST_CHAIN("qcow2-datafile",
+               abs_srcdir "/virstoragetestdata/images/datafile.qcow2",
+               VIR_STORAGE_FILE_QCOW2, EXP_PASS);
+    TEST_CHAIN("qcow2datafile-qcow2_qcow2-datafile",
+               abs_srcdir "/virstoragetestdata/images/qcow2datafile-datafile.qcow2",
+               VIR_STORAGE_FILE_QCOW2, EXP_PASS);
+    TEST_CHAIN("qcow2datafile-qcow2_qcow2-datafile-auto",
+               abs_srcdir "/virstoragetestdata/images/qcow2_datafile-auto.qcow2",
+               VIR_STORAGE_FILE_QCOW2, EXP_FAIL);
+
+    /* broken qcow2 with a 'data_file' which is an empty string */
+    TEST_CHAIN("qcow2-datafile-broken",
+               abs_srcdir "/virstoragetestdata/images/datafile-emptystr.qcow2",
+               VIR_STORAGE_FILE_QCOW2, EXP_FAIL);
+
     /* Test various combinations of qcow2 images with missing 'backing_format' */
     TEST_CHAIN("qcow2-qcow2_qcow2-qcow2_qcow2-auto",
                abs_srcdir "/virstoragetestdata/images/qcow2_qcow2-qcow2_qcow2-auto.qcow2",
@@ -473,6 +518,14 @@ mymain(void)
                VIR_STORAGE_FILE_QCOW2, EXP_FAIL);
     TEST_CHAIN("qcow2-qcow2_qcow2-auto",
                abs_srcdir "/virstoragetestdata/images/qcow2_qcow2-auto.qcow2",
+               VIR_STORAGE_FILE_QCOW2, EXP_PASS);
+
+    /* QCOW2 with protocol recorded inside the 'backing file format field */
+    TEST_CHAIN("qcow2-protocol-backing-file",
+               abs_srcdir "/virstoragetestdata/images/qcow2-protocol-backing-file.qcow2",
+               VIR_STORAGE_FILE_QCOW2, EXP_PASS);
+    TEST_CHAIN("qcow2-protocol-backing-nbd",
+               abs_srcdir "/virstoragetestdata/images/qcow2-protocol-backing-nbd.qcow2",
                VIR_STORAGE_FILE_QCOW2, EXP_PASS);
 
     /* Qcow2 file with missing backing file but specified type */
@@ -804,7 +857,7 @@ mymain(void)
                             "  <host name='example.org' port='1234'/>\n"
                             "</source>\n", 1);
 
-#ifdef WITH_YAJL
+#ifdef WITH_JSON
     TEST_BACKING_PARSE("json:", NULL);
     TEST_BACKING_PARSE("json:asdgsdfg", NULL);
     TEST_BACKING_PARSE("json:{}", NULL);
@@ -1181,7 +1234,7 @@ mymain(void)
                         "  <address domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>\n"
                         "</source>\n");
 
-#endif /* WITH_YAJL */
+#endif /* WITH_JSON */
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

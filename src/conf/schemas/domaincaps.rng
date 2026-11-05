@@ -11,9 +11,11 @@
   <define name="domainCapabilities">
     <element name="domainCapabilities">
       <interleave>
-        <element name="path">
-          <ref name="absFilePath"/>
-        </element>
+        <optional>
+          <element name="path">
+            <ref name="absFilePath"/>
+          </element>
+        </optional>
         <element name="domain">
           <text/>
         </element>
@@ -66,6 +68,15 @@
     </element>
   </define>
 
+  <define name="firmwareFeatures">
+    <element name="firmwareFeatures">
+      <ref name="supported"/>
+      <optional>
+        <ref name="enum"/>
+      </optional>
+    </element>
+  </define>
+
   <define name="loader">
     <element name="loader">
       <ref name="supported"/>
@@ -76,13 +87,25 @@
     </element>
   </define>
 
+  <define name="varstore">
+    <element name="varstore">
+      <ref name="supported"/>
+    </element>
+  </define>
+
   <define name="os">
     <element name="os">
       <interleave>
         <ref name="supported"/>
         <ref name="enum"/>
         <optional>
+          <ref name="firmwareFeatures"/>
+        </optional>
+        <optional>
           <ref name="loader"/>
+        </optional>
+        <optional>
+          <ref name="varstore"/>
         </optional>
       </interleave>
     </element>
@@ -132,6 +155,9 @@
         <optional>
           <ref name="cpuVendor"/>
         </optional>
+        <optional>
+          <ref name="cpuMaxPhysAddr"/>
+        </optional>
         <zeroOrMore>
           <ref name="cpuFeature"/>
         </zeroOrMore>
@@ -159,11 +185,30 @@
               <ref name="virYesNo"/>
             </attribute>
           </optional>
+          <optional>
+            <attribute name="canonical">
+              <text/>
+            </attribute>
+          </optional>
           <attribute name='vendor'>
             <text/>
           </attribute>
           <text/>
         </element>
+        <optional>
+          <element name="blockers">
+            <attribute name="model">
+              <text/>
+            </attribute>
+            <oneOrMore>
+              <element name="feature">
+                <attribute name="name">
+                  <text/>
+                </attribute>
+              </element>
+            </oneOrMore>
+          </element>
+        </optional>
       </zeroOrMore>
     </element>
   </define>
@@ -206,6 +251,15 @@
       </optional>
       <optional>
         <ref name="crypto"/>
+      </optional>
+      <optional>
+        <ref name="interface"/>
+      </optional>
+      <optional>
+        <ref name="panic"/>
+      </optional>
+      <optional>
+        <ref name="console"/>
       </optional>
     </element>
   </define>
@@ -280,6 +334,34 @@
     </element>
   </define>
 
+  <define name="panic">
+    <element name="panic">
+      <ref name="supported"/>
+      <ref name="enum"/>
+    </element>
+  </define>
+
+  <define name="console">
+    <element name="console">
+      <ref name="supported"/>
+      <ref name="enum"/>
+    </element>
+  </define>
+
+  <define name="interface">
+    <element name="interface">
+      <ref name="supported"/>
+      <ref name="enum"/>
+    </element>
+  </define>
+
+  <define name="launchSecurity">
+    <element name="launchSecurity">
+      <ref name="supported"/>
+      <ref name="enum"/>
+    </element>
+  </define>
+
   <define name="features">
     <element name="features">
       <optional>
@@ -298,7 +380,16 @@
         <ref name="backup"/>
       </optional>
       <optional>
+        <ref name="async-teardown"/>
+      </optional>
+      <optional>
         <ref name="s390-pv"/>
+      </optional>
+      <optional>
+        <ref name="ps2"/>
+      </optional>
+      <optional>
+        <ref name="tdx"/>
       </optional>
       <optional>
         <ref name="sev"/>
@@ -309,6 +400,15 @@
       <optional>
         <ref name="hyperv"/>
       </optional>
+      <optional>
+        <ref name='launchSecurity'/>
+      </optional>
+    </element>
+  </define>
+
+  <define name="async-teardown">
+    <element name="async-teardown">
+      <ref name="supported"/>
     </element>
   </define>
 
@@ -349,6 +449,18 @@
     </element>
   </define>
 
+  <define name="ps2">
+    <element name="ps2">
+      <ref name="supported"/>
+    </element>
+  </define>
+
+  <define name="tdx">
+    <element name="tdx">
+      <ref name="supported"/>
+    </element>
+  </define>
+
   <define name="sev">
     <element name="sev">
       <ref name="supported"/>
@@ -364,6 +476,11 @@
         </element>
         <element name="maxESGuests">
           <data type="unsignedInt"/>
+        </element>
+      </optional>
+      <optional>
+        <element name="cpu0Id">
+          <data type="string"/>
         </element>
       </optional>
     </element>
@@ -413,6 +530,35 @@
     <element name="hyperv">
       <ref name="supported"/>
       <ref name="enum"/>
+      <optional>
+        <element name="defaults">
+          <optional>
+            <element name="spinlocks">
+              <ref name="unsignedInt"/>
+            </element>
+          </optional>
+          <optional>
+            <element name="stimer_direct">
+              <ref name="virOnOff"/>
+            </element>
+          </optional>
+          <optional>
+            <element name="tlbflush_direct">
+              <ref name="virOnOff"/>
+            </element>
+          </optional>
+          <optional>
+            <element name="tlbflush_extended">
+              <ref name="virOnOff"/>
+            </element>
+          </optional>
+          <optional>
+            <element name="vendor_id">
+              <text/>
+            </element>
+          </optional>
+        </element>
+      </optional>
     </element>
   </define>
 

@@ -174,8 +174,11 @@ mymain(void)
     DO_TEST_FAIL_ACTIVE("graphics-vnc-socket-attr-listen-socket-mismatch");
     DO_TEST("graphics-vnc-autoport-no");
     DO_TEST_FAIL_INACTIVE("graphics-listen-network-invalid");
+    DO_TEST_DIFFERENT("graphics-listen-network2");
 
     DO_TEST_FAIL_ACTIVE("name-slash-fail");
+
+    DO_TEST("title-and-description");
 
     DO_TEST("perf");
 
@@ -187,6 +190,7 @@ mymain(void)
     DO_TEST("cpu-cache-disable");
 
     DO_TEST("network-interface-mac-check");
+    DO_TEST_DIFFERENT("network-interface-mac-clear");
 
     DO_TEST_DIFFERENT("chardev-tcp");
     DO_TEST_FAIL_ACTIVE("chardev-tcp-missing-host");
@@ -206,6 +210,18 @@ mymain(void)
     DO_TEST("cachetune-small");
     DO_TEST("cachetune-cdp");
     DO_TEST("cachetune");
+    DO_TEST("energytune");
+    DO_TEST("energytune-wholeprocess");
+    DO_TEST("memorytune-wholeprocess");
+    DO_TEST("cachetune-wholeprocess-monitors");
+    DO_TEST("resctrl-wholeprocess-monitors");
+    DO_TEST("resctrl-wholeprocess-alloc-monitor");
+    DO_TEST_FAIL_INACTIVE("resctrl-wholeprocess-layering");
+    DO_TEST_FAIL_INACTIVE("cachetune-wholeprocess-duplicate");
+    DO_TEST_FAIL_INACTIVE("cachetune-wholeprocess-monitor-duplicate");
+    DO_TEST_DIFFERENT("cachetune-monitor-inherit-alloc");
+    DO_TEST_FAIL_INACTIVE("energytune-colliding-monitor");
+    DO_TEST_FAIL_INACTIVE("cachetune-monitor-empty-vcpus");
     DO_TEST_DIFFERENT("cachetune-extra-tunes");
     DO_TEST_FAIL_INACTIVE("cachetune-colliding-allocs");
     DO_TEST_FAIL_INACTIVE("cachetune-colliding-tunes");
@@ -214,6 +230,8 @@ mymain(void)
     DO_TEST_DIFFERENT("memorytune");
     DO_TEST_FAIL_INACTIVE("memorytune-colliding-allocs");
     DO_TEST_FAIL_INACTIVE("memorytune-colliding-cachetune");
+
+    DO_TEST("smbios-multiple-type2");
 
     DO_TEST("tseg");
 
@@ -224,6 +242,10 @@ mymain(void)
     DO_TEST("device-backenddomain");
 
     DO_TEST("fibrechannel-appid");
+
+    DO_TEST("controller-nvme");
+    DO_TEST_DIFFERENT("disk-nvme");
+    DO_TEST_FAIL_INACTIVE("disk-nvme-invalid-serials");
 
 #define DO_TEST_BACKUP_FULL(name, intrnl) \
     do { \
@@ -238,16 +260,24 @@ mymain(void)
 
     DO_TEST_BACKUP("empty");
     DO_TEST_BACKUP("backup-pull");
+    DO_TEST_BACKUP("backup-pull-unix");
+    DO_TEST_BACKUP("backup-pull-fd");
     DO_TEST_BACKUP("backup-pull-seclabel");
     DO_TEST_BACKUP("backup-pull-encrypted");
     DO_TEST_BACKUP("backup-push");
     DO_TEST_BACKUP("backup-push-seclabel");
     DO_TEST_BACKUP("backup-push-encrypted");
+    DO_TEST_BACKUP("backup-push-sparsify");
 
     DO_TEST_BACKUP_FULL("backup-pull-internal-invalid", true);
 
     DO_TEST("cpu-phys-bits-emulate");
     DO_TEST("cpu-phys-bits-passthrough");
+
+    DO_TEST("iothreadids");
+
+    DO_TEST("iommufd");
+    DO_TEST("locking");
 
     virObjectUnref(caps);
     virObjectUnref(xmlopt);
@@ -255,4 +285,5 @@ mymain(void)
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-VIR_TEST_MAIN(mymain)
+VIR_TEST_MAIN_PRELOAD(mymain,
+                      VIR_TEST_MOCK("virrandom"))

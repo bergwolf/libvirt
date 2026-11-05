@@ -7,8 +7,6 @@ remote_driver_generated = []
 
 foreach name : [ 'remote', 'qemu', 'lxc' ]
   client_bodies_h = '@0@_client_bodies.h'.format(name)
-  protocol_c = '@0@_protocol.c'.format(name)
-  protocol_h = '@0@_protocol.h'.format(name)
   protocol_x = '@0@_protocol.x'.format(name)
 
   remote_driver_generated += custom_target(
@@ -20,34 +18,49 @@ foreach name : [ 'remote', 'qemu', 'lxc' ]
     ],
     capture: true,
   )
+endforeach
 
-  remote_driver_generated += custom_target(
+remote_protocol_generated = []
+
+foreach name : [ 'remote', 'qemu', 'lxc' ]
+  protocol_c = '@0@_protocol.c'.format(name)
+  protocol_h = '@0@_protocol.h'.format(name)
+  protocol_x = '@0@_protocol.x'.format(name)
+
+  remote_protocol_generated += custom_target(
     protocol_h,
     input: protocol_x,
     output: protocol_h,
+    depend_files: rpcgen_src,
     command: [
-      genprotocol_prog, rpcgen_prog, '-h', '@INPUT@', '@OUTPUT@',
+      rpcgen_prog,
+      '--mode=header', '@INPUT@', '@OUTPUT@',
     ],
   )
 
-  remote_driver_generated += custom_target(
+  remote_protocol_generated += custom_target(
     protocol_c,
     input: protocol_x,
     output: protocol_c,
+    depend_files: rpcgen_src,
     command: [
-      genprotocol_prog, rpcgen_prog, '-c', '@INPUT@', '@OUTPUT@',
+      rpcgen_prog,
+      '--mode=source', '--header=' + protocol_h, '@INPUT@', '@OUTPUT@',
     ],
   )
 
   rpc_probe_files += files(protocol_x)
 endforeach
 
+remote_daemon_stream_sources = files(
+  'remote_daemon_stream.c',
+)
+
 remote_daemon_sources = files(
   'remote_daemon.c',
   'remote_daemon_config.c',
   'remote_daemon_dispatch.c',
-  'remote_daemon_stream.c',
-)
+) + remote_daemon_stream_sources
 
 remote_daemon_generated = []
 
@@ -120,27 +133,17 @@ foreach name : libvirt_conf_files
   set_variable(name['virtd'].underscorify(), tmp)
 endforeach
 
-libvirtd_socket_unit_files = [
-  'libvirtd.socket',
-  'libvirtd-ro.socket',
-  'libvirtd-admin.socket',
-  'libvirtd-tcp.socket',
-  'libvirtd-tls.socket',
-]
-
-libvirtd_socket_conflicts = ' '.join(libvirtd_socket_unit_files)
-
-logrotate_files = [
+driver_logrotate_files = [
   'libvirtd.qemu',
   'libvirtd.lxc',
   'libvirtd.libxl',
-  'libvirtd',
 ]
 
 if conf.has('WITH_REMOTE')
   remote_driver_lib = static_library(
     'virt_remote_driver',
     [
+      remote_protocol_generated,
       remote_driver_sources,
       remote_driver_generated,
     ],
@@ -175,34 +178,49 @@ if conf.has('WITH_REMOTE')
   if conf.has('WITH_LIBVIRTD')
     guest_unit_files += files('virt-guest-shutdown.target')
 
-    virt_daemons += {
-      'name': 'libvirtd',
-      'c_args': [
-        '-DSOCK_PREFIX="libvirt"',
-        '-DDAEMON_NAME="libvirtd"',
-        '-DWITH_IP',
-        '-DLIBVIRTD',
-      ],
-    }
+    if conf.has('WITH_MONOLITHIC_LIBVIRTD')
+      virt_daemons += {
+        'name': 'libvirtd',
+        'c_args': [
+          '-DSOCK_PREFIX="libvirt"',
+          '-DDAEMON_NAME="libvirtd"',
+          '-DWITH_IP',
+          '-DLIBVIRTD',
+        ],
+      }
 
-    virt_daemon_confs += {
-      'name': 'libvirtd',
-      'with_ip': true,
-    }
+      virt_daemon_confs += {
+        'name': 'libvirtd',
+        'with_ip': true,
+      }
 
-    virt_daemon_units += {
-      'service': 'libvirtd',
-      'service_in': files('libvirtd.service.in'),
-      'name': 'Libvirt',
-      'sockprefix': 'libvirt',
-      'sockets': [ 'main', 'ro', 'admin', 'tcp', 'tls' ],
-    }
+      virt_daemon_units += {
+        'service': 'libvirtd',
+        'name': 'legacy monolithic',
+        'service_in': files('libvirtd.service.in'),
+        'service_extra_in': [
+          files('libvirtd.service.extra.in'),
+          systemd_service_limitnofile_extra_in,
+          systemd_service_tasksmax_extra_in,
+          systemd_service_limitmemlock_extra_in,
+        ],
+        'sockets': [ 'main', 'ro', 'admin', 'tcp', 'tls' ],
+        'socket_in': files('libvirtd.socket.in'),
+        'socket_ro_in': files('libvirtd-ro.socket.in'),
+        'socket_admin_in': files('libvirtd-admin.socket.in'),
+        'socket_tcp_in': files('libvirtd-tcp.socket.in'),
+        'socket_tls_in': files('libvirtd-tls.socket.in'),
+        'socket_extra_in': [
+          files('libvirtd.socket.extra.in'),
+        ],
+      }
 
-    openrc_init_files += {
-      'name': 'libvirtd',
-      'in_file': files('libvirtd.init.in'),
-      'confd': files('libvirtd.confd'),
-    }
+      openrc_init_files += {
+        'name': 'libvirtd',
+        'in_file': files('libvirtd.init.in'),
+        'confd': files('libvirtd.confd'),
+      }
+    endif
 
     virt_daemons += {
       'name': 'virtproxyd',
@@ -221,11 +239,15 @@ if conf.has('WITH_REMOTE')
 
     virt_daemon_units += {
       'service': 'virtproxyd',
-      'service_in': files('virtproxyd.service.in'),
-      'name': 'Libvirt proxy',
+      'name': 'proxy',
+      'service_extra_in': [
+        files('virtproxyd.service.extra.in'),
+      ],
       'sockprefix': 'libvirt',
       'sockets': [ 'main', 'ro', 'admin', 'tcp', 'tls' ],
-      'deps': 'Conflicts=' + libvirtd_socket_conflicts,
+      'socket_extra_in': [
+        files('virtproxyd.socket.extra.in'),
+      ],
     }
 
     openrc_init_files += {
@@ -240,15 +262,15 @@ if conf.has('WITH_REMOTE')
       runstatedir / 'libvirt' / 'common',
     ]
 
-    logrotate_conf = configuration_data({
+    driver_logrotate_conf = configuration_data({
       'localstatedir': localstatedir,
     })
 
-    foreach name : logrotate_files
+    foreach name : driver_logrotate_files
       log_file = configure_file(
         input: '@0@.logrotate.in'.format(name),
         output: '@0@.logrotate'.format(name),
-        configuration: logrotate_conf,
+        configuration: driver_logrotate_conf,
       )
       install_data(
         log_file,
@@ -268,18 +290,28 @@ if conf.has('WITH_REMOTE')
     endif
 
     if conf.has('WITH_POLKIT')
-      polkitdir = datadir / 'polkit-1'
-      install_data(
-        'libvirtd.policy',
-        install_dir: polkitdir / 'actions',
-        rename: [ 'org.libvirt.unix.policy' ],
+      i18n.merge_file(
+        input: 'libvirtd.policy.in',
+        output: 'org.libvirt.unix.policy',
+        po_dir: po_dir,
+        data_dirs: [po_dir],
+        install: true,
+        install_dir: polkitactionsdir,
       )
+
       install_data(
         'libvirtd.rules',
-        install_dir: polkitdir / 'rules.d',
+        install_dir: polkitrulesdir,
         rename: [ '50-libvirt.rules' ],
       )
     endif
+
+    # Install the sysuser config for the daemon polkit rules
+    install_data(
+      'libvirt.sysusers.conf',
+      install_dir: sysusersdir,
+      rename: [ 'libvirt.conf' ],
+    )
 
     virt_helpers += {
       'name': 'virt-ssh-helper',
@@ -304,6 +336,21 @@ if conf.has('WITH_SASL')
     'libvirtd.sasl',
     install_dir: sysconfdir / 'sasl2',
     rename: [ 'libvirt.conf' ],
+  )
+endif
+
+# The monolithic libvirt daemon only attempts to load the
+# secrets encryption credentials if the secret driver is enabled
+if conf.has('WITH_MONOLITHIC_LIBVIRTD') and conf.has('WITH_SECRETS') and init_script == 'systemd'
+  secret_dropin_conf = configuration_data({
+    'localstatedir': localstatedir,
+  })
+
+  configure_file(
+    input: 'libvirtd-secret.conf.in',
+    output: '10-secret.conf',
+    configuration: secret_dropin_conf,
+    install_dir: unitdir / 'libvirtd.service.d',
   )
 endif
 

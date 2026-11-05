@@ -5,7 +5,7 @@
 QEMU/KVM/HVF hypervisor driver
 ==============================
 
-The libvirt KVM/QEMU driver can manage any QEMU emulator from version 4.2.0 or
+The libvirt KVM/QEMU driver can manage any QEMU emulator from version 7.2.0 or
 later.
 
 It supports multiple QEMU accelerators: software
@@ -511,7 +511,7 @@ Import and export of libvirt domain XML configs
 
 The QEMU driver currently supports a single native config format known as
 ``qemu-argv``. The data for this format is expected to be a single line first a
-list of environment variables, then the QEMu binary name, finally followed by
+list of environment variables, then the QEMU binary name, finally followed by
 the QEMU command line arguments
 
 Converting from QEMU args to domain XML
@@ -562,7 +562,7 @@ The library provides two API: ``virDomainQemuMonitorCommand``, for sending an
 arbitrary monitor command (in either HMP or QMP format) to a qemu guest (
 :since:`Since 0.8.3` ), and ``virDomainQemuAttach``, for registering a qemu
 domain that was manually started so that it can then be managed by libvirtd (
-:since:`Since 0.9.4` , :removed:`removed as of 5.5.0` ).
+:since:`Since 0.9.4`, :removed:`removed as of 5.5.0` ).
 
 Additionally, the following XML additions allow fine-tuning of the command line
 given to qemu when starting a domain ( :since:`Since 0.8.3` ). In order to use
@@ -595,8 +595,11 @@ Example:
        <emulator>/usr/bin/qemu-system-x86_64</emulator>
      </devices>
      <qemu:commandline>
-       <qemu:arg value='-newarg'/>
-       <qemu:env name='QEMU_ENV' value='VAL'/>
+       <qemu:arg value='-device'/>
+       <qemu:arg value='ipmi-bmc-sim,id=bmc0'/>
+       <qemu:arg value='-device'/>
+       <qemu:arg value='smbus-impi,bmc=bmc0'/>
+       <qemu:env name='QEMU_MODULE_DIR' value='/usr/lib64/qemu'/>
      </qemu:commandline>
    </domain>
 

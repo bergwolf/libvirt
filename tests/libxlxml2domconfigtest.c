@@ -28,7 +28,7 @@
 
 #include "testutils.h"
 
-#if defined(WITH_LIBXL) && defined(WITH_YAJL)
+#if defined(WITH_LIBXL)
 
 # include "internal.h"
 # include "libxl/libxl_conf.h"
@@ -208,6 +208,17 @@ mymain(void)
 
     DO_TEST("max-eventchannels-hvm");
 
+    DO_TEST("single-serial");
+    DO_TEST("multiple-serial");
+
+# ifdef LIBXL_HAVE_BUILDINFO_HVM_VIRIDIAN_ENABLE_DISABLE
+    DO_TEST("viridian-hvm");
+    DO_TEST("viridian-hvm-full");
+#  if LIBXL_BUILDINFO_HVM_VIRIDIAN_ENABLE_DISABLE_WIDTH == 64
+    DO_TEST("viridian-passthrough");
+#  endif
+# endif
+
     unlink("libxl-driver.log");
 
     testXLFreeDriver(driver);
@@ -224,4 +235,4 @@ int main(void)
     return EXIT_AM_SKIP;
 }
 
-#endif /* WITH_LIBXL && WITH_YAJL */
+#endif /* WITH_LIBXL */

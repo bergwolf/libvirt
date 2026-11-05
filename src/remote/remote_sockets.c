@@ -55,7 +55,7 @@ remoteGetDaemonPathEnv(void)
      * but if it is not set we will fallback to LIBVIRTD_PATH
      * for previous behaviour
      */
-    if (getenv("VIRTD_PATH") != NULL) {
+    if (g_getenv("VIRTD_PATH") != NULL) {
         return "VIRTD_PATH";
     } else {
         return "LIBVIRTD_PATH";
@@ -96,8 +96,7 @@ remoteSplitURIScheme(virURI *uri,
 
         if ((val = remoteDriverTransportTypeFromString(tmp)) < 0) {
             virReportError(VIR_ERR_INVALID_ARG, "%s",
-                           _("remote_open: transport in URL not recognised "
-                             "(should be tls|unix|ssh|ext|tcp|libssh2|libssh)"));
+                           _("remote_open: transport in URL not recognised (should be tls|unix|ssh|ext|tcp|libssh2|libssh)"));
             return -1;
         }
 
@@ -127,10 +126,9 @@ remoteGetUNIXSocketHelper(remoteDriverTransport transport,
                           unsigned int flags)
 {
     char *sockname = NULL;
-    g_autofree char *userdir = NULL;
 
     if (flags & REMOTE_DRIVER_OPEN_USER) {
-        userdir = virGetUserRuntimeDirectory();
+        g_autofree char *userdir = virGetUserRuntimeDirectory();
 
         sockname = g_strdup_printf("%s/%s-sock", userdir, sock_prefix);
     } else {
@@ -318,7 +316,7 @@ remoteGetUNIXSocket(remoteDriverTransport transport,
     VIR_DEBUG("Choosing remote socket for transport=%s mode=%s driver=%s flags=0x%x",
               remoteDriverTransportTypeToString(transport),
               remoteDriverModeTypeToString(mode),
-              driver, flags);
+              NULLSTR(driver), flags);
 
 #ifdef REMOTE_DRIVER_AUTOSTART_DIRECT
     if (!driver && mode != REMOTE_DRIVER_MODE_LEGACY) {
@@ -343,6 +341,7 @@ remoteGetUNIXSocket(remoteDriverTransport transport,
                 return NULL;
         }
         driver = guessdriver;
+        VIR_DEBUG("Guessed driver %s", NULLSTR(driver));
     }
 #endif
 
@@ -355,6 +354,9 @@ remoteGetUNIXSocket(remoteDriverTransport transport,
     legacy_sock_name = remoteGetUNIXSocketHelper(transport, "libvirt", flags);
 
     if (mode == REMOTE_DRIVER_MODE_AUTO) {
+        VIR_DEBUG("Resolving mode=auto direct_daemon=%s direct_sock=%s legacy_daemon=%s legacy_sock=%s",
+                  NULLSTR(direct_daemon), NULLSTR(direct_sock_name),
+                  NULLSTR(legacy_daemon), NULLSTR(legacy_sock_name));
         if (transport == REMOTE_DRIVER_TRANSPORT_UNIX) {
             /*
              * When locally accessing libvirtd, we pick legacy or
@@ -381,6 +383,7 @@ remoteGetUNIXSocket(remoteDriverTransport transport,
              */
             mode = REMOTE_DRIVER_MODE_LEGACY;
         }
+        VIR_DEBUG("Resolved mode=%s", remoteDriverModeTypeToString(mode));
     }
 
     switch ((remoteDriverMode)mode) {
@@ -399,7 +402,7 @@ remoteGetUNIXSocket(remoteDriverTransport transport,
 
         if (!direct_sock_name) {
             virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                           _("Cannot use direct socket mode if no URI is set"));
+                           _("No URI is provided and cannot identify any listening daemon socket path to attempt to connect to. Please ensure the expected daemon sockets are active and/or provide an explicit URI. For more information see https://libvirt.org/kbase/failed_connection_after_install.html"));
             return NULL;
         }
 
@@ -437,7 +440,7 @@ remoteGetURIDaemonInfo(virURI *uri,
                        remoteDriverTransport transport,
                        unsigned int *flags)
 {
-    const char *autostart_str = getenv("LIBVIRT_AUTOSTART");
+    const char *autostart_str = g_getenv("LIBVIRT_AUTOSTART");
 
     *flags = 0;
 

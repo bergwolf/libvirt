@@ -35,7 +35,7 @@ virsh
    machine to be cloned to form a new virtual machine. It automates
    copying of data across to new disk images, and updates the UUID, MAC
    address, and name in the configuration.
-`virt-df <https://people.redhat.com/rjones/virt-df/>`__
+`virt-df <https://libguestfs.org/virt-df.1.html>`__
    Examine the utilization of each filesystem in a virtual machine from
    the comfort of the host machine. This tool peeks into the guest disks
    and determines how much space is used. It can cope with common Linux
@@ -185,6 +185,10 @@ Infrastructure as a Service (IaaS)
    software-defined datacenter. The key strengths of ZStack in terms of
    management are scalability, performance, and a fast, user-friendly
    deployment.
+`Apache CloudStack <https://cloudstack.apache.org/>`__
+   Apache CloudStack™ is an open-source software system designed to
+   deploy and manage large networks of virtual machines, as a highly available,
+   highly scalable Infrastructure as a Service (IaaS) cloud computing platform.
 
 Libraries
 ---------
@@ -206,6 +210,11 @@ Libraries
    Allows using simple ruby objects to manipulate hypervisors, guests,
    storage, network etc. It is based on top of the `native ruby
    bindings <https://ruby.libvirt.org/>`__.
+`Perl Async bindings <https://github.com/ehuelsmann/perl-sys-async-virt#readme>`__
+   Perl `Sys::Async::Virt library <https://metacpan.org/pod/Sys::Async::Virt>`__
+   supporting the asynchronous paradigm introduced by `Future::AsyncAwait
+   <https://metacpan.org/pod/Future::AsyncAwait>`__ that tries to stay close to
+   the `Sys::Virt API <https://metacpan.org/pod/Sys::Virt>`__.
 
 LiveCD / Appliances
 -------------------
@@ -235,13 +244,7 @@ Monitoring
    The plugins provided by Guido Günther allow to monitor various things
    like network and block I/O with
    `Munin <https://munin-monitoring.org/>`__.
-`Nagios-virt <https://people.redhat.com/rjones/nagios-virt/>`__
-   Nagios-virt is a configuration tool to add monitoring of your
-   virtualised domains to `Nagios <https://www.nagios.org/>`__. You can
-   use this tool to either set up a new Nagios installation for your Xen
-   or QEMU/KVM guests, or to integrate with your existing Nagios
-   installation.
-`PCP <https://pcp.io/man/man1/pmdalibvirt.1.html>`__
+`PCP <https://man7.org/linux/man-pages/man1/pmdalibvirt.1.html>`__
    The PCP libvirt PMDA (plugin) is part of the
    `PCP <https://pcp.io/>`__ toolkit and provides hypervisor and guest
    information and complete set of guest performance metrics. It
@@ -332,16 +335,6 @@ Backup
    Backup utility for libvirt, using the latest changed block tracking features:
    Create online, thin provisioned full and incremental or differential backups
    of your kvm/qemu virtual machines.
-
-Other
------
-
-`Cuckoo Sandbox <https://cuckoosandbox.org/>`__
-   Cuckoo Sandbox is a malware analysis system. You can throw any
-   suspicious file at it and in a matter of seconds Cuckoo will provide
-   you back some detailed results outlining what such file did when
-   executed inside an isolated environment. And libvirt is one of the
-   backends that can be used for the isolated environment.
 
 .. |libvirt powered 96| image:: logos/logo-square-powered-96.png
 .. |libvirt powered 128| image:: logos/logo-square-powered-128.png

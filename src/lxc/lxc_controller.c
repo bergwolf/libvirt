@@ -196,9 +196,7 @@ static virLXCController *virLXCControllerNew(const char *name)
     if (!(driver = virLXCControllerDriverNew()))
         goto error;
 
-    if ((configFile = virDomainConfigFile(LXC_STATE_DIR,
-                                          ctrl->name)) == NULL)
-        goto error;
+    configFile = virDomainConfigFile(LXC_STATE_DIR, ctrl->name);
 
     if ((ctrl->vm = virDomainObjParseFile(configFile,
                                           driver->xmlopt,
@@ -208,8 +206,11 @@ static virLXCController *virLXCControllerNew(const char *name)
 
     if ((ctrl->timerShutdown = virEventAddTimeout(-1,
                                                   virLXCControllerQuitTimer, ctrl,
-                                                  NULL)) < 0)
+                                                  NULL)) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to add shutdown timer"));
         goto error;
+    }
 
  cleanup:
     virLXCControllerDriverFree(driver);
@@ -313,8 +314,8 @@ static void virLXCControllerFree(virLXCController *ctrl)
 }
 
 
-static int virLXCControllerAddConsole(virLXCController *ctrl,
-                                      int hostFd)
+static void virLXCControllerAddConsole(virLXCController *ctrl,
+                                       int hostFd)
 {
     VIR_EXPAND_N(ctrl->consoles, ctrl->nconsoles, 1);
     ctrl->consoles[ctrl->nconsoles-1].daemon = ctrl->daemon;
@@ -326,7 +327,6 @@ static int virLXCControllerAddConsole(virLXCController *ctrl,
 
     ctrl->consoles[ctrl->nconsoles-1].epollFd = -1;
     ctrl->consoles[ctrl->nconsoles-1].epollWatch = -1;
-    return 0;
 }
 
 
@@ -947,8 +947,7 @@ static int virLXCControllerSetupServer(virLXCController *ctrl)
     if (virSecurityManagerClearSocketLabel(ctrl->securityManager, ctrl->def) < 0)
         goto error;
 
-    if (virNetServerAddService(srv, svc) < 0)
-        goto error;
+    virNetServerAddService(srv, svc);
     g_clear_pointer(&svc, virObjectUnref);
 
     if (!(ctrl->prog = virNetServerProgramNew(VIR_LXC_MONITOR_PROGRAM,
@@ -1359,11 +1358,13 @@ virLXCControllerSetupUsernsMap(virDomainIdMapEntry *map,
         return -1;
     }
 
-    for (i = 0; i < num; i++)
+    VIR_DEBUG("Set '%s' mappings to:", path);
+
+    for (i = 0; i < num; i++) {
+        VIR_DEBUG("%u %u %u", map[i].start, map[i].target, map[i].count);
         virBufferAsprintf(&map_value, "%u %u %u\n",
                           map[i].start, map[i].target, map[i].count);
-
-    VIR_DEBUG("Set '%s' to '%s'", path, virBufferCurrentContent(&map_value));
+    }
 
     if (virFileWriteStr(path, virBufferCurrentContent(&map_value), 0) < 0) {
         virReportSystemError(errno, _("unable write to %1$s"), path);
@@ -1504,7 +1505,7 @@ virLXCControllerSetupTimers(virLXCController *ctrl)
         if (timer->present == VIR_TRISTATE_BOOL_NO)
             continue;
 
-        switch ((virDomainTimerNameType)timer->name) {
+        switch (timer->name) {
         case VIR_DOMAIN_TIMER_NAME_PLATFORM:
         case VIR_DOMAIN_TIMER_NAME_TSC:
         case VIR_DOMAIN_TIMER_NAME_KVMCLOCK:
@@ -1774,6 +1775,11 @@ virLXCControllerSetupHostdevSubsys(virDomainDef *vmDef,
                                                      def,
                                                      securityDriver);
 
+    case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI:
+    case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI:
+    case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI_HOST:
+    case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_MDEV:
+    case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_LAST:
     default:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("Unsupported host device mode %1$s"),
@@ -1802,10 +1808,11 @@ virLXCControllerSetupHostdevCaps(virDomainDef *vmDef,
     case VIR_DOMAIN_HOSTDEV_CAPS_TYPE_NET:
         return 0; /* case is handled in virLXCControllerMoveInterfaces */
 
+    case VIR_DOMAIN_HOSTDEV_CAPS_TYPE_LAST:
     default:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("Unsupported host device mode %1$s"),
-                       virDomainHostdevCapsTypeToString(def->source.subsys.type));
+                       virDomainHostdevCapsTypeToString(def->source.caps.type));
         return -1;
     }
 }
@@ -1835,6 +1842,7 @@ virLXCControllerSetupAllHostdevs(virLXCController *ctrl)
                 return -1;
             break;
         default:
+        case VIR_DOMAIN_HOSTDEV_MODE_LAST:
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("Unsupported host device mode %1$s"),
                            virDomainHostdevModeTypeToString(def->mode));
@@ -1912,7 +1920,8 @@ static int virLXCControllerSetupDisk(virLXCController *ctrl,
     /* Labelling normally operates on src, but we need
      * to actually label the dst here, so hack the config */
     def->src->path = dst;
-    if (virSecurityManagerSetImageLabel(securityDriver, ctrl->def, def->src,
+    if (virSecurityManagerSetImageLabel(securityDriver,
+                                        NULL, ctrl->def, def->src,
                                         VIR_SECURITY_DOMAIN_IMAGE_LABEL_BACKING_CHAIN) < 0)
         goto cleanup;
 
@@ -2235,10 +2244,9 @@ static int
 virLXCControllerEventSendExit(virLXCController *ctrl,
                               int exitstatus)
 {
-    virLXCMonitorExitEventMsg msg;
+    virLXCMonitorExitEventMsg msg = { 0 };
 
     VIR_DEBUG("Exit status %d (client=%p)", exitstatus, ctrl->client);
-    memset(&msg, 0, sizeof(msg));
     switch (exitstatus) {
     case 0:
         msg.status = VIR_LXC_MONITOR_EXIT_STATUS_SHUTDOWN;
@@ -2272,10 +2280,9 @@ static int
 virLXCControllerEventSendInit(virLXCController *ctrl,
                               pid_t initpid)
 {
-    virLXCMonitorInitEventMsg msg;
+    virLXCMonitorInitEventMsg msg = { 0 };
 
     VIR_DEBUG("Init pid %lld", (long long)initpid);
-    memset(&msg, 0, sizeof(msg));
     msg.initpid = initpid;
 
     virLXCControllerEventSend(ctrl,
@@ -2649,8 +2656,7 @@ int main(int argc, char *argv[])
     }
 
     for (i = 0; i < nttyFDs; i++) {
-        if (virLXCControllerAddConsole(ctrl, ttyFDs[i]) < 0)
-            goto cleanup;
+        virLXCControllerAddConsole(ctrl, ttyFDs[i]);
         ttyFDs[i] = -1;
     }
 

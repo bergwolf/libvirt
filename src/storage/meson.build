@@ -59,8 +59,6 @@ storage_backend_zfs_sources = [
   'storage_backend_zfs.c',
 ]
 
-storage_backend_install_dir = libdir / 'libvirt' / 'storage-backend'
-
 if conf.has('WITH_STORAGE')
   storage_driver_impl_lib = static_library(
     'virt_storage_driver_impl',
@@ -111,10 +109,13 @@ if conf.has('WITH_STORAGE')
 
   virt_daemon_units += {
     'service': 'virtstoraged',
-    'service_in': files('virtstoraged.service.in'),
-    'name': 'Libvirt storage',
-    'sockprefix': 'virtstoraged',
-    'sockets': [ 'main', 'ro', 'admin' ],
+    'name': 'storage',
+    'service_extra_in': [
+      files('virtstoraged.service.extra.in'),
+    ],
+    'socket_extra_in': [
+      files('virtstoraged.socket.extra.in'),
+    ],
   }
 
   openrc_init_files += {

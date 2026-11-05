@@ -1,14 +1,8 @@
 <cpu>
   <arch>x86_64</arch>
-  <model>Icelake-Server</model>
+  <model>Icelake-Server-v1</model>
   <vendor>Intel</vendor>
   <signature family='6' model='106' stepping='0'/>
-  <feature name='ds'/>
-  <feature name='acpi'/>
-  <feature name='ss'/>
-  <feature name='ht'/>
-  <feature name='tm'/>
-  <feature name='pbe'/>
   <feature name='dtes64'/>
   <feature name='monitor'/>
   <feature name='ds_cpl'/>
@@ -20,9 +14,18 @@
   <feature name='pdcm'/>
   <feature name='dca'/>
   <feature name='osxsave'/>
+  <feature name='ds'/>
+  <feature name='acpi'/>
+  <feature name='ss'/>
+  <feature name='ht'/>
+  <feature name='tm'/>
+  <feature name='pbe'/>
   <feature name='tsc_adjust'/>
   <feature name='sgx'/>
+  <feature name='fdp-excptn-only'/>
   <feature name='cmt'/>
+  <feature name='zero-fcs-fds'/>
+  <feature name='mpx'/>
   <feature name='avx512ifma'/>
   <feature name='intel-pt'/>
   <feature name='sha-ni'/>

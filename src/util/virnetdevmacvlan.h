@@ -47,7 +47,7 @@ typedef enum {
 } virNetDevMacVLanCreateFlags;
 
 bool virNetDevMacVLanIsMacvtap(const char *ifname)
-   ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT G_NO_INLINE;
+   ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 
 int virNetDevMacVLanCreate(const char *ifname,
                            const virMacAddr *macaddress,
@@ -72,13 +72,15 @@ int virNetDevMacVLanCreateWithVPortProfile(const char *ifname,
                                            char *stateDir,
                                            int *tapfd,
                                            size_t tapfdSize,
+                                           char **tapfdpath,
                                            unsigned int flags)
     ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3) ATTRIBUTE_NONNULL(6)
     ATTRIBUTE_NONNULL(8) ATTRIBUTE_NONNULL(10) G_GNUC_WARN_UNUSED_RESULT;
 
 int virNetDevMacVLanTapOpen(const char *ifname,
                             int *tapfd,
-                            size_t tapfdSize)
+                            size_t tapfdSize,
+                            char **tapname)
    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
    G_GNUC_WARN_UNUSED_RESULT;
 

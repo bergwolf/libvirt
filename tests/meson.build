@@ -10,13 +10,13 @@ tests_dep = declare_dependency(
     dlopen_dep,
     glib_dep,
     gnutls_dep,
+    json_c_dep,
     libnl_dep,
     libxml_dep,
     rpc_dep,
     sasl_dep,
     selinux_dep,
     xdr_dep,
-    yajl_dep,
   ],
   include_directories: [
     conf_inc_dir,
@@ -28,6 +28,7 @@ tests_dep = declare_dependency(
   ],
   link_args: (
     libvirt_export_dynamic
+    + libvirt_no_warn_duplicate_libraries
     + libvirt_flat_namespace
     + coverage_flags
   ),
@@ -72,14 +73,11 @@ endif
 #   * deps - additional dependencies (optional, default [])
 
 mock_libs = [
-  { 'name': 'domaincapsmock' },
-  { 'name': 'shunload', 'sources': [ 'shunloadhelper.c' ] },
   { 'name': 'vircgroupmock' },
   { 'name': 'virdnsmasqmock' },
   { 'name': 'virfilecachemock' },
   { 'name': 'virfirewallmock' },
   { 'name': 'virhostcpumock' },
-  { 'name': 'virhostdevmock' },
   { 'name': 'virnetdaemonmock' },
   { 'name': 'virnetdevmock' },
   { 'name': 'virnetserverclientmock' },
@@ -105,6 +103,11 @@ if host_machine.system() != 'windows'
   ]
 endif
 
+if conf.has('WITH_TEST')
+  mock_libs += [
+    { 'name': 'shunload', 'sources': [ 'shunloadhelper.c' ] },
+  ]
+endif
 
 # build libraries used by tests
 
@@ -148,7 +151,10 @@ endif
 if conf.has('WITH_QEMU')
   test_utils_qemu_lib = static_library(
     'test_utils_qemu',
-    [ 'testutilsqemu.c', 'testutilsqemuschema.c' ],
+    [ 'qemufakedrivers.c',
+      'testutilsqemu.c',
+      'testutilsqemuschema.c',
+    ],
     dependencies: [ tests_dep ],
   )
 
@@ -170,8 +176,8 @@ if conf.has('WITH_QEMU')
     { 'name': 'qemucaps2xmlmock' },
     { 'name': 'qemucapsprobemock', 'link_with': [ test_qemu_driver_lib ] },
     { 'name': 'qemucpumock' },
-    { 'name': 'qemuhotplugmock', 'link_with': [ test_utils_qemu_lib, test_utils_lib ] },
-    { 'name': 'qemuxml2argvmock' },
+    { 'name': 'qemuhotplugmock', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_lib, test_utils_lib ] },
+    { 'name': 'qemuxml2argvmock', 'link_with': [ test_utils_lib ] },
     { 'name': 'virhostidmock' },
   ]
 else
@@ -179,6 +185,11 @@ else
   test_utils_qemu_lib = []
   test_utils_qemu_monitor_lib = []
 endif
+
+mock_libs += [
+  # domaincapsmock has some code guarded with WITH_QEMU
+  { 'name': 'domaincapsmock', 'link_with': [ test_qemu_driver_lib ] },
+]
 
 test_file_wrapper_lib = static_library(
   'test_file_wrapper',
@@ -250,6 +261,13 @@ if conf.has('WITH_QEMU')
   domaincapstest_link_whole += [ test_utils_qemu_lib ]
 endif
 
+virfirewalltest_include = []
+virfirewalltest_link_with = []
+if conf.has('WITH_NETWORK')
+  virfirewalltest_include += [ network_inc_dir ]
+  virfirewalltest_link_with += [ network_driver_impl ]
+endif
+
 tests += [
   { 'name': 'commandtest' },
   { 'name': 'cputest', 'link_with': cputest_link_with, 'link_whole': cputest_link_whole },
@@ -257,14 +275,11 @@ tests += [
   { 'name': 'domainconftest' },
   { 'name': 'genericxml2xmltest' },
   { 'name': 'interfacexml2xmltest' },
-  { 'name': 'metadatatest' },
   { 'name': 'networkxml2xmlupdatetest' },
   { 'name': 'nodedevxml2xmltest' },
   { 'name': 'nwfilterxml2xmltest' },
-  { 'name': 'objecteventtest' },
   { 'name': 'seclabeltest' },
   { 'name': 'secretxml2xmltest' },
-  { 'name': 'shunloadtest', 'deps': [ thread_dep ] },
   { 'name': 'sockettest' },
   { 'name': 'storagevolxml2xmltest' },
   { 'name': 'sysinfotest' },
@@ -280,7 +295,7 @@ tests += [
   { 'name': 'virerrortest' },
   { 'name': 'virfilecachetest' },
   { 'name': 'virfiletest' },
-  { 'name': 'virfirewalltest' },
+  { 'name': 'virfirewalltest', 'include': virfirewalltest_include, 'link_with': virfirewalltest_link_with },
   { 'name': 'virhostcputest', 'link_whole': [ test_file_wrapper_lib ] },
   { 'name': 'virhostdevtest' },
   { 'name': 'viridentitytest' },
@@ -296,7 +311,6 @@ tests += [
   { 'name': 'virportallocatortest' },
   { 'name': 'virrotatingfiletest' },
   { 'name': 'virschematest' },
-  { 'name': 'virshtest' },
   { 'name': 'virstringtest' },
   { 'name': 'virsystemdtest' },
   { 'name': 'virtimetest' },
@@ -324,11 +338,22 @@ if host_machine.system() == 'linux'
     { 'name': 'virscsitest' },
     { 'name': 'virusbtest' },
   ]
-  if conf.has('WITH_YAJL')
+  if conf.has('WITH_JSON')
     tests += [
       { 'name': 'virnetdevopenvswitchtest' },
     ]
   endif
+endif
+
+if conf.has('WITH_TEST')
+  tests += [
+    { 'name': 'fdstreamtest' },
+    { 'name': 'metadatatest' },
+    { 'name': 'networkmetadatatest' },
+    { 'name': 'objecteventtest' },
+    { 'name': 'shunloadtest', 'deps': [ thread_dep ] },
+    { 'name': 'virshtest', 'depends': [ virsh_prog ] },
+  ]
 endif
 
 if conf.has('WITH_BHYVE')
@@ -348,6 +373,9 @@ if conf.has('WITH_CH')
   tests += [
     { 'name': 'chxml2xmltest', 'link_with': [ ch_driver_impl ] },
   ]
+  mock_libs += [
+    { 'name': 'chxml2xmlmock' },
+  ]
 endif
 
 if conf.has('WITH_ESX')
@@ -359,9 +387,8 @@ endif
 if conf.has('WITH_LIBVIRTD')
   tests += [
     { 'name': 'eventtest', 'deps': [ thread_dep ] },
-    { 'name': 'fdstreamtest' },
     { 'name': 'virdriverconnvalidatetest' },
-    { 'name': 'virdrivermoduletest' },
+    { 'name': 'virdrivermoduletest', 'depends': virt_module_deps },
   ]
 endif
 
@@ -382,13 +409,12 @@ endif
 
 if conf.has('WITH_NETWORK')
   tests += [
-    { 'name': 'networkxml2conftest', 'link_with': [ network_driver_impl ] },
-    { 'name': 'networkxml2firewalltest', 'link_with': [ network_driver_impl ] },
-    { 'name': 'networkxml2xmltest', 'link_with': [ network_driver_impl ] },
+    { 'name': 'networkxml2firewalltest', 'include': [ network_inc_dir ], 'link_with': [ network_driver_impl ] },
+    { 'name': 'networkxmlconftest', 'include': [ network_inc_dir ], 'link_with': [ network_driver_impl ],  },
   ]
 endif
 
-if conf.has('WITH_NODE_DEVICES')
+if conf.has('WITH_NODE_DEVICES') and conf.has('WITH_JSON')
   tests += [
     { 'name': 'nodedevmdevctltest', 'link_with': [ node_device_driver_impl ] },
   ]
@@ -418,7 +444,9 @@ endif
 if conf.has('WITH_NWFILTER')
   tests += [
     { 'name': 'nwfilterebiptablestest', 'link_with': [ nwfilter_driver_impl ] },
-    { 'name': 'nwfilterxml2firewalltest', 'link_with': [ nwfilter_driver_impl ] },
+    { 'name': 'nwfilternftablestest', 'link_with': [ nwfilter_driver_impl ] },
+    { 'name': 'nwfilterxml2ebipfirewalltest', 'link_with': [ nwfilter_driver_impl ] },
+    { 'name': 'nwfilterxml2nftfirewalltest', 'link_with': [ nwfilter_driver_impl ] },
   ]
 endif
 
@@ -439,7 +467,6 @@ if conf.has('WITH_QEMU')
     { 'name': 'qemuagenttest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
     { 'name': 'qemublocktest', 'include': [ storage_file_inc_dir ], 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
     { 'name': 'qemucapabilitiestest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
-    { 'name': 'qemucapabilitiesnumbering', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
     { 'name': 'qemucaps2xmltest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib ] },
     { 'name': 'qemucommandutiltest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
     { 'name': 'qemudomaincheckpointxml2xmltest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib ] },
@@ -450,16 +477,30 @@ if conf.has('WITH_QEMU')
     { 'name': 'qemumigparamstest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
     { 'name': 'qemumigrationcookiexmltest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
     { 'name': 'qemumonitorjsontest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib ] },
+    { 'name': 'qemuprocesstest', 'sources': [ 'qemuprocesstest.c', 'qemuprocessmock.c' ], 'link_with': [ test_qemu_driver_lib ] },
     { 'name': 'qemusecuritytest', 'sources': [ 'qemusecuritytest.c', 'qemusecuritymock.c' ], 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib ] },
-    { 'name': 'qemustatusxml2xmltest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
+    { 'name': 'qemuxmlactivetest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
     { 'name': 'qemuvhostusertest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_file_wrapper_lib ] },
-    { 'name': 'qemuxml2argvtest', 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
-    { 'name': 'qemuxml2xmltest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
+    { 'name': 'qemuxmlconftest', 'timeout': 90, 'link_with': [ test_qemu_driver_lib, test_utils_qemu_monitor_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
   ]
+  if conf.has('WITH_NBDKIT')
+    tests += [
+      { 'name': 'qemunbdkittest', 'link_with': [ test_qemu_driver_lib ], 'link_whole': [ test_utils_qemu_lib, test_file_wrapper_lib ] },
+    ]
+  endif
 endif
 
 if conf.has('WITH_REMOTE')
   tests += [
+    {
+      'name': 'daemonstreamtest',
+      'sources': [
+        'daemonstreamtest.c',
+        remote_daemon_stream_sources,
+        remote_protocol_generated,
+      ],
+      'include': [ remote_inc_dir ],
+    },
     { 'name': 'virnetdaemontest' },
     { 'name': 'virnetmessagetest' },
     { 'name': 'virnetserverclienttest' },
@@ -491,7 +532,9 @@ if conf.has('WITH_SECDRIVER_SELINUX')
       ]
     endif
   endif
+endif
 
+if conf.has('WITH_SELINUX')
   mock_libs += [
     { 'name': 'securityselinuxhelper' },
   ]
@@ -525,14 +568,17 @@ if conf.has('WITH_VMWARE')
   ]
 endif
 
-if conf.has('WITH_VMX')
+if conf.has('WITH_VMX') and conf.has('WITH_ESX')
   tests += [
-    { 'name': 'vmx2xmltest' },
+    { 'name': 'vmx2xmltest', 'include': [ esx_inc_dir ] },
     { 'name': 'xml2vmxtest' },
+  ]
+  mock_libs += [
+    { 'name': 'vmx2xmlmock', 'deps': [ esx_dep ] },
   ]
 endif
 
-if conf.has('WITH_YAJL')
+if conf.has('WITH_JSON')
   tests += [
     { 'name': 'virjsontest' },
     { 'name': 'virmacmaptest' },
@@ -589,15 +635,44 @@ foreach data : tests
     ],
     export_dynamic: true,
   )
-  if data['name'] == 'qemuxml2argvtest'
-    timeout = 90
-  else
-    # default meson timeout
-    timeout = 30
-  endif
-  test(data['name'], test_bin, env: tests_env, timeout: timeout, depends: tests_deps)
+  test(
+    data['name'],
+    test_bin,
+    env: tests_env,
+    timeout: data.get('timeout', 30),
+    depends: tests_deps + data.get('depends', []),
+    suite: 'bin'
+  )
 endforeach
 
+test(
+  'qemu replies check',
+  python3_prog,
+  args: [
+    qemu_replies_tool_prog.full_path(),
+    '--repliesdir',
+    meson.project_source_root() / 'tests' / 'qemucapabilitiesdata'
+  ],
+  env: runutf8,
+  suite: 'script',
+)
+
+if conf.has('WITH_TEST')
+  # vsh based client self-test, which can be run directly from meson
+  test('virsh self-test',
+    virsh_prog,
+    args: [ '-q', '-c', 'test:///default', 'self-test' ],
+    suite: 'bin',
+  )
+endif
+
+if conf.has('WITH_REMOTE')
+  test('virt-admin self-test',
+    virt_admin_prog,
+    args: [ '-q', 'self-test' ],
+    suite: 'bin',
+  )
+endif
 
 # helpers:
 #   each entry is a dictionary with following items:
@@ -665,37 +740,34 @@ endforeach
 #   list of test scripts to run
 test_scripts = []
 
-if conf.has('WITH_LIBVIRTD')
+if conf.has('WITH_TEST')
   test_scripts += [
-    'libvirtd-fail',
-    'libvirtd-pool',
-    'virsh-auth',
-    'virsh-checkpoint',
-    'virsh-cpuset',
-    'virsh-define-dev-segfault',
-    'virsh-int-overflow',
-    'virsh-optparse',
-    'virsh-output',
-    'virsh-read-bufsiz',
-    'virsh-read-non-seekable',
-    'virsh-schedinfo',
-    'virsh-self-test',
-    'virsh-snapshot',
-    'virsh-start',
-    'virsh-undefine',
-    'virsh-uriprecedence',
-    'virsh-vcpupin',
-    'virt-admin-self-test',
+      { 'name': 'virsh-auth', 'depends': [ virsh_prog ] }
   ]
+endif
+
+if conf.has('WITH_MONOLITHIC_LIBVIRTD')
+  test('libvirtd fail with missing config',
+    libvirtd_prog,
+    args: [ '--config=no-such-conf', '--timeout=5' ],
+    should_fail: true,
+    suite: 'bin',
+  )
 
   if conf.has('WITH_SECDRIVER_APPARMOR')
-    test_scripts += 'virt-aa-helper-test'
+    test_scripts += { 'name': 'virt-aa-helper-test' }
   endif
 endif
 
-foreach name : test_scripts
-  script = find_program(name)
-  test(name, script, env: tests_env)
+foreach data : test_scripts
+  script = find_program(data['name'])
+  test(data['name'],
+       script,
+       env: tests_env,
+       depends: [
+           data.get('depends', []),
+       ],
+       suite: 'script')
 endforeach
 
 testenv = runutf8

@@ -106,7 +106,7 @@ virStorageBackendFileSystemNetFindNFSPoolSources(virNetfsDiscoverState *state)
 
     g_autoptr(virCommand) cmd = NULL;
 
-    cmd = virCommandNewArgList(SHOWMOUNT,
+    cmd = virCommandNewArgList("showmount",
                                "--no-headers",
                                "--exports",
                                state->host,
@@ -219,8 +219,7 @@ virStorageBackendFileSystemIsValid(virStoragePoolObj *pool)
                                _("missing source device"));
             else
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("expected exactly 1 device for the "
-                                 "storage pool"));
+                               _("expected exactly 1 device for the storage pool"));
             return -1;
         }
     }
@@ -305,7 +304,7 @@ virStorageBackendFileSystemMount(virStoragePoolObj *pool)
     if (!(src = virStorageBackendFileSystemGetPoolSource(pool)))
         return -1;
 
-    cmd = virStorageBackendFileSystemMountCmd(MOUNT, def, src);
+    cmd = virStorageBackendFileSystemMountCmd("mount", def, src);
 
     /* Mounting a shared FS might take a long time. Don't hold
      * the pool locked meanwhile. */
@@ -363,7 +362,7 @@ virStorageBackendFileSystemStop(virStoragePoolObj *pool)
     if ((rc = virStorageBackendFileSystemIsMounted(pool)) != 1)
         return rc;
 
-    cmd = virCommandNewArgList(UMOUNT, def->target.path, NULL);
+    cmd = virCommandNewArgList("umount", def->target.path, NULL);
     return virCommandRun(cmd, NULL);
 }
 #endif /* WITH_STORAGE_FS */
@@ -403,18 +402,7 @@ virStorageBackendExecuteMKFS(const char *device,
     g_autoptr(virCommand) cmd = NULL;
     g_autofree char *mkfs = NULL;
 
-#if WITH_STORAGE_FS
-    mkfs = virFindFileInPath(MKFS);
-#endif /* WITH_STORAGE_FS */
-
-    if (!mkfs) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("mkfs is not available on this platform: Failed to make filesystem of type '%1$s' on device '%2$s'"),
-                       format, device);
-        return -1;
-    }
-
-    cmd = virCommandNewArgList(mkfs, "-t", format, NULL);
+    cmd = virCommandNewArgList("mkfs", "-t", format, NULL);
 
     /* use the force, otherwise mkfs.xfs won't overwrite existing fs.
      * Similarly mkfs.ext2, mkfs.ext3, and mkfs.ext4 require supplying -F

@@ -168,11 +168,11 @@ int virNetDevSetupControl(const char *ifname,
     G_GNUC_WARN_UNUSED_RESULT;
 
 int virNetDevExists(const char *brname)
-    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT G_NO_INLINE;
+    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 
 int virNetDevSetOnline(const char *ifname,
                        bool online)
-    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT G_NO_INLINE;
+    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 int virNetDevGetOnline(const char *ifname,
                       bool *online)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT;
@@ -180,19 +180,9 @@ int virNetDevGetOnline(const char *ifname,
 
 int virNetDevSetMAC(const char *ifname,
                     const virMacAddr *macaddr)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT G_NO_INLINE;
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 int virNetDevGetMAC(const char *ifname,
                     virMacAddr *macaddr)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT;
-
-int virNetDevReplaceMacAddress(const char *linkdev,
-                               const virMacAddr *macaddress,
-                               const char *stateDir)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3)
-    G_GNUC_WARN_UNUSED_RESULT;
-
-int virNetDevRestoreMacAddress(const char *linkdev,
-                               const char *stateDir)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT;
 
 int virNetDevSetCoalesce(const char *ifname,
@@ -202,7 +192,7 @@ int virNetDevSetCoalesce(const char *ifname,
 
 int virNetDevSetMTU(const char *ifname,
                     int mtu)
-    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT;
+    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 int virNetDevSetMTUFromDevice(const char *ifname,
                               const char *otherifname)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT;
@@ -258,7 +248,8 @@ int virNetDevGetVirtualFunctions(const char *pfname,
 int virNetDevSaveNetConfig(const char *linkdev, int vf,
                            const char *stateDir,
                            bool saveVlan)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3) G_GNUC_WARN_UNUSED_RESULT;
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3) G_GNUC_WARN_UNUSED_RESULT
+    ATTRIBUTE_MOCKABLE;
 
 int
 virNetDevReadNetConfig(const char *linkdev, int vf,
@@ -275,7 +266,7 @@ virNetDevSetNetConfig(const char *linkdev, int vf,
                       const virNetDevVlan *vlan,
                       const virMacAddr *MAC,
                       bool setVLan)
-    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT;
+    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 
 int virNetDevGetVirtualFunctionInfo(const char *vfname, char **pfname,
                                     int *vf)
@@ -324,10 +315,10 @@ int virNetDevSysfsFile(char **pf_sysfs_device_link,
                        const char *ifname,
                        const char *file)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3)
-    G_GNUC_WARN_UNUSED_RESULT G_NO_INLINE;
+    G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 
 int virNetDevRunEthernetScript(const char *ifname, const char *script)
-    G_NO_INLINE;
+    ATTRIBUTE_MOCKABLE;
 
 int virNetDevVFInterfaceStats(virPCIDeviceAddress *vfAddr,
                               virDomainInterfaceStatsPtr stats)

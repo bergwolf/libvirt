@@ -27,9 +27,10 @@
 
 #include "virthread.h"
 #define LIBVIRT_QEMU_PROCESSPRIV_H_ALLOW
+#include "hypervisor/qemu_agent.h"
+#include "qemu/qemu_domain.h"
 #include "qemu/qemu_processpriv.h"
 #include "qemu/qemu_monitor.h"
-#include "qemu/qemu_agent.h"
 #include "rpc/virnetsocket.h"
 #include "viralloc.h"
 #include "virlog.h"
@@ -172,7 +173,7 @@ qemuMonitorTestAddInvalidCommandResponse(qemuMonitorTest *test,
 }
 
 
-int G_GNUC_PRINTF(2, 3)
+int
 qemuMonitorTestAddErrorResponse(qemuMonitorTest *test, const char *errmsg, ...)
 {
     va_list msgargs;
@@ -874,9 +875,7 @@ qemuMonitorTestNew(virDomainXMLOption *xmlopt,
                    GHashTable *schema)
 {
     g_autoptr(qemuMonitorTest) test = NULL;
-    virDomainChrSourceDef src;
-
-    memset(&src, 0, sizeof(src));
+    virDomainChrSourceDef src = { 0 };
 
     if (!(test = qemuMonitorCommonTestNew(xmlopt, vm, &src)))
         goto error;
@@ -1038,6 +1037,13 @@ qemuMonitorTestFullAddItem(qemuMonitorTest *test,
 }
 
 
+struct qemuMonitorTestCommandReplyTuple {
+    const char *command;
+    const char *reply;
+    size_t line; /* line number of @command */
+};
+
+
 /**
  * qemuMonitorTestProcessFileEntries:
  * @inputstr: input file contents (modified)
@@ -1050,7 +1056,7 @@ qemuMonitorTestFullAddItem(qemuMonitorTest *test,
  * The file contains a sequence of JSON commands and reply objects separated by
  * empty lines. A command is followed by a reply.
  */
-int
+static int
 qemuMonitorTestProcessFileEntries(char *inputstr,
                                   const char *fileName,
                                   struct qemuMonitorTestCommandReplyTuple **items,
@@ -1185,9 +1191,7 @@ qemuMonitorTest *
 qemuMonitorTestNewAgent(virDomainXMLOption *xmlopt)
 {
     g_autoptr(qemuMonitorTest) test = NULL;
-    virDomainChrSourceDef src;
-
-    memset(&src, 0, sizeof(src));
+    virDomainChrSourceDef src = { 0 };
 
     if (!(test = qemuMonitorCommonTestNew(xmlopt, NULL, &src)))
         goto error;
@@ -1198,7 +1202,8 @@ qemuMonitorTestNewAgent(virDomainXMLOption *xmlopt)
     if (!(test->agent = qemuAgentOpen(test->vm,
                                       &src,
                                       virEventThreadGetContext(test->eventThread),
-                                      &qemuMonitorTestAgentCallbacks)))
+                                      &qemuMonitorTestAgentCallbacks,
+                                      QEMU_DOMAIN_PRIVATE(test->vm)->agentTimeout)))
         goto error;
 
     virObjectLock(test->agent);
@@ -1234,4 +1239,13 @@ virDomainObj *
 qemuMonitorTestGetDomainObj(qemuMonitorTest *test)
 {
     return test->vm;
+}
+
+void
+qemuMonitorTestEmitDeviceDeleted(qemuMonitorTest *test,
+                                 const char *alias)
+{
+    virObjectLock(test->mon);
+    qemuMonitorEmitDeviceDeleted(test->mon, alias);
+    virObjectUnlock(test->mon);
 }

@@ -67,18 +67,13 @@ static int disconnected; /* we may have been disconnected */
  * handler, just save the fact it was raised.
  */
 static void
-virshCatchDisconnect(virConnectPtr conn,
+virshCatchDisconnect(virConnectPtr conn G_GNUC_UNUSED,
                      int reason,
                      void *opaque)
 {
     if (reason != VIR_CONNECT_CLOSE_REASON_CLIENT) {
         vshControl *ctl = opaque;
         const char *str = "unknown reason";
-        virErrorPtr error;
-        g_autofree char *uri = NULL;
-
-        virErrorPreserveLast(&error);
-        uri = virConnectGetURI(conn);
 
         switch ((virConnectCloseReason) reason) {
         case VIR_CONNECT_CLOSE_REASON_ERROR:
@@ -94,9 +89,8 @@ virshCatchDisconnect(virConnectPtr conn,
         case VIR_CONNECT_CLOSE_REASON_LAST:
             break;
         }
-        vshError(ctl, _(str), NULLSTR(uri));
+        vshError(ctl, _(str), NULLSTR(ctl->connname));
 
-        virErrorRestore(&error);
         disconnected++;
         vshEventDone(ctl);
     }
@@ -123,14 +117,23 @@ virshConnect(vshControl *ctl, const char *uri, bool readonly)
         keepalive_forced = true;
     }
 
-    if (virPolkitAgentAvailable() &&
+    if (!ctl->no_pkttyagent &&
+        virPolkitAgentAvailable() &&
         !(pkagent = virPolkitAgentCreate()))
         virResetLastError();
 
     do {
         virErrorPtr err;
+        virConnectAuthPtr auth = virConnectAuthPtrDefault;
 
-        if ((c = virConnectOpenAuth(uri, virConnectAuthPtrDefault,
+        if (ctl->cmd && ctl->cmd->def->handler == cmdComplete) {
+            /* When running from a bash completer we need to avoid any kind of
+             * keyboard input (e.g. ssh asking for a password). To achieve
+             * this, provide no authentication callbacks. */
+            auth = NULL;
+        }
+
+        if ((c = virConnectOpenAuth(uri, auth,
                                     readonly ? VIR_CONNECT_RO : 0)))
             break;
 
@@ -166,13 +169,12 @@ virshConnect(vshControl *ctl, const char *uri, bool readonly)
         virConnectSetKeepAlive(c, interval, count) != 0) {
         if (keepalive_forced) {
             vshError(ctl, "%s",
-                     _("Cannot setup keepalive on connection "
-                       "as requested, disconnecting"));
+                     _("Cannot setup keepalive on connection as requested, disconnecting"));
             g_clear_pointer(&c, virConnectClose);
             goto cleanup;
         }
         vshDebug(ctl, VSH_ERR_INFO, "%s",
-                 _("Failed to setup keepalive on connection\n"));
+                 _("Failed to setup keepalive on connection"));
         vshResetLibvirtError();
     }
 
@@ -209,8 +211,7 @@ virshReconnect(vshControl *ctl, const char *name, bool readonly, bool force)
         if (ret < 0)
             vshError(ctl, "%s", _("Failed to disconnect from the hypervisor"));
         else if (ret > 0)
-            vshError(ctl, "%s", _("One or more references were leaked after "
-                                  "disconnect from the hypervisor"));
+            vshError(ctl, "%s", _("One or more references were leaked after disconnect from the hypervisor"));
     }
 
     priv->conn = virshConnect(ctl, name ? name : ctl->connname, readonly);
@@ -226,6 +227,9 @@ virshReconnect(vshControl *ctl, const char *name, bool readonly, bool force)
             VIR_FREE(ctl->connname);
             ctl->connname = g_strdup(name);
         }
+
+        if (!ctl->connname)
+            ctl->connname = virConnectGetURI(priv->conn);
 
         priv->readonly = readonly;
 
@@ -250,8 +254,9 @@ virshReconnect(vshControl *ctl, const char *name, bool readonly, bool force)
 static const vshCmdOptDef opts_connect[] = {
     {.name = "name",
      .type = VSH_OT_STRING,
-     .flags = VSH_OFLAG_EMPTY_OK,
-     .completer = virshCompleteEmpty,
+     .positional = true,
+     .allowEmpty = true,
+     .completer = vshCompleteEmpty,
      .help = N_("hypervisor connection URI")
     },
     {.name = "readonly",
@@ -261,15 +266,10 @@ static const vshCmdOptDef opts_connect[] = {
     {.name = NULL}
 };
 
-static const vshCmdInfo info_connect[] = {
-    {.name = "help",
-     .data = N_("(re)connect to hypervisor")
-    },
-    {.name = "desc",
-     .data = N_("Connect to local hypervisor. This is built-in "
-                "command after shell start up.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_connect = {
+     .help = N_("(re)connect to hypervisor"),
+     .desc = N_("Connect to local hypervisor. This is built-in "
+                "command after shell start up."),
 };
 
 static bool
@@ -278,7 +278,7 @@ cmdConnect(vshControl *ctl, const vshCmd *cmd)
     bool ro = vshCommandOptBool(cmd, "readonly");
     const char *name = NULL;
 
-    if (vshCommandOptStringReq(ctl, cmd, "name", &name) < 0)
+    if (vshCommandOptString(ctl, cmd, "name", &name) < 0)
         return false;
 
     if (virshReconnect(ctl, name, ro, true) < 0)
@@ -400,8 +400,7 @@ virshDeinit(vshControl *ctl)
         if (ret < 0)
             vshError(ctl, "%s", _("Failed to disconnect from the hypervisor"));
         else if (ret > 0)
-            vshError(ctl, "%s", _("One or more references were leaked after "
-                                  "disconnect from the hypervisor"));
+            vshError(ctl, "%s", _("One or more references were leaked after disconnect from the hypervisor"));
     }
     virResetLastError();
 
@@ -439,8 +438,10 @@ virshUsage(void)
     const vshCmdGrp *grp;
     const vshCmdDef *cmd;
 
-    fprintf(stdout, _("\n%1$s [options]... [<command_string>]"
-                      "\n%2$s [options]... <command> [args...]\n\n"
+    fprintf(stdout, _("\n"
+                      "%1$s [options]... [<command_string>]\n"
+                      "%2$s [options]... <command> [args...]\n"
+                      "\n"
                       "  options:\n"
                       "    -c | --connect=URI      hypervisor connection URI\n"
                       "    -d | --debug=NUM        debug level [0-4]\n"
@@ -454,6 +455,7 @@ virshUsage(void)
                       "    -q | --quiet            quiet mode\n"
                       "    -r | --readonly         connect readonly\n"
                       "    -t | --timing           print timing information\n"
+                      "         --no-pkttyagent    suppress registration of pkttyagent\n"
                       "    -v                      short version\n"
                       "    -V                      long version\n"
                       "         --version[=TYPE]   version, TYPE is short or long (default short)\n"
@@ -464,12 +466,11 @@ virshUsage(void)
         fprintf(stdout, _(" %1$s (help keyword '%2$s')\n"),
                 grp->name, grp->keyword);
         for (cmd = grp->commands; cmd->name; cmd++) {
-            if (cmd->flags & VSH_CMD_FLAG_ALIAS ||
+            if (cmd->alias ||
                 cmd->flags & VSH_CMD_FLAG_HIDDEN)
                 continue;
             fprintf(stdout,
-                    "    %-30s %s\n", cmd->name,
-                    _(vshCmddefGetInfo(cmd, "help")));
+                    "    %-30s %s\n", cmd->name, _(cmd->info->help));
         }
         fprintf(stdout, "\n");
     }
@@ -651,6 +652,7 @@ virshParseArgv(vshControl *ctl, int argc, char **argv)
         { "quiet", no_argument, NULL, 'q' },
         { "readonly", no_argument, NULL, 'r' },
         { "timing", no_argument, NULL, 't' },
+        { "no-pkttyagent", no_argument, NULL, 0 },
         { "version", optional_argument, NULL, 'v' },
         { NULL, 0, NULL, 0 },
     };
@@ -666,8 +668,8 @@ virshParseArgv(vshControl *ctl, int argc, char **argv)
             break;
         case 'd':
             if (virStrToLong_i(optarg, NULL, 10, &debug) < 0) {
-                vshError(ctl, _("option %1$s takes a numeric argument"),
-                         longindex == -1 ? "-d" : "--debug");
+                const char *optStr = longindex == -1 ? "-d" : "--debug";
+                vshError(ctl, _("option %1$s takes a numeric argument"), optStr);
                 exit(EXIT_FAILURE);
             }
             if (debug < VSH_ERR_DEBUG || debug > VSH_ERR_ERROR)
@@ -748,6 +750,14 @@ virshParseArgv(vshControl *ctl, int argc, char **argv)
         case 'V':
             virshShowVersion(ctl);
             exit(EXIT_SUCCESS);
+        case 0:
+            if (STREQ(opt[longindex].name, "no-pkttyagent")) {
+                ctl->no_pkttyagent = true;
+                break;
+            } else {
+                vshError(ctl, "%s", _("unknown option"));
+                exit(EXIT_FAILURE);
+            }
         case ':':
             for (i = 0; opt[i].name != NULL; i++) {
                 if (opt[i].val == optopt)
@@ -766,7 +776,7 @@ virshParseArgv(vshControl *ctl, int argc, char **argv)
                 vshError(ctl, _("unsupported option '%1$s'. See --help."), argv[optind - 1]);
             exit(EXIT_FAILURE);
         default:
-            vshError(ctl, _("unknown option"));
+            vshError(ctl, "%s", _("unknown option"));
             exit(EXIT_FAILURE);
         }
         longindex = -1;
@@ -778,8 +788,8 @@ virshParseArgv(vshControl *ctl, int argc, char **argv)
         /* parse command */
         ctl->imode = false;
         if (argc - optind == 1) {
-            vshDebug(ctl, VSH_ERR_INFO, "commands: \"%s\"\n", argv[optind]);
-            return vshCommandStringParse(ctl, argv[optind], NULL, 0);
+            vshDebug(ctl, VSH_ERR_INFO, "commands: \"%s\"", argv[optind]);
+            return vshCommandStringParse(ctl, argv[optind], NULL);
         } else {
             return vshCommandArgvParse(ctl, argc - optind, argv + optind);
         }
@@ -799,7 +809,7 @@ static const vshCmdDef virshCmds[] = {
     {.name = "connect",
      .handler = cmdConnect,
      .opts = opts_connect,
-     .info = info_connect,
+     .info = &info_connect,
      .flags = VSH_CMD_FLAG_NOCONNECT
     },
     {.name = NULL}
@@ -831,12 +841,11 @@ static const vshClientHooks hooks = {
 int
 main(int argc, char **argv)
 {
-    vshControl _ctl, *ctl = &_ctl;
-    virshControl virshCtl;
-    bool ret = true;
+    vshControl _ctl = { 0 };
+    vshControl *ctl = &_ctl;
+    virshControl virshCtl = { 0 };
+    int ret = EXIT_SUCCESS;
 
-    memset(ctl, 0, sizeof(vshControl));
-    memset(&virshCtl, 0, sizeof(virshControl));
     ctl->name = "virsh";        /* hardcoded name of the binary */
     ctl->env_prefix = "VIRSH";
     ctl->log_fd = -1;           /* Initialize log file descriptor */
@@ -883,7 +892,7 @@ main(int argc, char **argv)
 
     virFileActivateDirOverrideForProg(argv[0]);
 
-    if (!vshInit(ctl, cmdGroups, NULL))
+    if (!vshInit(ctl, cmdGroups))
         exit(EXIT_FAILURE);
 
     if (!virshParseArgv(ctl, argc, argv) ||
@@ -893,7 +902,7 @@ main(int argc, char **argv)
     }
 
     if (!ctl->connname)
-        ctl->connname = g_strdup(getenv("VIRSH_DEFAULT_CONNECT_URI"));
+        ctl->connname = g_strdup(g_getenv("VIRSH_DEFAULT_CONNECT_URI"));
 
     if (!ctl->imode) {
         ret = vshCommandRun(ctl, ctl->cmd);
@@ -918,7 +927,7 @@ main(int argc, char **argv)
             if (*ctl->cmdstr) {
                 vshReadlineHistoryAdd(ctl->cmdstr);
 
-                if (vshCommandStringParse(ctl, ctl->cmdstr, NULL, 0))
+                if (vshCommandStringParse(ctl, ctl->cmdstr, NULL))
                     vshCommandRun(ctl, ctl->cmd);
             }
             VIR_FREE(ctl->cmdstr);
@@ -929,5 +938,5 @@ main(int argc, char **argv)
     }
 
     virshDeinit(ctl);
-    exit(ret ? EXIT_SUCCESS : EXIT_FAILURE);
+    exit(ret);
 }

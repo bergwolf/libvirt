@@ -154,7 +154,7 @@ qemuCheckpointDiscardDiskBitmaps(virStorageSource *src,
         found = true;
 
         if (qemuMonitorTransactionBitmapRemove(actions,
-                                               n->nodeformat,
+                                               qemuBlockStorageSourceGetEffectiveNodename(n),
                                                bitmapdata->name) < 0)
             return -1;
 
@@ -188,6 +188,9 @@ qemuCheckpointDiscardBitmaps(virDomainObj *vm,
     GSList *next;
 
     actions = virJSONValueNewArray();
+
+    if (qemuBlockNodesEnsureActive(vm, VIR_ASYNC_JOB_NONE) < 0)
+        return -1;
 
     if (!(blockNamedNodeData = qemuBlockGetNamedNodeData(vm, VIR_ASYNC_JOB_NONE)))
         return -1;
@@ -225,8 +228,7 @@ qemuCheckpointDiscardBitmaps(virDomainObj *vm,
                                                false, false, false) < 0)
             goto relabel;
 
-        if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_BLOCKDEV_REOPEN) &&
-            qemuBlockReopenReadWrite(vm, src, VIR_ASYNC_JOB_NONE) < 0)
+        if (qemuBlockReopenReadWrite(vm, src, VIR_ASYNC_JOB_NONE) < 0)
             goto relabel;
 
         relabelimages = g_slist_prepend(relabelimages, src);
@@ -240,8 +242,7 @@ qemuCheckpointDiscardBitmaps(virDomainObj *vm,
     for (next = relabelimages; next; next = next->next) {
         virStorageSource *src = next->data;
 
-        if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_BLOCKDEV_REOPEN))
-            ignore_value(qemuBlockReopenReadOnly(vm, src, VIR_ASYNC_JOB_NONE));
+        ignore_value(qemuBlockReopenReadOnly(vm, src, VIR_ASYNC_JOB_NONE));
 
         ignore_value(qemuDomainStorageSourceAccessAllow(driver, vm, src,
                                                         true, false, false));
@@ -307,11 +308,10 @@ qemuCheckpointDiscard(virQEMUDriver *driver,
 
 
 int
-qemuCheckpointDiscardAllMetadata(virQEMUDriver *driver,
-                                       virDomainObj *vm)
+qemuCheckpointDiscardAllMetadata(virDomainObj *vm)
 {
     virQEMUMomentRemove rem = {
-        .driver = driver,
+        .driver = QEMU_DOMAIN_PRIVATE(vm)->driver,
         .vm = vm,
         .metadata_only = true,
         .momentDiscard = qemuCheckpointDiscard,
@@ -395,7 +395,8 @@ qemuCheckpointAddActions(virDomainObj *vm,
             chkdisk->type != VIR_DOMAIN_CHECKPOINT_TYPE_BITMAP)
             continue;
 
-        if (qemuMonitorTransactionBitmapAdd(actions, domdisk->src->nodeformat,
+        if (qemuMonitorTransactionBitmapAdd(actions,
+                                            qemuBlockStorageSourceGetEffectiveNodename(domdisk->src),
                                             chkdisk->bitmap, true, false, 0) < 0)
             return -1;
     }
@@ -411,6 +412,9 @@ qemuCheckpointRedefineValidateBitmaps(virDomainObj *vm,
     size_t i;
 
     if (virDomainObjCheckActive(vm) < 0)
+        return -1;
+
+    if (qemuBlockNodesEnsureActive(vm, VIR_ASYNC_JOB_NONE) < 0)
         return -1;
 
     if (!(blockNamedNodeData = qemuBlockGetNamedNodeData(vm, VIR_ASYNC_JOB_NONE)))
@@ -518,6 +522,9 @@ qemuCheckpointCreate(virQEMUDriver *driver,
     if (qemuCheckpointCreateCommon(driver, vm, def, &actions, &chk) < 0)
         return NULL;
 
+    if (qemuBlockNodesEnsureActive(vm, VIR_ASYNC_JOB_NONE) < 0)
+        return NULL;
+
     qemuDomainObjEnterMonitor(vm);
     rc = qemuMonitorTransaction(qemuDomainGetMonitor(vm), &actions);
     qemuDomainObjExitMonitor(vm);
@@ -575,9 +582,6 @@ qemuCheckpointCreateXML(virDomainPtr domain,
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     g_autoptr(virDomainCheckpointDef) def = NULL;
 
-    virCheckFlags(VIR_DOMAIN_CHECKPOINT_CREATE_REDEFINE |
-                  VIR_DOMAIN_CHECKPOINT_CREATE_REDEFINE_VALIDATE, NULL);
-
     if (redefine) {
         parse_flags |= VIR_DOMAIN_CHECKPOINT_PARSE_REDEFINE;
         update_current = false;
@@ -587,12 +591,6 @@ qemuCheckpointCreateXML(virDomainPtr domain,
         if (!virDomainObjIsActive(vm)) {
             virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                            _("cannot create checkpoint for inactive domain"));
-            return NULL;
-        }
-
-        if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_INCREMENTAL_BACKUP)) {
-            virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                           _("incremental backup is not supported yet"));
             return NULL;
         }
     }
@@ -659,6 +657,9 @@ qemuCheckpointGetXMLDescUpdateSize(virDomainObj *vm,
     if (virDomainObjCheckActive(vm) < 0)
         goto endjob;
 
+    if (qemuBlockNodesEnsureActive(vm, VIR_ASYNC_JOB_NONE) < 0)
+        goto endjob;
+
     if (!(nodedataMerge = qemuBlockGetNamedNodeData(vm, VIR_ASYNC_JOB_NONE)))
         goto endjob;
 
@@ -704,7 +705,7 @@ qemuCheckpointGetXMLDescUpdateSize(virDomainObj *vm,
                 recoveractions = virJSONValueNewArray();
 
             if (qemuMonitorTransactionBitmapRemove(recoveractions,
-                                                   domdisk->src->nodeformat,
+                                                   qemuBlockStorageSourceGetEffectiveNodename(domdisk->src),
                                                    "libvirt-tmp-size-xml") < 0)
                 goto endjob;
         }
@@ -718,7 +719,7 @@ qemuCheckpointGetXMLDescUpdateSize(virDomainObj *vm,
             goto endjob;
 
         if (qemuMonitorTransactionBitmapRemove(cleanupactions,
-                                               domdisk->src->nodeformat,
+                                               qemuBlockStorageSourceGetEffectiveNodename(domdisk->src),
                                                "libvirt-tmp-size-xml") < 0)
             goto endjob;
     }
@@ -778,10 +779,6 @@ qemuCheckpointGetXMLDesc(virDomainObj *vm,
     virDomainMomentObj *chk = NULL;
     virDomainCheckpointDef *chkdef;
     unsigned int format_flags;
-
-    virCheckFlags(VIR_DOMAIN_CHECKPOINT_XML_SECURE |
-                  VIR_DOMAIN_CHECKPOINT_XML_NO_DOMAIN |
-                  VIR_DOMAIN_CHECKPOINT_XML_SIZE, NULL);
 
     if (!(chk = qemuCheckpointObjFromCheckpoint(vm, checkpoint)))
         return NULL;
@@ -843,10 +840,6 @@ qemuCheckpointDelete(virDomainObj *vm,
     struct virQEMUCheckpointReparent rep;
     bool metadata_only = !!(flags & VIR_DOMAIN_CHECKPOINT_DELETE_METADATA_ONLY);
 
-    virCheckFlags(VIR_DOMAIN_CHECKPOINT_DELETE_CHILDREN |
-                  VIR_DOMAIN_CHECKPOINT_DELETE_METADATA_ONLY |
-                  VIR_DOMAIN_CHECKPOINT_DELETE_CHILDREN_ONLY, -1);
-
     if (virDomainObjBeginJob(vm, VIR_JOB_MODIFY) < 0)
         return -1;
 
@@ -854,12 +847,6 @@ qemuCheckpointDelete(virDomainObj *vm,
         if (!virDomainObjIsActive(vm)) {
             virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                            _("cannot delete checkpoint for inactive domain"));
-            goto endjob;
-        }
-
-        if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_INCREMENTAL_BACKUP)) {
-            virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                           _("incremental backup is not supported yet"));
             goto endjob;
         }
     }

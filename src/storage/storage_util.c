@@ -73,6 +73,7 @@ VIR_LOG_INIT("storage.storage_util");
 #endif
 
 #define PARTED "parted"
+#define SCRUB "scrub"
 
 /* virStorageBackendNamespaceInit:
  * @poolType: virStoragePoolType
@@ -97,13 +98,13 @@ virStorageBackendNamespaceInit(int poolType,
  * Upon success, return 0.  Otherwise, return -1 and set errno.
  */
 #ifdef __linux__
-static inline int
+static int
 reflinkCloneFile(int dest_fd, int src_fd)
 {
     return ioctl(dest_fd, FICLONE, src_fd);
 }
 #else
-static inline int
+static int
 reflinkCloneFile(int dest_fd G_GNUC_UNUSED,
                  int src_fd G_GNUC_UNUSED)
 {
@@ -236,8 +237,7 @@ storageBackendCreateBlockFrom(virStoragePoolObj *pool G_GNUC_UNUSED,
 
     if (flags & VIR_STORAGE_VOL_CREATE_PREALLOC_METADATA) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("metadata preallocation is not supported for block "
-                         "volumes"));
+                       _("metadata preallocation is not supported for block volumes"));
         return -1;
     }
 
@@ -389,8 +389,7 @@ storageBackendCreateRaw(virStoragePoolObj *pool,
 
     if (flags & VIR_STORAGE_VOL_CREATE_PREALLOC_METADATA) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("metadata preallocation is not supported for raw "
-                         "volumes"));
+                       _("metadata preallocation is not supported for raw volumes"));
         return -1;
     }
 
@@ -465,6 +464,7 @@ virStorageBackendCreateExecCommand(virStoragePoolObj *pool,
     bool filecreated = false;
     int ret = -1;
 
+    virCommandSetUmask(cmd, S_IRWXUGO ^ mode);
     if ((def->type == VIR_STORAGE_POOL_NETFS)
         && (((geteuid() == 0)
              && (vol->target.perms->uid != (uid_t)-1)
@@ -474,7 +474,6 @@ virStorageBackendCreateExecCommand(virStoragePoolObj *pool,
 
         virCommandSetUID(cmd, vol->target.perms->uid);
         virCommandSetGID(cmd, vol->target.perms->gid);
-        virCommandSetUmask(cmd, S_IRWXUGO ^ mode);
 
         if (virCommandRun(cmd, NULL) == 0) {
             /* command was successfully run, check if the file was created */
@@ -506,7 +505,6 @@ virStorageBackendCreateExecCommand(virStoragePoolObj *pool,
         /* don't change uid/gid/mode if we retry */
         virCommandSetUID(cmd, -1);
         virCommandSetGID(cmd, -1);
-        virCommandSetUmask(cmd, 0);
 
         if (virCommandRun(cmd, NULL) < 0)
             goto cleanup;
@@ -571,8 +569,7 @@ storageBackendCreatePloop(virStoragePoolObj *pool G_GNUC_UNUSED,
 
     if (vol->target.encryption) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("encrypted ploop volumes are not supported with "
-                         "ploop init"));
+                       _("encrypted ploop volumes are not supported with ploop init"));
         return -1;
     }
 
@@ -585,8 +582,7 @@ storageBackendCreatePloop(virStoragePoolObj *pool G_GNUC_UNUSED,
     create_tool = virFindFileInPath("ploop");
     if (!create_tool && !inputvol) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("unable to find ploop, please install "
-                               "ploop tools"));
+                       "%s", _("unable to find ploop, please install ploop tools"));
         return -1;
     }
 
@@ -768,7 +764,7 @@ storageBackendCreateQemuImgOpts(virStorageEncryptionInfoDef *encinfo,
     if (info->compat)
         virBufferAsprintf(&buf, "compat=%s,", info->compat);
     else if (info->format == VIR_STORAGE_FILE_QCOW2)
-        virBufferAddLit(&buf, "compat=0.10,");
+        virBufferAddLit(&buf, "compat=1.1,");
 
     if (info->clusterSize > 0)
         virBufferAsprintf(&buf, "cluster_size=%llu,", info->clusterSize);
@@ -899,8 +895,7 @@ storageBackendCreateQemuImgSetBacking(virStoragePoolObj *pool,
 
     if (info->preallocate) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("metadata preallocation conflicts with backing"
-                         " store"));
+                       _("metadata preallocation conflicts with backing store"));
         return -1;
     }
 
@@ -1273,8 +1268,7 @@ storageBackendCreateQemuImgSecretPath(virStoragePoolObj *pool,
 
     if (enc->nsecrets != 1) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("A single <secret type='passphrase'...> "
-                         "element is expected in encryption description"));
+                       _("A single <secret type='passphrase'...> element is expected in encryption description"));
         return NULL;
     }
 
@@ -1365,8 +1359,7 @@ storageBackendCreateQemuImg(virStoragePoolObj *pool,
     create_tool = virFindFileInPath("qemu-img");
     if (!create_tool) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("creation of non-raw file images is "
-                         "not supported without qemu-img."));
+                       _("creation of non-raw file images is not supported without qemu-img."));
         return -1;
     }
 
@@ -2398,8 +2391,7 @@ virStorageBackendVolResizeLocal(virStoragePoolObj *pool,
     } else if (vol->target.format == VIR_STORAGE_FILE_RAW && vol->target.encryption) {
         if (pre_allocate) {
             virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                           _("preallocate is only supported for an "
-                             "unencrypted raw volume"));
+                           _("preallocate is only supported for an unencrypted raw volume"));
             return -1;
         }
 
@@ -2409,8 +2401,7 @@ virStorageBackendVolResizeLocal(virStoragePoolObj *pool,
     } else {
         if (pre_allocate) {
             virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                           _("preallocate is only supported for raw "
-                             "type volume"));
+                           _("preallocate is only supported for raw type volume"));
             return -1;
         }
 
@@ -2435,8 +2426,7 @@ storageBackendPloopHasSnapshots(char *path)
     snap_tool = virFindFileInPath("ploop");
     if (!snap_tool) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("unable to find ploop, please install "
-                               "ploop tools"));
+                       "%s", _("unable to find ploop, please install ploop tools"));
         return -1;
     }
 
@@ -2478,8 +2468,7 @@ virStorageBackendVolUploadLocal(virStoragePoolObj *pool G_GNUC_UNUSED,
             return -1;
         } else if (!has_snap) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("can't upload volume, all existing snapshots"
-                             " will be lost"));
+                           _("can't upload volume, all existing snapshots will be lost"));
             return -1;
         }
 
@@ -2512,8 +2501,7 @@ virStorageBackendVolDownloadLocal(virStoragePoolObj *pool G_GNUC_UNUSED,
             return -1;
         } else if (!has_snap) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("can't download volume, all existing snapshots"
-                             " will be lost"));
+                           _("can't download volume, all existing snapshots will be lost"));
             return -1;
         }
         path = g_strdup_printf("%s/root.hds", vol->target.path);
@@ -3161,8 +3149,7 @@ virStorageBackendBLKIDFindEmpty(const char *device,
 
     if (ret == 0 && blkid_do_probe(probe) != 1) {
         virReportError(VIR_ERR_STORAGE_PROBE_FAILED, "%s",
-                       _("Found additional probes to run, probing may "
-                         "be incorrect"));
+                       _("Found additional probes to run, probing may be incorrect"));
         ret = -1;
     }
 
@@ -3287,8 +3274,7 @@ virStorageBackendPARTEDValidLabel(const char *device,
     switch (check) {
     case VIR_STORAGE_PARTED_ERROR:
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                       _("Error checking for disk label, failed to get "
-                         "disk partition information"));
+                       _("Error checking for disk label, failed to get disk partition information"));
         break;
 
     case VIR_STORAGE_PARTED_MATCH:
@@ -3302,8 +3288,7 @@ virStorageBackendPARTEDValidLabel(const char *device,
 
     case VIR_STORAGE_PARTED_DIFFERENT:
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                       _("Known, but different label format present, "
-                         "requires build --overwrite"));
+                       _("Known, but different label format present, requires build --overwrite"));
         break;
 
     case VIR_STORAGE_PARTED_UNKNOWN:
@@ -3316,8 +3301,7 @@ virStorageBackendPARTEDValidLabel(const char *device,
 
     case VIR_STORAGE_PARTED_NOPTTYPE:
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                       _("Unable to determine Partition Type, "
-                         "requires build --overwrite"));
+                       _("Unable to determine Partition Type, requires build --overwrite"));
         break;
 
     case VIR_STORAGE_PARTED_PTTYPE_UNK:
@@ -3788,7 +3772,7 @@ getOldStyleBlockDevice(const char *lun_path G_GNUC_UNUSED,
                        const char *block_name,
                        char **block_device)
 {
-    char *blockp = NULL;
+    const char *blockp = NULL;
 
     /* old-style; just parse out the sd */
     if (!(blockp = strrchr(block_name, ':'))) {
@@ -3863,62 +3847,6 @@ getBlockDevice(uint32_t host,
 }
 
 
-/* Function to check if the type file in the given sysfs_path is a
- * Direct-Access device (i.e. type 0).  Return -1 on failure, type of
- * the device otherwise.
- */
-static int
-getDeviceType(uint32_t host,
-              uint32_t bus,
-              uint32_t target,
-              uint32_t lun,
-              int *type)
-{
-    char typestr[3];
-    char *gottype, *p;
-    FILE *typefile;
-    g_autofree char *type_path = NULL;
-
-    type_path = g_strdup_printf("/sys/bus/scsi/devices/%u:%u:%u:%u/type", host,
-                                bus, target, lun);
-
-    typefile = fopen(type_path, "r");
-    if (typefile == NULL) {
-        virReportSystemError(errno,
-                             _("Could not find typefile '%1$s'"),
-                             type_path);
-        /* there was no type file; that doesn't seem right */
-        return -1;
-    }
-
-    gottype = fgets(typestr, 3, typefile);
-    VIR_FORCE_FCLOSE(typefile);
-
-    if (gottype == NULL) {
-        virReportSystemError(errno,
-                             _("Could not read typefile '%1$s'"),
-                             type_path);
-        /* we couldn't read the type file; have to give up */
-        return -1;
-    }
-
-    /* we don't actually care about p, but if you pass NULL and the last
-     * character is not \0, virStrToLong_i complains
-     */
-    if (virStrToLong_i(typestr, &p, 10, type) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Device type '%1$s' is not an integer"),
-                       typestr);
-        /* Hm, type wasn't an integer; seems strange */
-        return -1;
-    }
-
-    VIR_DEBUG("Device type is %d", *type);
-
-    return 0;
-}
-
-
 /*
  * Process a Logical Unit entry from the scsi host device directory
  *
@@ -3937,17 +3865,28 @@ processLU(virStoragePoolObj *pool,
 {
     int retval = -1;
     int device_type;
+    int rc;
     g_autofree char *block_device = NULL;
 
     VIR_DEBUG("Processing LU %u:%u:%u:%u",
               host, bus, target, lun);
 
-    if (getDeviceType(host, bus, target, lun, &device_type) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Failed to determine if %1$u:%2$u:%3$u:%4$u is a Direct-Access LUN"),
-                       host, bus, target, lun);
+    if ((rc = virFileReadValueInt(&device_type,
+                                  "/sys/bus/scsi/devices/%u:%u:%u:%u/type",
+                                  host, bus, target, lun)) < 0) {
+
+        /* Report an error if file doesn't exist. Appropriate
+         * error was reported otherwise. */
+        if (rc == -2) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Failed to determine if %1$u:%2$u:%3$u:%4$u is a Direct-Access LUN"),
+                           host, bus, target, lun);
+        }
+
         return -1;
     }
+
+    VIR_DEBUG("Device type is %d", device_type);
 
     /* We don't create volumes for devices other than disk and cdrom
      * devices, but finding a device that isn't one of those types
@@ -4102,8 +4041,8 @@ virStorageBackendFileSystemMountAddOptions(virCommand *cmd,
             virBufferAsprintf(&buf, "%s,", opts->options[i]);
 
         virUUIDFormat(def->uuid, uuidstr);
-        VIR_WARN("Storage Pool name='%s' uuid='%s' is tainted by custom "
-                 "mount_opts from XML", def->name, uuidstr);
+        VIR_WARN("Storage Pool name='%s' uuid='%s' is tainted by custom mount_opts from XML",
+                 def->name, uuidstr);
     }
 
     virBufferTrim(&buf, ",");

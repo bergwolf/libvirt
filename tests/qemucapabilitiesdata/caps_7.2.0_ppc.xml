@@ -24,11 +24,7 @@
   <flag name='nec-usb-xhci'/>
   <flag name='lsi'/>
   <flag name='virtio-scsi-pci'/>
-  <flag name='disable-s3'/>
-  <flag name='disable-s4'/>
   <flag name='usb-redir.filter'/>
-  <flag name='ide-drive.wwn'/>
-  <flag name='scsi-disk.wwn'/>
   <flag name='seccomp-sandbox'/>
   <flag name='vnc'/>
   <flag name='VGA'/>
@@ -43,11 +39,9 @@
   <flag name='vfio-pci'/>
   <flag name='dmi-to-pci-bridge'/>
   <flag name='usb-storage'/>
-  <flag name='usb-storage.removable'/>
   <flag name='ich9-intel-hda'/>
   <flag name='usb-kbd'/>
   <flag name='usb-audio'/>
-  <flag name='migrate-rdma'/>
   <flag name='VGA.vgamem_mb'/>
   <flag name='vmware-svga.vgamem_mb'/>
   <flag name='pci-serial'/>
@@ -65,7 +59,7 @@
   <flag name='virtio-balloon-pci.deflate-on-oom'/>
   <flag name='mptsas1068'/>
   <flag name='spice-gl'/>
-  <flag name='query-hotpluggable-cpus'/>
+  <flag name='debug-threads'/>
   <flag name='ivshmem-plain'/>
   <flag name='ivshmem-doorbell'/>
   <flag name='vhost-scsi'/>
@@ -73,7 +67,6 @@
   <flag name='pcie-root-port'/>
   <flag name='query-cpu-definitions'/>
   <flag name='qemu-xhci'/>
-  <flag name='chardev-reconnect'/>
   <flag name='isa-serial'/>
   <flag name='pcie-pci-bridge'/>
   <flag name='nbd-tls'/>
@@ -82,26 +75,20 @@
   <flag name='hda-output'/>
   <flag name='vhost-vsock'/>
   <flag name='egl-headless'/>
-  <flag name='vfio-pci.display'/>
   <flag name='memory-backend-memfd'/>
   <flag name='memory-backend-memfd.hugetlb'/>
   <flag name='egl-headless.rendernode'/>
   <flag name='memory-backend-file.pmem'/>
   <flag name='virtio-pci-non-transitional'/>
-  <flag name='nbd-bitmap'/>
   <flag name='bochs-display'/>
   <flag name='migration-file-drop-cache'/>
   <flag name='dbus-vmstate'/>
   <flag name='vhost-user-gpu'/>
-  <flag name='incremental-backup'/>
   <flag name='drive-nvme'/>
   <flag name='smp-dies'/>
   <flag name='i8042'/>
   <flag name='rng-builtin'/>
   <flag name='vhost-user-fs'/>
-  <flag name='query-named-block-nodes.flat'/>
-  <flag name='blockdev-snapshot.allow-write-only-overlay'/>
-  <flag name='blockdev-reopen'/>
   <flag name='fsdev.multidevs'/>
   <flag name='pcie-root-port.hotplug'/>
   <flag name='aio.io_uring'/>
@@ -111,23 +98,18 @@
   <flag name='numa.hmat'/>
   <flag name='usb-host.hostdevice'/>
   <flag name='virtio-balloon.free-page-reporting'/>
-  <flag name='block-export-add'/>
   <flag name='netdev.vhost-vdpa'/>
   <flag name='dc390'/>
   <flag name='am53c974'/>
   <flag name='vhost-user-fs.bootindex'/>
   <flag name='vhost-user-blk'/>
   <flag name='memory-backend-file.x-use-canonical-path-for-ramblock-id'/>
-  <flag name='migration-param.block-bitmap-mapping'/>
   <flag name='vnc-power-control'/>
-  <flag name='object.qapified'/>
   <flag name='rotation-rate'/>
-  <flag name='compat-deprecated'/>
   <flag name='acpi-index'/>
   <flag name='input-linux'/>
   <flag name='virtio-gpu-gl-pci'/>
   <flag name='confidential-guest-support'/>
-  <flag name='set-action'/>
   <flag name='virtio-blk.queue-size'/>
   <flag name='memory-backend-file.reserve'/>
   <flag name='piix4.acpi-root-pci-hotplug'/>
@@ -156,6 +138,15 @@
   <flag name='virtio-crypto'/>
   <flag name='pvpanic-pci'/>
   <flag name='virtio-gpu.blob'/>
+  <flag name='smp-clusters'/>
+  <flag name='display-reload'/>
+  <flag name='usb-mtp'/>
+  <flag name='netdev.user'/>
+  <flag name='acpi-erst'/>
+  <flag name='bus-floppy'/>
+  <flag name='nvme'/>
+  <flag name='nvme-ns'/>
+  <flag name='usb-bot'/>
   <version>7002000</version>
   <microcodeVersion>0</microcodeVersion>
   <package>qemu-7.2.0-6.fc37</package>

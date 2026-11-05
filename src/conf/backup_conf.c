@@ -129,7 +129,11 @@ virDomainBackupDiskDefParseXML(xmlNodePtr node,
     if (def->backup == VIR_TRISTATE_BOOL_NO)
         return 0;
 
-    if (!push) {
+    if (push) {
+        if (virXMLPropTristateBool(node, "sparsify", VIR_XML_PROP_NONE,
+                                   &def->sparsify) < 0)
+            return -1;
+    } else {
         def->exportname = virXMLPropString(node, "exportname");
         def->exportbitmap = virXMLPropString(node, "exportbitmap");
     }
@@ -228,7 +232,7 @@ virDomainBackupDefParseXML(xmlXPathContextPtr ctxt,
 
         def->server = g_new0(virStorageNetHostDef, 1);
 
-        if (virDomainStorageNetworkParseHost(node, def->server) < 0)
+        if (virDomainStorageNetworkParseHost(node, def->server, true) < 0)
             return NULL;
 
         if (def->server->transport == VIR_STORAGE_NET_HOST_TRANS_RDMA) {
@@ -276,13 +280,11 @@ virDomainBackupDefParseString(const char *xmlStr,
 {
     g_autoptr(xmlDoc) xml = NULL;
     g_autoptr(xmlXPathContext) ctxt = NULL;
-    int keepBlanksDefault = xmlKeepBlanksDefault(0);
     bool validate = !(flags & VIR_DOMAIN_BACKUP_PARSE_INTERNAL);
 
-    xml = virXMLParse(NULL, xmlStr, _("(domain_backup)"),
-                      "domainbackup", &ctxt, "domainbackup.rng", validate);
-
-    xmlKeepBlanksDefault(keepBlanksDefault);
+    xml = virXMLParseWithIndent(NULL, xmlStr, _("(domain_backup)"),
+                                "domainbackup", &ctxt, "domainbackup.rng",
+                                validate);
 
     if (!xml)
         return NULL;
@@ -326,6 +328,10 @@ virDomainBackupDiskDefFormat(virBuffer *buf,
 
         virBufferEscapeString(&attrBuf, " exportname='%s'", disk->exportname);
         virBufferEscapeString(&attrBuf, " exportbitmap='%s'", disk->exportbitmap);
+
+        if (disk->sparsify != VIR_TRISTATE_BOOL_ABSENT)
+            virBufferAsprintf(&attrBuf, " sparsify='%s'",
+                              virTristateBoolTypeToString(disk->sparsify));
 
         if (disk->store->id != 0)
             virBufferAsprintf(&attrBuf, " index='%u'", disk->store->id);
@@ -390,6 +396,7 @@ virDomainBackupDefFormat(virBuffer *buf,
         if (def->server->port)
             virBufferAsprintf(&serverAttrBuf, " port='%u'", def->server->port);
         virBufferEscapeString(&serverAttrBuf, " socket='%s'", def->server->socket);
+        virBufferEscapeString(&serverAttrBuf, " fdgroup='%s'", def->server->fdgroup);
     }
 
     virXMLFormatElement(&childBuf, "server", &serverAttrBuf, NULL);
@@ -536,6 +543,14 @@ virDomainBackupAlignDisks(virDomainBackupDef *def,
         if (!backupdisk->incremental &&
             backupdisk->backupmode == VIR_DOMAIN_BACKUP_DISK_BACKUP_MODE_INCREMENTAL)
             backupdisk->incremental = g_strdup(def->incremental);
+
+        if (backupdisk->sparsify == VIR_TRISTATE_BOOL_YES &&
+            backupdisk->backupmode == VIR_DOMAIN_BACKUP_DISK_BACKUP_MODE_INCREMENTAL) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("The 'sparsify' mode of disk '%1$s' can be used only for full backup"),
+                           backupdisk->name);
+            return -1;
+        }
     }
 
     return 0;

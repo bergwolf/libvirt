@@ -106,6 +106,7 @@ virDomainJobStatusToType(virDomainJobStatus status)
     case VIR_DOMAIN_JOB_STATUS_HYPERVISOR_COMPLETED:
     case VIR_DOMAIN_JOB_STATUS_POSTCOPY:
     case VIR_DOMAIN_JOB_STATUS_POSTCOPY_PAUSED:
+    case VIR_DOMAIN_JOB_STATUS_POSTCOPY_RECOVER:
     case VIR_DOMAIN_JOB_STATUS_PAUSED:
         return VIR_DOMAIN_JOB_UNBOUNDED;
 
@@ -128,8 +129,8 @@ virDomainObjInitJob(virDomainJobObj *job,
                     virDomainJobDataPrivateDataCallbacks *jobDataPrivateCb)
 {
     memset(job, 0, sizeof(*job));
-    job->cb = g_memdup(cb, sizeof(*cb));
-    job->jobDataPrivateCb = g_memdup(jobDataPrivateCb, sizeof(*jobDataPrivateCb));
+    job->cb = g_memdup2(cb, sizeof(*cb));
+    job->jobDataPrivateCb = g_memdup2(jobDataPrivateCb, sizeof(*jobDataPrivateCb));
 
     if (virCondInit(&job->cond) < 0)
         return -1;
@@ -211,7 +212,7 @@ virDomainObjPreserveJob(virDomainJobObj *currJob,
     if (currJob->cb && currJob->cb->allocJobPrivate &&
         !(currJob->privateData = currJob->cb->allocJobPrivate()))
         return -1;
-    job->cb = g_memdup(currJob->cb, sizeof(*currJob->cb));
+    job->cb = g_memdup2(currJob->cb, sizeof(*currJob->cb));
 
     virDomainObjResetJob(currJob);
     virDomainObjResetAsyncJob(currJob);
@@ -256,6 +257,7 @@ virDomainNestedJobAllowed(virDomainJobObj *jobs, virDomainJob newJob)
 {
     return !jobs->asyncJob ||
            newJob == VIR_JOB_NONE ||
+           (newJob == VIR_JOB_MODIFY_MIGRATION_SAFE && jobs->mask & JOB_MASK(VIR_JOB_MODIFY)) ||
            (jobs->mask & JOB_MASK(newJob));
 }
 
@@ -430,10 +432,7 @@ virDomainObjBeginJobInternal(virDomainObj *obj,
     if (jobObj->asyncJob && jobObj->asyncStarted)
         asyncDuration = now - jobObj->asyncStarted;
 
-    VIR_WARN("Cannot start job (%s, %s, %s) in API %s for domain %s; "
-             "current job is (%s, %s, %s) "
-             "owned by (%llu %s, %llu %s, %llu %s (flags=0x%x)) "
-             "for (%llus, %llus, %llus)",
+    VIR_WARN("Cannot start job (%s, %s, %s) in API %s for domain %s; current job is (%s, %s, %s) owned by (%llu %s, %llu %s, %llu %s (flags=0x%x)) for (%llus, %llus, %llus)",
              virDomainJobTypeToString(job),
              virDomainAgentJobTypeToString(agentJob),
              virDomainAsyncJobTypeToString(asyncJob),
@@ -492,8 +491,7 @@ virDomainObjBeginJobInternal(virDomainObj *obj,
                            agentBlocker);
         } else {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                           _("cannot acquire state change lock "
-                             "due to max_queued limit"));
+                           _("cannot acquire state change lock due to max_queued limit"));
         }
         ret = -2;
     } else {

@@ -286,6 +286,9 @@ virDomainPCIControllerConnectTypeToModel(virDomainPCIConnectFlags flags)
     if (flags & VIR_PCI_CONNECT_TYPE_PCI_BRIDGE)
         return VIR_DOMAIN_CONTROLLER_MODEL_PCI_BRIDGE;
 
+    if (flags & VIR_PCI_CONNECT_TYPE_PCIE_TO_PCI_BRIDGE)
+        return VIR_DOMAIN_CONTROLLER_MODEL_PCIE_TO_PCI_BRIDGE;
+
     /* some connect types don't correspond to a controller model */
     return -1;
 }
@@ -688,7 +691,8 @@ virDomainPCIAddressSetGrow(virDomainPCIAddressSet *addrs,
             }
         }
     } else if (flags & (VIR_PCI_CONNECT_TYPE_PCIE_DEVICE |
-                        VIR_PCI_CONNECT_TYPE_PCIE_SWITCH_UPSTREAM_PORT)) {
+                        VIR_PCI_CONNECT_TYPE_PCIE_SWITCH_UPSTREAM_PORT |
+                        VIR_PCI_CONNECT_TYPE_PCIE_TO_PCI_BRIDGE)) {
         model = VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT_PORT;
     } else {
         /* The types of devices that we can't auto-add a controller for:
@@ -701,7 +705,7 @@ virDomainPCIAddressSetGrow(virDomainPCIAddressSet *addrs,
          *  and we can't automatically decide which numa node to
          *  associate it with)
          *
-         * VIR_CONNECT_TYPE_PCIE_SWITCH_DOWNSTREAM_PORT - we ndon't
+         * VIR_CONNECT_TYPE_PCIE_SWITCH_DOWNSTREAM_PORT - we don't
          *  support this, because it can only plug into an
          *  upstream-port, and the upstream port might need a
          *  root-port; supporting this extra layer needlessly
@@ -714,20 +718,41 @@ virDomainPCIAddressSetGrow(virDomainPCIAddressSet *addrs,
          *  devices on the host, and are also outside the scope of our
          *  "automatic-bus-expansion".
          *
-         * VIR_PCI_CONNECT_TYPE_PCI_BRIDGE (when the root bus is
-         *  pci-root) - see the comment above in the case that handles
-         *  adding a slot for pci-bridge to a guest with pcie-root.
+         * VIR_PCI_CONNECT_TYPE_PCI_BRIDGE if the root bus is pci-root
+         *  but there are no free slots already available to plug in a
+         *  pci-bridge, then the battle is already lost - the only way
+         *  to get another open slot would be to auto-add a pci-bridge
+         *  device, but that's what we're already trying to do - by
+         *  definition either we wouldn't get here in the first place,
+         *  or it's already too late.
+         *
+         *  Alternatively if the root bus *isn't* pci-root, then
+         *  either the root bus is pcie-root (in which case the user
+         *  should be using a pcie-to-pci-bridge instead), or there is
+         *  no PCI supported *at all*, and in both of those cases we
+         *  should fail.
+         *
+         * Additionally, we obviously can't auto-add any type of PCIe
+         * controller if the root bus is pci-root, or if there is no
+         * PCI supported at all.
          *
          */
         int existingContModel = virDomainPCIControllerConnectTypeToModel(flags);
 
         if (existingContModel >= 0) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("a PCI slot is needed to connect a PCI controller model='%1$s', but none is available, and it cannot be automatically added"),
-                           virDomainControllerModelPCITypeToString(existingContModel));
+            if (existingContModel == VIR_PCI_CONNECT_TYPE_PCI_EXPANDER_BUS ||
+                existingContModel == VIR_PCI_CONNECT_TYPE_PCI_BRIDGE) {
+                virReportError(VIR_ERR_INTERNAL_ERROR,
+                               _("a conventional PCI slot is needed to connect a PCI controller model='%1$s', but none is available, and it cannot be automatically added"),
+                               virDomainControllerModelPCITypeToString(existingContModel));
+            } else {
+                virReportError(VIR_ERR_INTERNAL_ERROR,
+                               _("a PCIe slot is needed to connect a PCI controller model='%1$s', but none is available, and it cannot be automatically added"),
+                               virDomainControllerModelPCITypeToString(existingContModel));
+            }
         } else {
             virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("Cannot automatically add a new PCI bus for a device with connect flags %1$.2x"),
+                           _("Cannot automatically add a new PCI bus for a device with unrecognized connect flags %1$.2x"),
                            flags);
         }
         return -1;
@@ -905,8 +930,7 @@ virDomainPCIAddressEnsureAddr(virDomainPCIAddressSet *addrs,
          */
         if (dev->addr.pci.function != 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Only PCI device addresses with function=0"
-                             " are supported"));
+                           _("Only PCI device addresses with function=0 are supported"));
             return -1;
         }
 
@@ -1626,11 +1650,7 @@ virDomainVirtioSerialAddrSetAutoaddController(virDomainDef *def,
 {
     int contidx;
 
-    if (virDomainDefMaybeAddController(def,
-                                       VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL,
-                                       idx, -1) < 0)
-        return -1;
-
+    virDomainDefMaybeAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL, idx, -1);
     contidx = virDomainControllerFind(def, VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL, idx);
 
     if (virDomainVirtioSerialAddrSetAddController(addrs, def->controllers[contidx]) < 0)
@@ -1643,14 +1663,14 @@ static int
 virDomainVirtioSerialAddrNext(virDomainDef *def,
                               virDomainVirtioSerialAddrSet *addrs,
                               virDomainDeviceVirtioSerialAddress *addr,
-                              bool allowZero)
+                              bool allowPortZero)
 {
     ssize_t port, startPort = 0;
     ssize_t i;
     unsigned int controller;
 
-    /* port number 0 is reserved for virtconsoles */
-    if (allowZero)
+    /* port number 0 is reserved for the first virtconsole */
+    if (allowPortZero)
         startPort = -1;
 
     if (addrs->ncontrollers == 0) {
@@ -1697,11 +1717,16 @@ virDomainVirtioSerialAddrNext(virDomainDef *def,
 
 static int
 virDomainVirtioSerialAddrNextFromController(virDomainVirtioSerialAddrSet *addrs,
-                                            virDomainDeviceVirtioSerialAddress *addr)
+                                            virDomainDeviceVirtioSerialAddress *addr,
+                                            bool allowPortZero)
 {
+    ssize_t startPort = 0;
     ssize_t port;
     ssize_t i;
     virBitmap *map;
+
+    if (allowPortZero)
+        startPort = -1;
 
     i = virDomainVirtioSerialAddrFindController(addrs, addr->controller);
     if (i < 0) {
@@ -1712,7 +1737,7 @@ virDomainVirtioSerialAddrNextFromController(virDomainVirtioSerialAddrSet *addrs,
     }
 
     map = addrs->controllers[i]->ports;
-    if ((port = virBitmapNextClearBit(map, 0)) <= 0) {
+    if ((port = virBitmapNextClearBit(map, startPort)) < 0) {
         virReportError(VIR_ERR_XML_ERROR,
                        _("Unable to find a free port on virtio-serial controller %1$u"),
                        addr->controller);
@@ -1730,21 +1755,41 @@ static int ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3)
 virDomainVirtioSerialAddrAssign(virDomainDef *def,
                                 virDomainVirtioSerialAddrSet *addrs,
                                 virDomainDeviceInfo *info,
-                                bool allowZero,
+                                bool allowPortZero,
                                 bool portOnly)
 {
     virDomainDeviceInfo nfo = { 0 };
-    virDomainDeviceInfo *ptr = allowZero ? &nfo : info;
+    virDomainDeviceInfo *ptr = allowPortZero ? &nfo : info;
+    virBitmap *map;
+    ssize_t i;
 
     ptr->type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_VIRTIO_SERIAL;
+    ptr->addr.vioserial.controller = info->addr.vioserial.controller;
 
     if (portOnly) {
         if (virDomainVirtioSerialAddrNextFromController(addrs,
-                                                        &ptr->addr.vioserial) < 0)
+                                                        &ptr->addr.vioserial,
+                                                        allowPortZero) < 0)
             return -1;
+
+        if (ptr == &nfo) {
+            /* pass the vioserial data back into info as info is used
+             * later for port assignment */
+            info->addr.vioserial = ptr->addr.vioserial;
+
+            /* if the next available port from the controller is zero,
+             * let's reserve it in the map and return */
+            if (ptr->addr.vioserial.port == 0) {
+                i = virDomainVirtioSerialAddrFindController(addrs, ptr->addr.vioserial.controller);
+                map = addrs->controllers[i]->ports;
+                ignore_value(virBitmapSetBit(map, 0));
+                return 0;
+            }
+        }
+
     } else {
         if (virDomainVirtioSerialAddrNext(def, addrs, &ptr->addr.vioserial,
-                                          allowZero) < 0)
+                                          allowPortZero) < 0)
             return -1;
     }
 
@@ -1763,20 +1808,20 @@ int
 virDomainVirtioSerialAddrAutoAssignFromCache(virDomainDef *def,
                                              virDomainVirtioSerialAddrSet *addrs,
                                              virDomainDeviceInfo *info,
-                                             bool allowZero)
+                                             bool allowPortZero)
 {
     bool portOnly = info->type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_VIRTIO_SERIAL;
     if (info->type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_VIRTIO_SERIAL &&
         info->addr.vioserial.port)
         return virDomainVirtioSerialAddrReserve(NULL, NULL, info, addrs);
     else
-        return virDomainVirtioSerialAddrAssign(def, addrs, info, allowZero, portOnly);
+        return virDomainVirtioSerialAddrAssign(def, addrs, info, allowPortZero, portOnly);
 }
 
 int
 virDomainVirtioSerialAddrAutoAssign(virDomainDef *def,
                                     virDomainDeviceInfo *info,
-                                    bool allowZero)
+                                    bool allowPortZero)
 {
     virDomainVirtioSerialAddrSet *addrs = NULL;
     int ret = -1;
@@ -1784,7 +1829,7 @@ virDomainVirtioSerialAddrAutoAssign(virDomainDef *def,
     if (!(addrs = virDomainVirtioSerialAddrSetCreateFromDomain(def)))
         goto cleanup;
 
-    if (virDomainVirtioSerialAddrAutoAssignFromCache(def, addrs, info, allowZero) < 0)
+    if (virDomainVirtioSerialAddrAutoAssignFromCache(def, addrs, info, allowPortZero) < 0)
         goto cleanup;
 
     ret = 0;

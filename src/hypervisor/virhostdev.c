@@ -29,6 +29,7 @@
 #include "virhostdev.h"
 #include "viralloc.h"
 #include "virerror.h"
+#include "virfile.h"
 #include "virlog.h"
 #include "virutil.h"
 #include "virnetdev.h"
@@ -38,6 +39,7 @@
 
 VIR_LOG_INIT("util.hostdev");
 
+#define VIR_DEV_VFIO "/dev/vfio/vfio"
 #define HOSTDEV_STATE_DIR RUNSTATEDIR "/libvirt/hostdevmgr"
 
 static virHostdevManager *manager; /* global hostdev manager, never freed */
@@ -242,15 +244,16 @@ virHostdevGetPCIHostDevice(const virDomainHostdevDef *hostdev,
         return -1;
 
     virPCIDeviceSetManaged(actual, hostdev->managed);
+    virPCIDeviceSetStubDriverName(actual, pcisrc->driver.model);
 
-    if (pcisrc->backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
-        virPCIDeviceSetStubDriver(actual, VIR_PCI_STUB_DRIVER_VFIO);
-    } else if (pcisrc->backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN) {
-        virPCIDeviceSetStubDriver(actual, VIR_PCI_STUB_DRIVER_XEN);
+    if (pcisrc->driver.name == VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO) {
+        virPCIDeviceSetStubDriverType(actual, VIR_PCI_STUB_DRIVER_VFIO);
+    } else if (pcisrc->driver.name == VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN) {
+        virPCIDeviceSetStubDriverType(actual, VIR_PCI_STUB_DRIVER_XEN);
     } else {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("pci backend driver '%1$s' is not supported"),
-                       virDomainHostdevSubsysPCIBackendTypeToString(pcisrc->backend));
+                       _("pci backend driver type '%1$s' is not supported"),
+                       virDeviceHostdevPCIDriverNameTypeToString(pcisrc->driver.name));
         return -1;
     }
 
@@ -344,14 +347,6 @@ virHostdevNetDevice(virDomainHostdevDef *hostdev,
 }
 
 
-bool
-virHostdevIsPCIDevice(const virDomainHostdevDef *hostdev)
-{
-    return hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
-        hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI;
-}
-
-
 static bool
 virHostdevIsPCINetDevice(const virDomainHostdevDef *hostdev)
 {
@@ -375,6 +370,7 @@ virHostdevNetConfigVirtPortProfile(const char *linkdev, int vf,
     case VIR_NETDEV_VPORT_PROFILE_NONE:
     case VIR_NETDEV_VPORT_PROFILE_OPENVSWITCH:
     case VIR_NETDEV_VPORT_PROFILE_8021QBG:
+    case VIR_NETDEV_VPORT_PROFILE_MIDONET:
     case VIR_NETDEV_VPORT_PROFILE_LAST:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("virtualport type %1$s is currently not supported on interfaces of type hostdev"),
@@ -423,8 +419,7 @@ virHostdevSaveNetConfig(virDomainHostdevDef *hostdev,
 
     if (virHostdevIsVirtualFunction(hostdev) != 1) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Interface type hostdev is currently supported on"
-                         " SR-IOV Virtual Functions only"));
+                       _("Interface type hostdev is currently supported on SR-IOV Virtual Functions only"));
         return -1;
     }
 
@@ -511,8 +506,7 @@ virHostdevRestoreNetConfig(virDomainHostdevDef *hostdev,
 
     if (virHostdevIsVirtualFunction(hostdev) != 1) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Interface type hostdev is currently supported on"
-                         " SR-IOV Virtual Functions only"));
+                       _("Interface type hostdev is currently supported on SR-IOV Virtual Functions only"));
         return -1;
     }
 
@@ -679,7 +673,7 @@ virHostdevPreparePCIDevicesImpl(virHostdevManager *mgr,
     for (i = 0; i < virPCIDeviceListCount(pcidevs); i++) {
         virPCIDevice *pci = virPCIDeviceListGet(pcidevs, i);
         bool strict_acs_check = !!(flags & VIR_HOSTDEV_STRICT_ACS_CHECK);
-        bool usesVFIO = (virPCIDeviceGetStubDriver(pci) == VIR_PCI_STUB_DRIVER_VFIO);
+        bool usesVFIO = (virPCIDeviceGetStubDriverType(pci) == VIR_PCI_STUB_DRIVER_VFIO);
         struct virHostdevIsPCINodeDeviceUsedData data = {mgr, drv_name, dom_name, false};
         int hdrType = -1;
 
@@ -688,8 +682,7 @@ virHostdevPreparePCIDevicesImpl(virHostdevManager *mgr,
 
         if (hdrType != VIR_PCI_HEADER_ENDPOINT) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Non-endpoint PCI devices cannot be assigned "
-                             "to guests"));
+                           _("Non-endpoint PCI devices cannot be assigned to guests"));
             goto cleanup;
         }
 
@@ -743,9 +736,8 @@ virHostdevPreparePCIDevicesImpl(virHostdevManager *mgr,
                                    mgr->inactivePCIHostdevs) < 0)
                 goto reattachdevs;
         } else {
-            g_autofree char *driverPath = NULL;
-            g_autofree char *driverName = NULL;
-            int stub;
+            g_autofree char *drvName = NULL;
+            virPCIStubDriver drvType;
 
             /* Unmanaged devices should already have been marked as
              * inactive: if that's the case, we can simply move on */
@@ -765,18 +757,17 @@ virHostdevPreparePCIDevicesImpl(virHostdevManager *mgr,
              *       information about active / inactive device across
              *       daemon restarts has been implemented */
 
-            if (virPCIDeviceGetDriverPathAndName(pci,
-                                                 &driverPath, &driverName) < 0)
+            if (virPCIDeviceGetCurrentDriverNameAndType(pci, &drvName,
+                                                        &drvType) < 0) {
                 goto reattachdevs;
+            }
 
-            stub = virPCIStubDriverTypeFromString(driverName);
-
-            if (stub > VIR_PCI_STUB_DRIVER_NONE &&
-                stub < VIR_PCI_STUB_DRIVER_LAST) {
+            if (drvType > VIR_PCI_STUB_DRIVER_NONE) {
 
                 /* The device is bound to a known stub driver: store this
                  * information and add a copy to the inactive list */
-                virPCIDeviceSetStubDriver(pci, stub);
+                virPCIDeviceSetStubDriverType(pci, drvType);
+                virPCIDeviceSetStubDriverName(pci, drvName);
 
                 VIR_DEBUG("Adding PCI device %s to inactive list",
                           virPCIDeviceGetName(pci));
@@ -790,6 +781,9 @@ virHostdevPreparePCIDevicesImpl(virHostdevManager *mgr,
             }
         }
     }
+
+    /* Step 2.5: Wait for udev to handle all events for devices. */
+    virWaitForDevices();
 
     /* At this point, all devices are attached to the stub driver and have
      * been marked as inactive */
@@ -1141,8 +1135,7 @@ virHostdevUpdateActivePCIDevices(virHostdevManager *mgr,
         if (!actual)
             continue;
 
-        if (virPCIDeviceSetUsedBy(actual, drv_name, dom_name) < 0)
-            goto cleanup;
+        virPCIDeviceSetUsedBy(actual, drv_name, dom_name);
 
         /* Setup the original states for the PCI device */
         virPCIDeviceSetUnbindFromStub(actual, virBitmapIsBitSet(orig, VIR_DOMAIN_HOSTDEV_PCI_ORIGSTATE_UNBIND));
@@ -1223,11 +1216,10 @@ virHostdevUpdateActiveSCSIHostDevices(virHostdevManager *mgr,
         return -1;
 
     if ((tmp = virSCSIDeviceListFind(mgr->activeSCSIHostdevs, scsi))) {
-        if (virSCSIDeviceSetUsedBy(tmp, drv_name, dom_name) < 0)
-            return -1;
+        virSCSIDeviceSetUsedBy(tmp, drv_name, dom_name);
     } else {
-        if (virSCSIDeviceSetUsedBy(scsi, drv_name, dom_name) < 0 ||
-            virSCSIDeviceListAdd(mgr->activeSCSIHostdevs, scsi) < 0)
+        virSCSIDeviceSetUsedBy(scsi, drv_name, dom_name);
+        if (virSCSIDeviceListAdd(mgr->activeSCSIHostdevs, scsi) < 0)
             return -1;
         scsi = NULL;
     }
@@ -1370,6 +1362,41 @@ virHostdevMarkUSBDevices(virHostdevManager *mgr,
     return -1;
 }
 
+static int
+virHostdevFindUSBDeviceWithFlags(virDomainHostdevDef *hostdev,
+                                 bool mandatory,
+                                 unsigned int flags,
+                                 virUSBDevice **usb)
+{
+    virDomainHostdevSubsysUSB *usbsrc = &hostdev->source.subsys.u.usb;
+    unsigned vendor = usbsrc->vendor;
+    unsigned product = usbsrc->product;
+    unsigned bus = usbsrc->bus;
+    const char *port = usbsrc->port;
+    unsigned device = usbsrc->device;
+    g_autoptr(virUSBDeviceList) devs = NULL;
+    int rc;
+
+    rc = virUSBDeviceFind(vendor, product, bus, device, port, NULL,
+                          mandatory, flags, &devs);
+    if (rc < 0)
+        return -1;
+
+    if (rc == 1) {
+        *usb = virUSBDeviceListGet(devs, 0);
+        virUSBDeviceListSteal(devs, *usb);
+    }
+
+    if (rc > 1) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("Multiple USB devices for %1$x:%2$x, use <address> to specify one"),
+                       vendor, product);
+        return -1;
+    }
+
+    return rc;
+}
+
 
 int
 virHostdevFindUSBDevice(virDomainHostdevDef *hostdev,
@@ -1378,77 +1405,65 @@ virHostdevFindUSBDevice(virDomainHostdevDef *hostdev,
 {
     virDomainHostdevSubsysUSB *usbsrc = &hostdev->source.subsys.u.usb;
     unsigned vendor = usbsrc->vendor;
-    unsigned product = usbsrc->product;
     unsigned bus = usbsrc->bus;
     unsigned device = usbsrc->device;
+    const char *port = usbsrc->port;
     bool autoAddress = usbsrc->autoAddress;
+    unsigned int flags = 0;
     int rc;
 
     *usb = NULL;
 
-    if (vendor && bus) {
-        rc = virUSBDeviceFind(vendor, product, bus, device,
-                              NULL,
-                              autoAddress ? false : mandatory,
-                              usb);
-        if (rc < 0) {
-            return -1;
-        } else if (!autoAddress) {
-            goto out;
-        } else {
-            VIR_INFO("USB device %x:%x could not be found at previous"
-                     " address (bus:%u device:%u)",
-                     vendor, product, bus, device);
-        }
+    if (vendor)
+        flags |= USB_DEVICE_FIND_BY_VENDOR;
+    if (device)
+        flags |= USB_DEVICE_FIND_BY_DEVICE;
+    if (port)
+        flags |= USB_DEVICE_FIND_BY_PORT;
+
+    /* Rule out invalid cases. */
+    if (vendor && device && port) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("Cannot match USB device on vendor/product, bus/device, and bus/port at once."));
+    } else if (device && port) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("Cannot match USB device on bus/device and bus/port at once."));
+    } else if (!vendor && !device && !port) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("No matching fields for USB device found. Vendor/product, bus/device, or bus/port required."));
+        return -1;
     }
 
-    /* When vendor is specified, its USB address is either unspecified or the
-     * device could not be found at the USB device where it had been
-     * automatically found before.
-     */
-    if (vendor) {
-        g_autoptr(virUSBDeviceList) devs = NULL;
+    /* First attempt, matching on all valid fields. */
+    rc = virHostdevFindUSBDeviceWithFlags(hostdev,
+                                          autoAddress ? false : mandatory,
+                                          flags, usb);
+    if (rc < 0)
+        return -1;
 
-        rc = virUSBDeviceFindByVendor(vendor, product, NULL, mandatory, &devs);
-        if (rc < 0) {
+    if (rc != 1 && autoAddress && device) {
+        VIR_INFO("USB device could not be found at previous address "
+                 "(bus:%u device:%u)", bus, device);
+
+        /* Second attempt, for when the device number has changed. */
+        flags &= ~USB_DEVICE_FIND_BY_DEVICE;
+        usbsrc->device = 0;
+
+        rc = virHostdevFindUSBDeviceWithFlags(hostdev, mandatory,
+                                              flags, usb);
+        if (rc < 0)
             return -1;
-        } else if (rc == 0) {
-            goto out;
-        } else if (rc > 1) {
-            if (autoAddress) {
-                virReportError(VIR_ERR_OPERATION_FAILED,
-                               _("Multiple USB devices for %1$x:%2$x were found, but none of them is at bus:%3$u device:%4$u"),
-                               vendor, product, bus, device);
-            } else {
-                virReportError(VIR_ERR_OPERATION_FAILED,
-                               _("Multiple USB devices for %1$x:%2$x, use <address> to specify one"),
-                               vendor, product);
-            }
-            return -1;
-        }
 
-        *usb = virUSBDeviceListGet(devs, 0);
-        virUSBDeviceListSteal(devs, *usb);
+        usbsrc->autoAddress = true;
+    }
 
+    if (!*usb) {
+        hostdev->missing = true;
+    } else if (!usbsrc->bus || !usbsrc->device) {
         usbsrc->bus = virUSBDeviceGetBus(*usb);
         usbsrc->device = virUSBDeviceGetDevno(*usb);
-        usbsrc->autoAddress = true;
-
-        if (autoAddress) {
-            VIR_INFO("USB device %x:%x found at bus:%u device:%u (moved"
-                     " from bus:%u device:%u)",
-                     vendor, product,
-                     usbsrc->bus, usbsrc->device,
-                     bus, device);
-        }
-    } else if (bus) {
-        if (virUSBDeviceFindByBus(bus, device, NULL, mandatory, usb) < 0)
-            return -1;
     }
 
- out:
-    if (!*usb)
-        hostdev->missing = true;
     return 0;
 }
 
@@ -1608,11 +1623,9 @@ virHostdevPrepareSCSIDevices(virHostdevManager *mgr,
                 goto error;
             }
 
-            if (virSCSIDeviceSetUsedBy(tmp, drv_name, dom_name) < 0)
-                goto error;
+            virSCSIDeviceSetUsedBy(tmp, drv_name, dom_name);
         } else {
-            if (virSCSIDeviceSetUsedBy(scsi, drv_name, dom_name) < 0)
-                goto error;
+            virSCSIDeviceSetUsedBy(scsi, drv_name, dom_name);
 
             VIR_DEBUG("Adding %s to activeSCSIHostdevs", virSCSIDeviceGetName(scsi));
 
@@ -1681,8 +1694,7 @@ virHostdevPrepareSCSIVHostDevices(virHostdevManager *mgr,
         if (!(host = virSCSIVHostDeviceNew(hostsrc->wwpn)))
             return -1;
 
-        if (virSCSIVHostDeviceSetUsedBy(host, drv_name, dom_name) < 0)
-            return -1;
+        virSCSIVHostDeviceSetUsedBy(host, drv_name, dom_name);
 
         if (virSCSIVHostDeviceListAdd(list, host) < 0)
             return -1;
@@ -1827,8 +1839,7 @@ virHostdevReAttachUSBDevices(virHostdevManager *mgr,
         tmp = virUSBDeviceListFind(mgr->activeUSBHostdevs, usb);
 
         if (!tmp) {
-            VIR_WARN("Unable to find device %03d.%03d "
-                     "in list of active USB devices",
+            VIR_WARN("Unable to find device %03d.%03d in list of active USB devices",
                      usbsrc->bus, usbsrc->device);
             continue;
         }
@@ -1869,8 +1880,7 @@ virHostdevReAttachSCSIHostDevices(virHostdevManager *mgr,
      * because qemuProcessStart could fail half way through. */
 
     if (!(tmp = virSCSIDeviceListFind(mgr->activeSCSIHostdevs, scsi))) {
-        VIR_WARN("Unable to find device %s:%u:%u:%llu "
-                 "in list of active SCSI devices",
+        VIR_WARN("Unable to find device %s:%u:%u:%llu in list of active SCSI devices",
                  scsihostsrc->adapter, scsihostsrc->bus,
                  scsihostsrc->target, scsihostsrc->unit);
         return;
@@ -1953,8 +1963,7 @@ virHostdevReAttachSCSIVHostDevices(virHostdevManager *mgr,
 
         if (!(tmp = virSCSIVHostDeviceListFind(mgr->activeSCSIVHostHostdevs,
                                                host))) {
-            VIR_WARN("Unable to find device %s "
-                     "in list of active SCSI_host devices",
+            VIR_WARN("Unable to find device %s in list of active SCSI_host devices",
                      hostsrc->wwpn);
             virObjectUnlock(mgr->activeSCSIVHostHostdevs);
             return;
@@ -2290,22 +2299,16 @@ virHostdevPrepareOneNVMeDevice(virHostdevManager *hostdev_mgr,
     /* Let's check if all PCI devices are NVMe disks. */
     for (i = 0; i < virPCIDeviceListCount(pciDevices); i++) {
         virPCIDevice *pci = virPCIDeviceListGet(pciDevices, i);
-        g_autofree char *drvPath = NULL;
         g_autofree char *drvName = NULL;
-        int stub = VIR_PCI_STUB_DRIVER_NONE;
+        virPCIStubDriver drvType;
 
-        if (virPCIDeviceGetDriverPathAndName(pci, &drvPath, &drvName) < 0)
+        if (virPCIDeviceGetCurrentDriverNameAndType(pci, &drvName, &drvType) < 0)
             goto cleanup;
 
-        if (drvName)
-            stub = virPCIStubDriverTypeFromString(drvName);
-
-        if (stub == VIR_PCI_STUB_DRIVER_VFIO ||
-            STREQ_NULLABLE(drvName, "nvme"))
+        if (drvType == VIR_PCI_STUB_DRIVER_VFIO || STREQ_NULLABLE(drvName, "nvme"))
             continue;
 
-        VIR_WARN("Suspicious NVMe disk assignment. PCI device "
-                 "%s is not an NVMe disk, it has %s driver",
+        VIR_WARN("Suspicious NVMe disk assignment. PCI device %s is not an NVMe disk, it has %s driver",
                  virPCIDeviceGetName(pci), NULLSTR(drvName));
     }
 
@@ -2495,8 +2498,7 @@ virHostdevUpdateActiveNVMeDevices(virHostdevManager *hostdev_mgr,
 
         /* We must restore some attributes that were lost on daemon restart. */
         virPCIDeviceSetUnbindFromStub(actual, true);
-        if (virPCIDeviceSetUsedBy(actual, drv_name, dom_name) < 0)
-            goto rollback;
+        virPCIDeviceSetUsedBy(actual, drv_name, dom_name);
 
         if (virPCIDeviceListAddCopy(hostdev_mgr->activePCIHostdevs, actual) < 0)
             goto rollback;
@@ -2528,4 +2530,32 @@ virHostdevUpdateActiveNVMeDevices(virHostdevManager *hostdev_mgr,
         lastGoodPCIIdx--;
     }
     goto cleanup;
+}
+
+/**
+ * virHostdevNeedsVFIO:
+ * @hostdev: host device to check
+ *
+ * Returns true if using the @hostdev requires access to /dev/vfio/vfio,
+ * otherwise false.
+ */
+bool
+virHostdevNeedsVFIO(const virDomainHostdevDef *hostdev)
+{
+    return virHostdevIsPCIDeviceWithoutIOMMUFD(hostdev) ||
+        virHostdevIsMdevDevice(hostdev);
+}
+
+bool
+virHostdevHostSupportsPassthroughVFIO(void)
+{
+    /* condition 1 - host has IOMMU */
+    if (!virHostHasIOMMU())
+        return false;
+
+    /* condition 2 - /dev/vfio/vfio exists */
+    if (!virFileExists(VIR_DEV_VFIO))
+        return false;
+
+    return true;
 }

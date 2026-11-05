@@ -27,11 +27,14 @@
 #include "cpu/cpu.h"
 #include "util/virgic.h"
 
+char *
+qemuMonitorJSONValidateEventHandlers(void);
+
 int
 qemuMonitorJSONIOProcessLine(qemuMonitor *mon,
                              const char *line,
                              qemuMonitorMessage *msg)
-    G_NO_INLINE;
+    ATTRIBUTE_MOCKABLE;
 
 int
 qemuMonitorJSONIOProcess(qemuMonitor *mon,
@@ -91,15 +94,9 @@ int
 qemuMonitorJSONGetBlockInfo(qemuMonitor *mon,
                             GHashTable *table);
 
-virJSONValue *
-qemuMonitorJSONQueryBlockstats(qemuMonitor *mon,
-                               bool queryNodes);
 int
 qemuMonitorJSONGetAllBlockStatsInfo(qemuMonitor *mon,
                                     GHashTable *hash);
-int
-qemuMonitorJSONBlockStatsUpdateCapacityBlockdev(qemuMonitor *mon,
-                                                GHashTable *stats);
 
 GHashTable *
 qemuMonitorJSONBlockGetNamedNodeDataJSON(virJSONValue *nodes);
@@ -175,10 +172,6 @@ qemuMonitorJSONMigrate(qemuMonitor *mon,
 int
 qemuMonitorJSONGetMigrationBlockers(qemuMonitor *mon,
                                     char ***blockers);
-int
-qemuMonitorJSONGetSpiceMigrationStatus(qemuMonitor *mon,
-                                       bool *spice_migrated);
-
 
 int
 qemuMonitorJSONMigrateCancel(qemuMonitor *mon);
@@ -197,8 +190,7 @@ qemuMonitorJSONGetDumpGuestMemoryCapability(qemuMonitor *mon,
 int
 qemuMonitorJSONDump(qemuMonitor *mon,
                     const char *protocol,
-                    const char *dumpformat,
-                    bool detach);
+                    const char *dumpformat);
 
 int
 qemuMonitorJSONGraphicsRelocate(qemuMonitor *mon,
@@ -207,26 +199,6 @@ qemuMonitorJSONGraphicsRelocate(qemuMonitor *mon,
                                 int port,
                                 int tlsPort,
                                 const char *tlsSubject);
-
-int
-qemuMonitorJSONAddPCIHostDevice(qemuMonitor *mon,
-                                virPCIDeviceAddress *hostAddr,
-                                virPCIDeviceAddress *guestAddr);
-
-int
-qemuMonitorJSONAddPCIDisk(qemuMonitor *mon,
-                          const char *path,
-                          const char *bus,
-                          virPCIDeviceAddress *guestAddr);
-
-int
-qemuMonitorJSONAddPCINetwork(qemuMonitor *mon,
-                             const char *nicstr,
-                             virPCIDeviceAddress *guestAddr);
-
-int
-qemuMonitorJSONRemovePCIDevice(qemuMonitor *mon,
-                               virPCIDeviceAddress *guestAddr);
 
 int
 qemuMonitorJSONAddFileHandleToSet(qemuMonitor *mon,
@@ -269,11 +241,6 @@ qemuMonitorJSONGetChardevInfo(qemuMonitor *mon,
                               GHashTable *info);
 
 int
-qemuMonitorJSONAttachPCIDiskController(qemuMonitor *mon,
-                                       const char *bus,
-                                       virPCIDeviceAddress *guestAddr);
-
-int
 qemuMonitorJSONAddDeviceProps(qemuMonitor *mon,
                               virJSONValue **props);
 
@@ -301,11 +268,13 @@ qemuMonitorJSONBlockdevMirror(qemuMonitor *mon,
                               bool persistjob,
                               const char *device,
                               const char *target,
+                              const char *replaces,
                               unsigned long long speed,
                               unsigned int granularity,
                               unsigned long long buf_size,
                               bool shallow,
-                              bool syncWrite)
+                              bool syncWrite,
+                              bool targetIsZero)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(4) ATTRIBUTE_NONNULL(5);
 
 int
@@ -405,6 +374,15 @@ qemuMonitorJSONSetBlockIoThrottle(qemuMonitor *mon,
                                   virDomainBlockIoTuneInfo *info);
 
 int
+qemuMonitorMakeThrottleGroupLimits(virJSONValue *limits,
+                                   const virDomainThrottleGroupDef *group);
+
+int
+qemuMonitorJSONUpdateThrottleGroup(qemuMonitor *mon,
+                                   const char *qomid,
+                                   virDomainBlockIoTuneInfo *info);
+
+int
 qemuMonitorJSONGetBlockIoThrottle(qemuMonitor *mon,
                                   const char *qdevid,
                                   virDomainBlockIoTuneInfo *reply);
@@ -417,12 +395,8 @@ qemuMonitorJSONGetSEVMeasurement(qemuMonitor *mon);
 
 int
 qemuMonitorJSONGetSEVInfo(qemuMonitor *mon,
-                          unsigned int *apiMajor,
-                          unsigned int *apiMinor,
-                          unsigned int *buildID,
-                          unsigned int *policy)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3)
-    ATTRIBUTE_NONNULL(4) ATTRIBUTE_NONNULL(5);
+                          qemuMonitorSEVInfo *info)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int
 qemuMonitorJSONGetVersion(qemuMonitor *mon,
@@ -472,11 +446,6 @@ qemuMonitorJSONGetCPUModelComparison(qemuMonitor *mon,
                                      char **result)
     ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
 
-int
-qemuMonitorJSONGetCommands(qemuMonitor *mon,
-                           char ***commands)
-    ATTRIBUTE_NONNULL(2);
-
 GHashTable *
 qemuMonitorJSONGetCommandLineOptions(qemuMonitor *mon);
 
@@ -485,6 +454,11 @@ qemuMonitorJSONGetKVMState(qemuMonitor *mon,
                            bool *enabled,
                            bool *present)
     ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
+
+int
+qemuMonitorJSONGetAccelerators(qemuMonitor *mon,
+                               char **enabled)
+     ATTRIBUTE_NONNULL(2);
 
 int
 qemuMonitorJSONGetObjectTypes(qemuMonitor *mon,
@@ -569,12 +543,6 @@ qemuMonitorJSONNBDServerStart(qemuMonitor *mon,
                               const virStorageNetHostDef *server,
                               const char *tls_alias);
 int
-qemuMonitorJSONNBDServerAdd(qemuMonitor *mon,
-                            const char *deviceID,
-                            const char *export,
-                            bool writable,
-                            const char *bitmap);
-int
 qemuMonitorJSONNBDServerStop(qemuMonitor *mon);
 
 int
@@ -582,19 +550,9 @@ qemuMonitorJSONBlockExportAdd(qemuMonitor *mon,
                               virJSONValue **props);
 
 int
-qemuMonitorJSONGetTPMModels(qemuMonitor *mon,
-                            char ***tpmmodels)
-    ATTRIBUTE_NONNULL(2);
-
-int
-qemuMonitorJSONGetTPMTypes(qemuMonitor *mon,
-                           char ***tpmtypes)
-    ATTRIBUTE_NONNULL(2);
-
-int
 qemuMonitorJSONAttachCharDev(qemuMonitor *mon,
-                             const char *chrID,
-                             virDomainChrSourceDef *chr);
+                             virJSONValue **props,
+                             char **ptypath);
 int
 qemuMonitorJSONDetachCharDev(qemuMonitor *mon,
                              const char *chrID);
@@ -604,16 +562,12 @@ qemuMonitorJSONGetDeviceAliases(qemuMonitor *mon,
                                 char ***aliases);
 
 int
-qemuMonitorJSONGetGuestCPUx86(qemuMonitor *mon,
-                              const char *cpuQOMPath,
-                              virCPUData **data,
-                              virCPUData **disabled);
-
-int
 qemuMonitorJSONGetGuestCPU(qemuMonitor *mon,
                            virArch arch,
+                           bool qomListGet,
                            const char *cpuQOMPath,
                            qemuMonitorCPUFeatureTranslationCallback translate,
+                           virCPUDefFeatureFilter filter,
                            virCPUData **enabled,
                            virCPUData **disabled);
 
@@ -645,7 +599,8 @@ qemuMonitorJSONFindLinkPath(qemuMonitor *mon,
 
 int
 qemuMonitorJSONMigrateIncoming(qemuMonitor *mon,
-                               const char *uri)
+                               const char *uri,
+                               virTristateBool exitOnError)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int
@@ -679,11 +634,6 @@ qemuMonitorJSONSetBlockThreshold(qemuMonitor *mon,
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int
-qemuMonitorJSONSetWatchdogAction(qemuMonitor *mon,
-                                 const char *action)
-    ATTRIBUTE_NONNULL(1);
-
-int
 qemuMonitorJSONBlockdevCreate(qemuMonitor *mon,
                               const char *jobname,
                               virJSONValue **props)
@@ -696,7 +646,7 @@ qemuMonitorJSONBlockdevAdd(qemuMonitor *mon,
 
 int
 qemuMonitorJSONBlockdevReopen(qemuMonitor *mon,
-                              virJSONValue **props)
+                              virJSONValue **options)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int
@@ -792,6 +742,11 @@ qemuMonitorJSONSetDBusVMStateIdList(qemuMonitor *mon,
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
 
 int
+qemuMonitorJSONSetUSBDiskAttached(qemuMonitor *mon,
+                                  const char *alias)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
+
+int
 qemuMonitorJSONGetCPUMigratable(qemuMonitor *mon,
                                 const char *cpuQOMPath,
                                 bool *migratable);
@@ -830,3 +785,49 @@ qemuMonitorJSONQueryStats(qemuMonitor *mon,
                           qemuMonitorQueryStatsTargetType target,
                           char **vcpus,
                           GPtrArray *providers);
+
+int qemuMonitorJSONDisplayReload(qemuMonitor *mon,
+                                 const char *type,
+                                 bool tlsCerts);
+
+int
+qemuMonitorJSONSnapshotSave(qemuMonitor *mon,
+                            const char *jobname,
+                            const char *snapshotname,
+                            const char *vmstate_disk,
+                            const char **disks);
+
+int
+qemuMonitorJSONSnapshotLoad(qemuMonitor *mon,
+                            const char *jobname,
+                            const char *snapshotname,
+                            const char *vmstate_disk,
+                            const char **disks);
+
+int
+qemuMonitorJSONSnapshotDelete(qemuMonitor *mon,
+                              const char *jobname,
+                              const char *snapshotname,
+                              const char **disks);
+
+int
+qemuMonitorJSONBlockdevSetActive(qemuMonitor *mon,
+                                 const char *nodename,
+                                 bool active);
+
+int
+qemuMonitorJSONBlockLatencyHistogramSet(qemuMonitor *mon,
+                                        const char *id,
+                                        unsigned long long *boundaries,
+                                        unsigned long long *boundaries_read,
+                                        unsigned long long *boundaries_write,
+                                        unsigned long long *boundaries_zone,
+                                        unsigned long long *boundaries_flush);
+
+int
+qemuMonitorJSONAnnounceSelf(qemuMonitor *mon,
+                            const char *device,
+                            unsigned int initial,
+                            unsigned int max,
+                            unsigned int rounds,
+                            unsigned int step);

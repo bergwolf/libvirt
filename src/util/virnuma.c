@@ -61,7 +61,7 @@ virNumaGetAutoPlacementAdvice(unsigned short vcpus,
     g_autoptr(virCommand) cmd = NULL;
     char *output = NULL;
 
-    cmd = virCommandNewArgList(NUMAD, "-w", NULL);
+    cmd = virCommandNewArgList("numad", "-w", NULL);
     virCommandAddArgFormat(cmd, "%d:%llu", vcpus,
                            VIR_DIV_UP(balloon, 1024));
 
@@ -69,8 +69,7 @@ virNumaGetAutoPlacementAdvice(unsigned short vcpus,
 
     if (virCommandRun(cmd, NULL) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                       _("Failed to query numad for the "
-                         "advisory nodeset"));
+                       _("Failed to query numad for the advisory nodeset"));
         VIR_FREE(output);
     }
 
@@ -149,8 +148,7 @@ virNumaSetupMemoryPolicy(virDomainNumatuneMemMode mode,
 
         if (!has_preferred_many && nnodes != 1) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
-                           "%s", _("NUMA memory tuning in 'preferred' mode "
-                                   "only supports single node"));
+                           "%s", _("NUMA memory tuning in 'preferred' mode only supports single node"));
             return -1;
         }
 
@@ -789,9 +787,7 @@ virNumaGetPages(int node,
         tmp_free[ntmp] = page_free;
         ntmp++;
 
-        /* page_size is in kibibytes while we want huge_page_sum
-         * in just bytes. */
-        huge_page_sum += 1024 * page_size * page_avail;
+        huge_page_sum += page_size * page_avail;
     }
 
     if (direrr < 0)
@@ -801,6 +797,9 @@ virNumaGetPages(int node,
     VIR_REALLOC_N(tmp_size, ntmp + 1);
     VIR_REALLOC_N(tmp_avail, ntmp + 1);
     VIR_REALLOC_N(tmp_free, ntmp + 1);
+
+    /* page_size is in kibibytes while we want huge_page_sum in just bytes. */
+    huge_page_sum *= 1024;
 
     if (virNumaGetPageInfo(node, system_page_size, huge_page_sum,
                            &tmp_avail[ntmp], &tmp_free[ntmp]) < 0)

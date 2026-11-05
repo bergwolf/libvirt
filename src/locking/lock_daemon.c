@@ -93,13 +93,13 @@ virLockDaemonFree(virLockDaemon *lockd)
     g_free(lockd);
 }
 
-static inline void
+static void
 virLockDaemonLock(virLockDaemon *lockd)
 {
     g_mutex_lock(&lockd->lock);
 }
 
-static inline void
+static void
 virLockDaemonUnlock(virLockDaemon *lockd)
 {
     g_mutex_unlock(&lockd->lock);
@@ -1066,10 +1066,7 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
-    if (virNetServerAddProgram(lockSrv, lockProgram) < 0) {
-        ret = VIR_DAEMON_ERR_INIT;
-        goto cleanup;
-    }
+    virNetServerAddProgram(lockSrv, lockProgram);
 
     if (adminSrv != NULL) {
         if (!(adminProgram = virNetServerProgramNew(ADMIN_PROGRAM,
@@ -1079,10 +1076,7 @@ int main(int argc, char **argv) {
             ret = VIR_DAEMON_ERR_INIT;
             goto cleanup;
         }
-        if (virNetServerAddProgram(adminSrv, adminProgram) < 0) {
-            ret = VIR_DAEMON_ERR_INIT;
-            goto cleanup;
-        }
+        virNetServerAddProgram(adminSrv, adminProgram);
     }
 
     /* Disable error func, now logging is setup */

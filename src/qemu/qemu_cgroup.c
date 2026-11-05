@@ -32,6 +32,7 @@
 #include "virfile.h"
 #include "virdevmapper.h"
 #include "virglibutil.h"
+#include "virhostdev.h"
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
@@ -40,7 +41,7 @@ VIR_LOG_INIT("qemu.qemu_cgroup");
 const char *const defaultDeviceACL[] = {
     "/dev/null", "/dev/full", "/dev/zero",
     "/dev/random", "/dev/urandom",
-    "/dev/ptmx", "/dev/kvm",
+    "/dev/ptmx", "/dev/userfaultfd",
     NULL,
 };
 #define DEVICE_PTY_MAJOR 136
@@ -230,7 +231,14 @@ int
 qemuSetupImageCgroup(virDomainObj *vm,
                      virStorageSource *src)
 {
-    return qemuSetupImageCgroupInternal(vm, src, false);
+    if (qemuSetupImageCgroupInternal(vm, src, false) < 0)
+        return -1;
+
+    if (src->dataFileStore &&
+        qemuSetupImageCgroupInternal(vm, src->dataFileStore, false) < 0)
+        return -1;
+
+    return 0;
 }
 
 
@@ -317,6 +325,10 @@ qemuSetupImageChainCgroup(virDomainObj *vm,
 
     for (next = src; virStorageSourceIsBacking(next); next = next->backingStore) {
         if (qemuSetupImageCgroupInternal(vm, next, forceReadonly) < 0)
+            return -1;
+
+        if (next->dataFileStore &&
+            qemuSetupImageCgroupInternal(vm, next->dataFileStore, forceReadonly) < 0)
             return -1;
 
         /* setup only the top level image for read-write */
@@ -423,7 +435,6 @@ qemuSetupInputCgroup(virDomainObj *vm,
     case VIR_DOMAIN_INPUT_TYPE_EVDEV:
         return qemuCgroupAllowDevicePath(vm, dev->source.evdev,
                                          VIR_CGROUP_DEVICE_RW, false);
-        break;
     }
 
     return ret;
@@ -444,7 +455,6 @@ qemuTeardownInputCgroup(virDomainObj *vm,
     case VIR_DOMAIN_INPUT_TYPE_EVDEV:
         return qemuCgroupDenyDevicePath(vm, dev->source.evdev,
                                         VIR_CGROUP_DEVICE_RWM, false);
-        break;
     }
 
     return 0;
@@ -469,6 +479,9 @@ qemuSetupHostdevCgroup(virDomainObj *vm,
     g_autofree char *path = NULL;
     int perms;
 
+    if (virHostdevIsPCIDeviceWithIOMMUFD(dev))
+        return 0;
+
     if (!virCgroupHasController(priv->cgroup, VIR_CGROUP_CONTROLLER_DEVICES))
         return 0;
 
@@ -480,7 +493,7 @@ qemuSetupHostdevCgroup(virDomainObj *vm,
         return -1;
     }
 
-    if (qemuHostdevNeedsVFIO(dev) &&
+    if (virHostdevNeedsVFIO(dev) &&
         qemuCgroupAllowDevicePath(vm, QEMU_DEV_VFIO,
                                   VIR_CGROUP_DEVICE_RW, false) < 0) {
         return -1;
@@ -529,7 +542,7 @@ qemuTeardownHostdevCgroup(virDomainObj *vm,
         return -1;
     }
 
-    if (qemuHostdevNeedsVFIO(dev) &&
+    if (virHostdevNeedsVFIO(dev) &&
         !qemuDomainNeedsVFIO(vm->def) &&
         qemuCgroupDenyDevicePath(vm, QEMU_DEV_VFIO,
                                  VIR_CGROUP_DEVICE_RWM, false) < 0) {
@@ -553,8 +566,12 @@ qemuSetupMemoryDevicesCgroup(virDomainObj *vm,
 
     switch (mem->model) {
     case VIR_DOMAIN_MEMORY_MODEL_NVDIMM:
+        if (qemuCgroupAllowDevicePath(vm, mem->source.nvdimm.path,
+                                      VIR_CGROUP_DEVICE_RW, false) < 0)
+            return -1;
+        break;
     case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_PMEM:
-        if (qemuCgroupAllowDevicePath(vm, mem->nvdimmPath,
+        if (qemuCgroupAllowDevicePath(vm, mem->source.virtio_pmem.path,
                                       VIR_CGROUP_DEVICE_RW, false) < 0)
             return -1;
         break;
@@ -587,8 +604,12 @@ qemuTeardownMemoryDevicesCgroup(virDomainObj *vm,
 
     switch (mem->model) {
     case VIR_DOMAIN_MEMORY_MODEL_NVDIMM:
+        if (qemuCgroupDenyDevicePath(vm, mem->source.nvdimm.path,
+                                     VIR_CGROUP_DEVICE_RWM, false) < 0)
+            return -1;
+        break;
     case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_PMEM:
-        if (qemuCgroupDenyDevicePath(vm, mem->nvdimmPath,
+        if (qemuCgroupDenyDevicePath(vm, mem->source.virtio_pmem.path,
                                      VIR_CGROUP_DEVICE_RWM, false) < 0)
             return -1;
         break;
@@ -764,6 +785,19 @@ qemuSetupDevicesCgroup(virDomainObj *vm)
     if (qemuCgroupAllowDevicesPaths(vm, deviceACL, VIR_CGROUP_DEVICE_RW, false) < 0)
         return -1;
 
+    if (vm->def->virtType == VIR_DOMAIN_VIRT_KVM) {
+        /* KVM requires access to /dev/kvm */
+        if (qemuCgroupAllowDevicePath(vm, QEMU_DEV_KVM, VIR_CGROUP_DEVICE_RW,
+                                      false) < 0)
+            return -1;
+    }
+    if (vm->def->virtType == VIR_DOMAIN_VIRT_HYPERV) {
+        /* HYPERV domains require access to /dev/mshv */
+        if (qemuCgroupAllowDevicePath(vm, "/dev/mshv", VIR_CGROUP_DEVICE_RW,
+                                      false) < 0)
+            return -1;
+    }
+
     if (qemuSetupFirmwareCgroup(vm) < 0)
         return -1;
 
@@ -836,10 +870,22 @@ qemuSetupDevicesCgroup(virDomainObj *vm)
             return -1;
     }
 
-    if (vm->def->sec &&
-        vm->def->sec->sectype == VIR_DOMAIN_LAUNCH_SECURITY_SEV &&
-        qemuSetupSEVCgroup(vm) < 0)
-        return -1;
+    if (vm->def->sec) {
+        switch (vm->def->sec->sectype) {
+        case VIR_DOMAIN_LAUNCH_SECURITY_SEV:
+        case VIR_DOMAIN_LAUNCH_SECURITY_SEV_SNP:
+            if (qemuSetupSEVCgroup(vm) < 0)
+                return -1;
+            break;
+        case VIR_DOMAIN_LAUNCH_SECURITY_PV:
+        case VIR_DOMAIN_LAUNCH_SECURITY_TDX:
+            break;
+        case VIR_DOMAIN_LAUNCH_SECURITY_NONE:
+        case VIR_DOMAIN_LAUNCH_SECURITY_LAST:
+            virReportEnumRangeError(virDomainLaunchSecurity, vm->def->sec->sectype);
+            return -1;
+        }
+    }
 
     return 0;
 }
@@ -880,6 +926,12 @@ qemuSetupCgroup(virDomainObj *vm,
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(priv->driver);
+    /* When users wants to auto-shutdown the VMs via the qemu daemon itself
+     * we need to instruct machined to create dependencies for the units
+     * in such way that the VMs will not be killed before the auto shutdown
+     * code is reached.
+     */
+    bool daemonAutoShutdown = virDomainDriverAutoShutdownActive(&cfg->autoShutdown);
 
     if (virDomainCgroupSetupCgroup("qemu",
                                    vm,
@@ -889,6 +941,7 @@ qemuSetupCgroup(virDomainObj *vm,
                                    cfg->cgroupControllers,
                                    cfg->maxThreadsPerProc,
                                    priv->driver->privileged,
+                                   daemonAutoShutdown,
                                    priv->machineName) < 0)
 
         return -1;

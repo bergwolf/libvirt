@@ -12,6 +12,7 @@ function install_buildenv() {
             augeas-lenses \
             augeas-tools \
             bash-completion \
+            black \
             ca-certificates \
             ccache \
             codespell \
@@ -23,30 +24,24 @@ function install_buildenv() {
             gettext \
             git \
             grep \
-            iproute2 \
-            iptables \
-            kmod \
-            libc-dev-bin \
+            libclang-rt-dev \
+            libnbd-dev \
             libxml2-utils \
             locales \
-            lvm2 \
             make \
             meson \
-            nfs-common \
             ninja-build \
-            numad \
-            open-iscsi \
             perl-base \
             pkgconf \
-            policykit-1 \
             python3 \
             python3-docutils \
+            python3-pytest \
             qemu-utils \
-            scrub \
             sed \
             xsltproc
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen
     dpkg-reconfigure locales
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
     export DEBIAN_FRONTEND=noninteractive
     dpkg --add-architecture s390x
     apt-get update
@@ -63,11 +58,12 @@ function install_buildenv() {
             libcap-ng-dev:s390x \
             libcurl4-gnutls-dev:s390x \
             libdevmapper-dev:s390x \
-            libfuse-dev:s390x \
+            libfuse3-dev:s390x \
             libglib2.0-dev:s390x \
             libglusterfs-dev:s390x \
             libgnutls28-dev:s390x \
             libiscsi-dev:s390x \
+            libjson-c-dev:s390x \
             libnl-3-dev:s390x \
             libnl-route-3-dev:s390x \
             libnuma-dev:s390x \
@@ -78,13 +74,12 @@ function install_buildenv() {
             libreadline-dev:s390x \
             libsanlock-dev:s390x \
             libsasl2-dev:s390x \
-            libselinux1-dev:s390x \
-            libssh-gcrypt-dev:s390x \
+            libselinux-dev:s390x \
+            libssh-dev:s390x \
             libssh2-1-dev:s390x \
             libtirpc-dev:s390x \
             libudev-dev:s390x \
             libxml2-dev:s390x \
-            libyajl-dev:s390x \
             systemtap-sdt-dev:s390x
     mkdir -p /usr/local/share/meson/cross
     printf "[binaries]\n\

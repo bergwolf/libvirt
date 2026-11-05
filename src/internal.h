@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include "glibcompat.h"
 
+#define IN_LIBVIRT
+
 #if defined __clang_analyzer__ || defined __COVERITY__
 # define STATIC_ANALYSIS 1
 #endif
@@ -42,6 +44,17 @@
 #endif
 
 #define VIR_INT_MULTIPLY_OVERFLOW(a,b) (G_UNLIKELY ((b) > 0 && (a) > G_MAXINT / (b)))
+
+/**
+ * VIR_MULTIPLY_ADD_IS_OVERFLOW:
+ * @limit: maximum value of data type
+ * @value: current value
+ * @multiply: number @value is going to be multiplied by
+ * @add: number that will be added to @value after multiplication
+ */
+#define VIR_MULTIPLY_ADD_IS_OVERFLOW(limit, value, multiply, add) \
+  (G_UNLIKELY(((multiply) > 0 && (value) > (limit) / (multiply)) || \
+              ((limit) - (add) < ((value) * (multiply)))))
 
 /* The library itself is allowed to use deprecated functions /
  * variables, so effectively undefine the deprecated attribute
@@ -141,28 +154,26 @@
 # endif
 #endif
 
+
 /**
  *
- * G_GNUC_FALLTHROUGH
+ * ATTRIBUTE_MOCKABLE
  *
- * silence the compiler warning when falling through a switch case
+ * Force compiler to disable interprocedural optimizations between the
+ * function with this attribute and its callers. On compilers that
+ * support it (gcc), this expands to noipa attribute which implies
+ * noinline attribute and some others and allows us to mock functions
+ * even if they are pure.
  *
- * Note: GLib 2.69.0 introduced version checks on the
- * macro usage. Thus an app setting GLIB_VERSION_MAX_ALLOWED
- * to less than 2.60 will trigger a warning using G_GNUC_FALLTHROUGH
- * Normally the warning is a good thing, but we want to use our
- * fallback impl, so we have to temporarily cull the GLib macro.
- *
- * All this should be removed once updating to min GLib >= 2.60
+ * On compilers which don't support the noipa attribute (clang) this
+ * expands to noinline attribute which in combination with the
+ * -fsemantic-interposition option does roughly the same.
  */
-#if GLIB_CHECK_VERSION(2, 69, 0)
-# undef G_GNUC_FALLTHROUGH
-#endif
-#ifndef G_GNUC_FALLTHROUGH
-# if __GNUC_PREREQ (7, 0)
-#  define G_GNUC_FALLTHROUGH __attribute__((fallthrough))
+#ifndef ATTRIBUTE_MOCKABLE
+# if defined(__has_attribute) && __has_attribute(noipa)
+#  define ATTRIBUTE_MOCKABLE __attribute__((noipa))
 # else
-#  define G_GNUC_FALLTHROUGH do {} while(0)
+#  define ATTRIBUTE_MOCKABLE G_NO_INLINE
 # endif
 #endif
 
@@ -439,6 +450,20 @@
         if (*argname == '\0') { \
             virReportInvalidEmptyStringArg(argname); \
             goto label; \
+        } \
+    } while (0)
+#define virCheckNonEmptyOptStringArgGoto(argname, label) \
+    do { \
+        if (argname && *argname == '\0') { \
+            virReportInvalidEmptyStringArg(argname); \
+            goto label; \
+        } \
+    } while (0)
+#define virCheckNonEmptyOptStringArgReturn(argname, retval) \
+    do { \
+        if (argname && *argname == '\0') { \
+            virReportInvalidEmptyStringArg(argname); \
+            return retval; \
         } \
     } while (0)
 #define virCheckPositiveArgGoto(argname, label) \

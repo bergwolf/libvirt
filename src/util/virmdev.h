@@ -47,6 +47,16 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(virMediatedDeviceAttr, virMediatedDeviceAttrFree);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virMediatedDeviceList, virObjectUnref);
 
+typedef struct _virMediatedDeviceConfig virMediatedDeviceConfig;
+struct _virMediatedDeviceConfig {
+    char *type;
+    virMediatedDeviceAttr **attributes;
+    size_t nattributes;
+};
+
+void virMediatedDeviceConfigClear(virMediatedDeviceConfig *config);
+void virMediatedDeviceConfigFree(virMediatedDeviceConfig *config);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virMediatedDeviceConfig, virMediatedDeviceConfigFree);
 
 typedef struct _virMediatedDeviceType virMediatedDeviceType;
 struct _virMediatedDeviceType {
@@ -61,9 +71,6 @@ typedef int (*virMediatedDeviceCallback)(virMediatedDevice *dev,
 
 virMediatedDevice *
 virMediatedDeviceNew(const char *uuidstr, virMediatedDeviceModelType model);
-
-virMediatedDevice *
-virMediatedDeviceCopy(virMediatedDevice *dev);
 
 void
 virMediatedDeviceFree(virMediatedDevice *dev);

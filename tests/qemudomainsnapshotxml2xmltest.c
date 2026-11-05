@@ -6,14 +6,11 @@
 #include <fcntl.h>
 
 #include "testutils.h"
+#include "internal.h"
+#include "qemu/qemu_conf.h"
+#include "testutilsqemu.h"
 
-#ifdef WITH_QEMU
-
-# include "internal.h"
-# include "qemu/qemu_conf.h"
-# include "testutilsqemu.h"
-
-# define VIR_FROM_THIS VIR_FROM_NONE
+#define VIR_FROM_THIS VIR_FROM_NONE
 
 static virQEMUDriver driver;
 
@@ -109,15 +106,21 @@ testCompareXMLToXMLHelper(const void *data)
 static int
 mymain(void)
 {
+    g_autoptr(GHashTable) capslatest = testQemuGetLatestCaps();
+    g_autoptr(GHashTable) capscache = virHashNew(virObjectUnref);
     int ret = 0;
 
     if (qemuTestDriverInit(&driver) < 0)
         return EXIT_FAILURE;
 
+    if (testQemuInsertRealCaps(driver.qemuCapsCache, "x86_64", "latest", "",
+                               capslatest, capscache, NULL, NULL) < 0)
+        return EXIT_FAILURE;
+
     virDomainXMLOptionSetMomentPostParse(driver.xmlopt,
                                          testSnapshotPostParse);
 
-# define DO_TEST(prefix, name, inpath, outpath, uuid, time, flags) \
+#define DO_TEST(prefix, name, inpath, outpath, uuid, time, flags) \
     do { \
         const struct testInfo info = {abs_srcdir "/" inpath "/" name ".xml", \
                                       abs_srcdir "/" outpath "/" name ".xml", \
@@ -127,16 +130,16 @@ mymain(void)
             ret = -1; \
     } while (0)
 
-# define DO_TEST_IN(name, uuid) DO_TEST("in->in", name, \
+#define DO_TEST_IN(name, uuid) DO_TEST("in->in", name, \
                                         "qemudomainsnapshotxml2xmlin", \
                                         "qemudomainsnapshotxml2xmlin", \
                                         uuid, 0, 0)
 
-# define DO_TEST_OUT(name, uuid, internal) \
+#define DO_TEST_OUT(name, uuid, internal) \
     DO_TEST("out->out", name, "qemudomainsnapshotxml2xmlout", \
             "qemudomainsnapshotxml2xmlout", uuid, 0, internal | TEST_REDEFINE)
 
-# define DO_TEST_INOUT(name, uuid, time, flags) \
+#define DO_TEST_INOUT(name, uuid, time, flags) \
     DO_TEST("in->out", name, \
             "qemudomainsnapshotxml2xmlin",\
             "qemudomainsnapshotxml2xmlout",\
@@ -184,13 +187,3 @@ mymain(void)
 }
 
 VIR_TEST_MAIN(mymain)
-
-#else
-
-int
-main(void)
-{
-    return EXIT_AM_SKIP;
-}
-
-#endif /* WITH_QEMU */

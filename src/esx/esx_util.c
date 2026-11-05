@@ -24,6 +24,7 @@
 #include <config.h>
 
 #include "internal.h"
+#include "viralloc.h"
 #include "virlog.h"
 #include "viruuid.h"
 #include "vmx.h"
@@ -42,6 +43,7 @@ esxUtil_ParseUri(esxUtil_ParsedUri **parsedUri, virURI *uri)
     size_t i;
     int noVerify;
     int autoAnswer;
+    int legacy_uuid;
     char *tmp;
 
     ESX_VI_CHECK_ARG_LIST(parsedUri);
@@ -87,6 +89,16 @@ esxUtil_ParseUri(esxUtil_ParsedUri **parsedUri, virURI *uri)
             }
 
             (*parsedUri)->autoAnswer = autoAnswer != 0;
+        } else if (STRCASEEQ(queryParam->name, "legacy_uuid")) {
+            if (virStrToLong_i(queryParam->value, NULL, 10, &legacy_uuid) < 0 ||
+                (legacy_uuid != 0 && legacy_uuid != 1)) {
+                virReportError(VIR_ERR_INVALID_ARG,
+                               _("Query parameter 'legacy_uuid' has unexpected value '%1$s' (should be 0 or 1)"),
+                               queryParam->value);
+                goto cleanup;
+            }
+
+            (*parsedUri)->legacy_uuid = legacy_uuid != 0;
         } else if (STRCASEEQ(queryParam->name, "proxy")) {
             /* Expected format: [<type>://]<hostname>[:<port>] */
             (*parsedUri)->proxy = true;
@@ -119,8 +131,7 @@ esxUtil_ParseUri(esxUtil_ParsedUri **parsedUri, virURI *uri)
             if ((tmp = strchr((*parsedUri)->proxy_hostname, ':'))) {
                 if (tmp == (*parsedUri)->proxy_hostname) {
                     virReportError(VIR_ERR_INVALID_ARG, "%s",
-                                   _("Query parameter 'proxy' doesn't contain a "
-                                     "hostname"));
+                                   _("Query parameter 'proxy' doesn't contain a hostname"));
                     goto cleanup;
                 }
 
@@ -136,6 +147,9 @@ esxUtil_ParseUri(esxUtil_ParsedUri **parsedUri, virURI *uri)
                     goto cleanup;
                 }
             }
+        } else if (STRCASEEQ(queryParam->name, "cacert")) {
+            g_clear_pointer(&(*parsedUri)->cacert, g_free);
+            (*parsedUri)->cacert = g_strdup(queryParam->value);
         } else {
             VIR_WARN("Ignoring unexpected query parameter '%s'",
                      queryParam->name);
@@ -157,22 +171,21 @@ esxUtil_ParseUri(esxUtil_ParsedUri **parsedUri, virURI *uri)
 }
 
 
-
-
 void
 esxUtil_FreeParsedUri(esxUtil_ParsedUri **parsedUri)
 {
     if (!parsedUri || !(*parsedUri))
         return;
 
-    g_free((*parsedUri)->transport);
-    g_free((*parsedUri)->vCenter);
-    g_free((*parsedUri)->proxy_hostname);
-    g_free((*parsedUri)->path);
 
-    g_free(*parsedUri);
+    VIR_FREE((*parsedUri)->transport);
+    VIR_FREE((*parsedUri)->vCenter);
+    VIR_FREE((*parsedUri)->proxy_hostname);
+    VIR_FREE((*parsedUri)->path);
+    VIR_FREE((*parsedUri)->cacert);
+
+    VIR_FREE(*parsedUri);
 }
-
 
 
 int
@@ -193,7 +206,6 @@ esxUtil_ParseVirtualMachineIDString(const char *id_string, int *id)
 
     return -1;
 }
-
 
 
 int
@@ -268,19 +280,16 @@ esxUtil_ParseDatastorePath(const char *datastorePath, char **datastoreName,
 }
 
 
-
 int
 esxUtil_ResolveHostname(const char *hostname, char **ipAddress)
 {
-    struct addrinfo hints;
+    struct addrinfo hints = { 0 };
     struct addrinfo *result = NULL;
     int errcode;
     g_autofree char *address = NULL;
 
-    memset(&hints, 0, sizeof(hints));
-
-    hints.ai_flags = AI_ADDRCONFIG;
-    hints.ai_family = AF_INET;
+    hints.ai_flags = AI_ADDRCONFIG | AI_V4MAPPED;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = 0;
 
@@ -318,7 +327,6 @@ esxUtil_ResolveHostname(const char *hostname, char **ipAddress)
 }
 
 
-
 int
 esxUtil_ReformatUuid(const char *input, char *output)
 {
@@ -335,7 +343,6 @@ esxUtil_ReformatUuid(const char *input, char *output)
 
     return 0;
 }
-
 
 
 char *
@@ -393,7 +400,6 @@ esxUtil_EscapeBase64(const char *string)
 }
 
 
-
 void
 esxUtil_ReplaceSpecialWindowsPathChars(char *string)
 {
@@ -417,7 +423,6 @@ esxUtil_ReplaceSpecialWindowsPathChars(char *string)
 }
 
 
-
 char *
 esxUtil_EscapeDatastoreItem(const char *string)
 {
@@ -437,7 +442,6 @@ esxUtil_EscapeDatastoreItem(const char *string)
 }
 
 
-
 char *
 esxUtil_EscapeForXml(const char *string)
 {
@@ -446,4 +450,22 @@ esxUtil_EscapeForXml(const char *string)
     virBufferEscapeString(&buffer, "%s", string);
 
     return virBufferContentAndReset(&buffer);
+}
+
+
+/* esxUtil_EscapeInventoryObject:
+ * @buf: the buffer to append to
+ * @string: the string argument which will be URI-encoded
+ *
+ * URI-encode given @string TWICE and append the result to the @buf. This is
+ * to be used with inventory objects (like 'dcPath' and 'dsName') to work
+ * around a VMware bug in which once round of URI-encoding is not enough.
+ */
+void
+esxUtil_EscapeInventoryObject(virBuffer *buf, const char *string)
+{
+    g_autoptr(GString) escaped = g_string_new(NULL);
+
+    g_string_append_uri_escaped(escaped, string, NULL, false);
+    virBufferURIEncodeString(buf, escaped->str);
 }

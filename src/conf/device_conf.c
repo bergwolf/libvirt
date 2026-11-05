@@ -29,6 +29,15 @@
 
 #define VIR_FROM_THIS VIR_FROM_DEVICE
 
+VIR_ENUM_IMPL(virDeviceHostdevPCIDriverName,
+              VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_LAST,
+              "default",
+              "kvm",
+              "vfio",
+              "xen",
+);
+
+
 VIR_ENUM_IMPL(virDomainDeviceAddress,
               VIR_DOMAIN_DEVICE_ADDRESS_TYPE_LAST,
               "none",
@@ -45,6 +54,67 @@ VIR_ENUM_IMPL(virDomainDeviceAddress,
               "dimm",
               "unassigned",
 );
+
+
+int
+virDeviceHostdevPCIDriverInfoParseXML(xmlNodePtr node,
+                                      virDeviceHostdevPCIDriverInfo *driver)
+{
+    if (virXMLPropEnum(node, "name",
+                       virDeviceHostdevPCIDriverNameTypeFromString,
+                       VIR_XML_PROP_NONZERO,
+                       &driver->name) < 0) {
+        return -1;
+    }
+
+    if (virXMLPropTristateBool(node, "iommufd",
+                               VIR_XML_PROP_NONE,
+                               &driver->iommufd) < 0)
+        return -1;
+
+    driver->model = virXMLPropString(node, "model");
+    return 0;
+}
+
+
+int
+virDeviceHostdevPCIDriverInfoFormat(virBuffer *buf,
+                                    const virDeviceHostdevPCIDriverInfo *driver)
+{
+    g_auto(virBuffer) driverAttrBuf = VIR_BUFFER_INITIALIZER;
+
+    if (driver->name != VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_DEFAULT) {
+        const char *driverName = virDeviceHostdevPCIDriverNameTypeToString(driver->name);
+
+        if (!driverName) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("unexpected pci hostdev driver name %1$d"),
+                           driver->name);
+            return -1;
+        }
+
+        virBufferAsprintf(&driverAttrBuf, " name='%s'", driverName);
+    }
+
+    virBufferEscapeString(&driverAttrBuf, " model='%s'", driver->model);
+
+    if (driver->iommufd == VIR_TRISTATE_BOOL_YES) {
+        virBufferAddLit(&driverAttrBuf, " iommufd='yes'");
+    } else if (driver->iommufd == VIR_TRISTATE_BOOL_NO) {
+        virBufferAddLit(&driverAttrBuf, " iommufd='no'");
+    }
+
+    virXMLFormatElement(buf, "driver", &driverAttrBuf, NULL);
+    return 0;
+}
+
+
+void
+virDeviceHostdevPCIDriverInfoClear(virDeviceHostdevPCIDriverInfo *driver)
+{
+    VIR_FREE(driver->model);
+}
+
 
 static int
 virZPCIDeviceAddressParseXML(xmlNodePtr node,
@@ -78,6 +148,7 @@ virDomainDeviceInfoClear(virDomainDeviceInfo *info)
     info->type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE;
     VIR_FREE(info->romfile);
     VIR_FREE(info->loadparm);
+    g_clear_pointer(&info->acpiNodeset, virBitmapFree);
     info->isolationGroup = 0;
     info->isolationGroupLocked = false;
 }
@@ -98,7 +169,7 @@ virDomainDeviceInfoAddressIsEqual(const virDomainDeviceInfo *a,
     if (a->type != b->type)
         return false;
 
-    switch ((virDomainDeviceAddressType) a->type) {
+    switch (a->type) {
     case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE:
     case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_LAST:
     /* address types below don't have any specific data */
@@ -427,6 +498,16 @@ virDomainDeviceAddressIsValid(virDomainDeviceInfo *info,
 
     case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_USB:
         return true;
+
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_VIRTIO_SERIAL:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_CCID:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_ISA:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DIMM:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_UNASSIGNED:
+    case VIR_DOMAIN_DEVICE_ADDRESS_TYPE_LAST:
+        break;
     }
 
     return false;

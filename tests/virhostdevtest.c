@@ -104,7 +104,7 @@ myCleanup(void)
         virDomainDiskDefFree(disks[i]);
 
     if (mgr) {
-        if (!getenv("LIBVIRT_SKIP_CLEANUP"))
+        if (!g_getenv("LIBVIRT_SKIP_CLEANUP"))
             virFileDeleteTree(mgr->stateDir);
 
         virObjectUnref(mgr->activePCIHostdevs);
@@ -124,7 +124,7 @@ myInit(void)
 
     for (i = 0; i < nhostdevs; i++) {
         virDomainHostdevSubsys *subsys;
-        hostdevs[i] = virDomainHostdevDefNew();
+        hostdevs[i] = virDomainHostdevDefNew(NULL);
         if (!hostdevs[i])
             goto cleanup;
         hostdevs[i]->mode = VIR_DOMAIN_HOSTDEV_MODE_SUBSYS;
@@ -134,7 +134,7 @@ myInit(void)
         subsys->u.pci.addr.bus = 0;
         subsys->u.pci.addr.slot = i + 1;
         subsys->u.pci.addr.function = 0;
-        subsys->u.pci.backend = VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO;
+        subsys->u.pci.driver.name = VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO;
     }
 
     for (i = 0; i < nhostdevs; i++) {
@@ -142,7 +142,7 @@ myInit(void)
         if (!(dev[i] = virPCIDeviceNew(&subsys->u.pci.addr)))
             goto cleanup;
 
-        virPCIDeviceSetStubDriver(dev[i], VIR_PCI_STUB_DRIVER_VFIO);
+        virPCIDeviceSetStubDriverType(dev[i], VIR_PCI_STUB_DRIVER_VFIO);
     }
 
     for (i = 0; i < ndisks; i++) {
@@ -613,7 +613,6 @@ mymain(void)
 }
 
 VIR_TEST_MAIN_PRELOAD(mymain,
-                      VIR_TEST_MOCK("virhostdev"),
                       VIR_TEST_MOCK("virpci"))
 #else
 int

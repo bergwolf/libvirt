@@ -12,6 +12,7 @@ function install_buildenv() {
             augeas-lenses \
             augeas-tools \
             bash-completion \
+            black \
             ca-certificates \
             ccache \
             codespell \
@@ -23,30 +24,24 @@ function install_buildenv() {
             gettext \
             git \
             grep \
-            iproute2 \
-            iptables \
-            kmod \
-            libc-dev-bin \
+            libclang-rt-dev \
+            libnbd-dev \
             libxml2-utils \
             locales \
-            lvm2 \
             make \
             meson \
-            nfs-common \
             ninja-build \
-            numad \
-            open-iscsi \
             perl-base \
             pkgconf \
-            policykit-1 \
             python3 \
             python3-docutils \
+            python3-pytest \
             qemu-utils \
-            scrub \
             sed \
             xsltproc
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen
     dpkg-reconfigure locales
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
     export DEBIAN_FRONTEND=noninteractive
     dpkg --add-architecture arm64
     apt-get update
@@ -63,11 +58,12 @@ function install_buildenv() {
             libcap-ng-dev:arm64 \
             libcurl4-gnutls-dev:arm64 \
             libdevmapper-dev:arm64 \
-            libfuse-dev:arm64 \
+            libfuse3-dev:arm64 \
             libglib2.0-dev:arm64 \
             libglusterfs-dev:arm64 \
             libgnutls28-dev:arm64 \
             libiscsi-dev:arm64 \
+            libjson-c-dev:arm64 \
             libnl-3-dev:arm64 \
             libnl-route-3-dev:arm64 \
             libnuma-dev:arm64 \
@@ -78,14 +74,13 @@ function install_buildenv() {
             libreadline-dev:arm64 \
             libsanlock-dev:arm64 \
             libsasl2-dev:arm64 \
-            libselinux1-dev:arm64 \
-            libssh-gcrypt-dev:arm64 \
+            libselinux-dev:arm64 \
+            libssh-dev:arm64 \
             libssh2-1-dev:arm64 \
             libtirpc-dev:arm64 \
             libudev-dev:arm64 \
             libxen-dev:arm64 \
             libxml2-dev:arm64 \
-            libyajl-dev:arm64 \
             systemtap-sdt-dev:arm64
     mkdir -p /usr/local/share/meson/cross
     printf "[binaries]\n\

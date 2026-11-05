@@ -31,6 +31,7 @@
 #include "qemu_domain.h"
 #include "qemu_migration_cookie.h"
 #include "qemu_migration_params.h"
+#include "qemu_block.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
@@ -282,6 +283,7 @@ qemuMigrationCookieNetworkAlloc(virQEMUDriver *driver G_GNUC_UNUSED,
             case VIR_NETDEV_VPORT_PROFILE_NONE:
             case VIR_NETDEV_VPORT_PROFILE_8021QBG:
             case VIR_NETDEV_VPORT_PROFILE_8021QBH:
+            case VIR_NETDEV_VPORT_PROFILE_MIDONET:
                break;
             case VIR_NETDEV_VPORT_PROFILE_OPENVSWITCH:
                 if (virNetDevOpenvswitchGetMigrateData(&mig->net[i].portdata,
@@ -292,6 +294,7 @@ qemuMigrationCookieNetworkAlloc(virQEMUDriver *driver G_GNUC_UNUSED,
                         return NULL;
                 }
                 break;
+            case VIR_NETDEV_VPORT_PROFILE_LAST:
             default:
                 break;
             }
@@ -475,9 +478,8 @@ qemuMigrationCookieAddNBD(qemuMigrationCookie *mig,
                           virDomainObj *vm)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
-    g_autoptr(GHashTable) stats = virHashNew(g_free);
+    g_autoptr(GHashTable) blockNamedNodeData = NULL;
     size_t i;
-    int rc;
 
     /* It is not a bug if there already is a NBD data */
     qemuMigrationCookieNBDFree(mig->nbd);
@@ -493,21 +495,15 @@ qemuMigrationCookieAddNBD(qemuMigrationCookie *mig,
     mig->nbd->disks = g_new0(struct qemuMigrationCookieNBDDisk, vm->def->ndisks);
     mig->nbd->ndisks = 0;
 
-    if (qemuDomainObjEnterMonitorAsync(vm, vm->job->asyncJob) < 0)
-        return -1;
-
-    rc = qemuMonitorBlockStatsUpdateCapacityBlockdev(priv->mon, stats);
-
-    qemuDomainObjExitMonitor(vm);
-
-    if (rc < 0)
+    if (!(blockNamedNodeData = qemuBlockGetNamedNodeData(vm, vm->job->asyncJob)))
         return -1;
 
     for (i = 0; i < vm->def->ndisks; i++) {
         virDomainDiskDef *disk = vm->def->disks[i];
-        qemuBlockStats *entry;
+        qemuBlockNamedNodeData *entry;
 
-        if (!(entry = virHashLookup(stats, disk->src->nodeformat)))
+        if (!(entry = virHashLookup(blockNamedNodeData,
+                                    qemuBlockStorageSourceGetEffectiveNodename(disk->src))))
             continue;
 
         mig->nbd->disks[mig->nbd->ndisks].target = g_strdup(disk->dst);
@@ -539,12 +535,15 @@ static int
 qemuMigrationCookieAddCPU(qemuMigrationCookie *mig,
                           virDomainObj *vm)
 {
+    qemuDomainObjPrivate *priv = vm->privateData;
+
     if (mig->cpu)
         return 0;
 
     mig->cpu = virCPUDefCopy(vm->def->cpu);
 
-    if (qemuDomainMakeCPUMigratable(mig->cpu) < 0)
+    if (qemuDomainMakeCPUMigratable(vm->def->os.arch, mig->cpu,
+                                    priv->origCPU) < 0)
         return -1;
 
     mig->flags |= QEMU_MIGRATION_COOKIE_CPU;
@@ -946,11 +945,8 @@ qemuMigrationCookieNetworkXMLParse(xmlXPathContextPtr ctxt)
     g_autofree xmlNodePtr *interfaces = NULL;
     VIR_XPATH_NODE_AUTORESTORE(ctxt)
 
-    if ((n = virXPathNodeSet("./network/interface", ctxt, &interfaces)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("missing interface information"));
+    if ((n = virXPathNodeSet("./network/interface", ctxt, &interfaces)) < 0)
         return NULL;
-    }
 
     optr->nnets = n;
     optr->net = g_new0(qemuMigrationCookieNetData, optr->nnets);
@@ -1572,7 +1568,7 @@ qemuMigrationCookieBlockDirtyBitmapsMatchDisks(virDomainDef *def,
             return -1;
         }
 
-        disk->nodename = disk->disk->src->nodeformat;
+        disk->nodename = qemuBlockStorageSourceGetEffectiveNodename(disk->disk->src);
     }
 
     return 0;

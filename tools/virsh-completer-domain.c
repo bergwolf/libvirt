@@ -35,6 +35,7 @@
 #include "virkeynametable_linux.h"
 #include "virkeynametable_osx.h"
 #include "virkeynametable_win32.h"
+#include "conf/domain_conf.h"
 #include "conf/storage_conf.h"
 #include "conf/numa_conf.h"
 
@@ -235,7 +236,7 @@ virshDomainDiskTargetListCompleter(vshControl *ctl,
     if (!targets)
         return NULL;
 
-    return virshCommaStringListComplete(curval, (const char **) targets);
+    return vshCommaStringListComplete(curval, (const char **) targets);
 }
 
 
@@ -245,6 +246,69 @@ virshDomainMigrateDisksCompleter(vshControl *ctl,
                                  unsigned int completeflags G_GNUC_UNUSED)
 {
     return virshDomainDiskTargetListCompleter(ctl, cmd, "migrate-disks");
+}
+
+
+char **
+virshGetThrottleGroupNames(xmlXPathContext *ctxt)
+{
+    g_auto(GStrv) groupNames = NULL;
+    g_autofree xmlNodePtr *groups = NULL;
+    int ngroups;
+    size_t i;
+
+    if ((ngroups = virXPathNodeSet("./throttlegroups/throttlegroup", ctxt, &groups)) < 0)
+        return NULL;
+
+    groupNames = g_new0(char *, ngroups + 1);
+
+    for (i = 0; i < ngroups; i++) {
+        ctxt->node = groups[i];
+
+        if (!(groupNames[i] = virXPathString("string(./group_name)", ctxt)))
+            return NULL;
+    }
+
+    return g_steal_pointer(&groupNames);
+}
+
+
+char **
+virshDomainThrottleGroupCompleter(vshControl *ctl,
+                                  const vshCmd *cmd,
+                                  unsigned int flags)
+{
+    virshControl *priv = ctl->privData;
+    g_autoptr(xmlDoc) xmldoc = NULL;
+    g_autoptr(xmlXPathContext) ctxt = NULL;
+
+    virCheckFlags(0, NULL);
+
+    if (!priv->conn || virConnectIsAlive(priv->conn) <= 0)
+        return NULL;
+
+    if (virshDomainGetXML(ctl, cmd, 0, &xmldoc, &ctxt) < 0)
+        return NULL;
+
+    return virshGetThrottleGroupNames(ctxt);
+}
+
+
+char **
+virshDomainThrottleGroupsCompleter(vshControl *ctl,
+                                   const vshCmd *cmd,
+                                   unsigned int completeflags G_GNUC_UNUSED)
+{
+    const char *curval = NULL;
+    g_auto(GStrv) groups = virshDomainThrottleGroupCompleter(ctl, cmd, 0);
+
+    if (vshCommandOptStringQuiet(ctl, cmd, "throttle-groups", &curval) < 0)
+        return NULL;
+
+    if (!groups)
+        return NULL;
+
+    return vshCommaStringListComplete(curval, (const char **) groups);
 }
 
 
@@ -381,7 +445,7 @@ virshDomainInterfaceStateCompleter(vshControl *ctl,
     if (virshDomainGetXML(ctl, cmd, flags, &xml, &ctxt) < 0)
         return NULL;
 
-    if (vshCommandOptStringReq(ctl, cmd, "interface", &iface) < 0)
+    if (vshCommandOptString(ctl, cmd, "interface", &iface) < 0)
         return NULL;
 
     /* normalize the mac addr */
@@ -466,7 +530,7 @@ virshDomainShutdownModeCompleter(vshControl *ctl,
     if (vshCommandOptStringQuiet(ctl, cmd, "mode", &mode) < 0)
         return NULL;
 
-    return virshCommaStringListComplete(mode, modes);
+    return vshCommaStringListComplete(mode, modes);
 }
 
 
@@ -477,8 +541,8 @@ virshDomainInterfaceAddrSourceCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LAST,
-                             virshDomainInterfaceAddressesSourceTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LAST,
+                           virshDomainInterfaceAddressesSourceTypeToString);
 }
 
 
@@ -489,8 +553,8 @@ virshDomainInterfaceSourceModeCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIRSH_DOMAIN_INTERFACE_SOURCE_MODE_LAST,
-                             virshDomainInterfaceSourceModeTypeToString);
+    return vshEnumComplete(VIRSH_DOMAIN_INTERFACE_SOURCE_MODE_LAST,
+                           virshDomainInterfaceSourceModeTypeToString);
 }
 
 
@@ -501,8 +565,8 @@ virshDomainHostnameSourceCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIRSH_DOMAIN_HOSTNAME_SOURCE_LAST,
-                             virshDomainHostnameSourceTypeToString);
+    return vshEnumComplete(VIRSH_DOMAIN_HOSTNAME_SOURCE_LAST,
+                           virshDomainHostnameSourceTypeToString);
 }
 
 
@@ -519,10 +583,10 @@ virshDomainPerfEnableCompleter(vshControl *ctl,
     if (vshCommandOptStringQuiet(ctl, cmd, "enable", &event) < 0)
         return NULL;
 
-    events = virshEnumComplete(VIR_PERF_EVENT_LAST,
-                               virPerfEventTypeToString);
+    events = vshEnumComplete(VIR_PERF_EVENT_LAST,
+                             virPerfEventTypeToString);
 
-    return virshCommaStringListComplete(event, (const char **)events);
+    return vshCommaStringListComplete(event, (const char **)events);
 }
 
 
@@ -539,10 +603,10 @@ virshDomainPerfDisableCompleter(vshControl *ctl,
     if (vshCommandOptStringQuiet(ctl, cmd, "disable", &event) < 0)
         return NULL;
 
-    events = virshEnumComplete(VIR_PERF_EVENT_LAST,
-                               virPerfEventTypeToString);
+    events = vshEnumComplete(VIR_PERF_EVENT_LAST,
+                             virPerfEventTypeToString);
 
-    return virshCommaStringListComplete(event, (const char **)events);
+    return vshCommaStringListComplete(event, (const char **)events);
 }
 
 
@@ -645,7 +709,7 @@ virshDomainVcpulistCompleter(vshControl *ctl,
     for (id = 0; id < nvcpus; id++)
         vcpulist[id] = g_strdup_printf("%u", id);
 
-    return virshCommaStringListComplete(vcpuid, (const char **)vcpulist);
+    return vshCommaStringListComplete(vcpuid, (const char **)vcpulist);
 }
 
 
@@ -675,7 +739,7 @@ virshDomainCpulistCompleter(vshControl *ctl,
     for (i = 0; i < cpunum; i++)
         cpulist[i] = g_strdup_printf("%zu", i);
 
-    return virshCommaStringListComplete(cpuid, (const char **)cpulist);
+    return vshCommaStringListComplete(cpuid, (const char **)cpulist);
 }
 
 
@@ -731,8 +795,7 @@ virshDomainVcpulistViaAgentCompleter(vshControl *ctl,
         if (!(onlineVcpus = virBitmapParseUnlimited(onlineVcpuStr)))
             goto cleanup;
 
-        if (virBitmapToData(onlineVcpus, &onlineVcpumap, &dummy) < 0)
-            goto cleanup;
+        virBitmapToData(onlineVcpus, &onlineVcpumap, &dummy);
 
         if (enable) {
             offlinableVcpuStr = vshGetTypedParamValue(ctl, &params[2]);
@@ -740,8 +803,7 @@ virshDomainVcpulistViaAgentCompleter(vshControl *ctl,
             if (!(offlinableVcpus = virBitmapParseUnlimited(offlinableVcpuStr)))
                 goto cleanup;
 
-            if (virBitmapToData(offlinableVcpus, &offlinableVcpumap, &dummy) < 0)
-                goto cleanup;
+            virBitmapToData(offlinableVcpus, &offlinableVcpumap, &dummy);
 
             lastcpu = virBitmapLastSetBit(offlinableVcpus);
             cpulist = g_new0(char *, nvcpus - virBitmapCountBits(onlineVcpus) + 1);
@@ -776,7 +838,7 @@ virshDomainVcpulistViaAgentCompleter(vshControl *ctl,
         }
     }
 
-    ret = virshCommaStringListComplete(vcpuid, (const char **)cpulist);
+    ret = vshCommaStringListComplete(vcpuid, (const char **)cpulist);
 
  cleanup:
     virTypedParamsFree(params, nparams);
@@ -828,7 +890,7 @@ virshDomainConsoleCompleter(vshControl *ctl,
             ctxt->node = parallels[i - nserials];
 
         type = virXPathString("string(./@type)", ctxt);
-        if (STRNEQ(type, "pty"))
+        if (STRNEQ_NULLABLE(type, "pty"))
             continue;
 
         tmp[offset++] = virXPathString("string(./alias/@name)", ctxt);
@@ -845,8 +907,8 @@ virshDomainSignalCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_PROCESS_SIGNAL_LAST,
-                             virshDomainProcessSignalTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_PROCESS_SIGNAL_LAST,
+                           virshDomainProcessSignalTypeToString);
 }
 
 
@@ -857,8 +919,8 @@ virshDomainLifecycleCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_LIFECYCLE_LAST,
-                             virshDomainLifecycleTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_LIFECYCLE_LAST,
+                           virshDomainLifecycleTypeToString);
 }
 
 
@@ -869,8 +931,8 @@ virshDomainLifecycleActionCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_LIFECYCLE_ACTION_LAST,
-                             virshDomainLifecycleActionTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_LIFECYCLE_ACTION_LAST,
+                           virshDomainLifecycleActionTypeToString);
 }
 
 
@@ -881,8 +943,8 @@ virshCodesetNameCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_KEYCODE_SET_LAST,
-                             virKeycodeSetTypeToString);
+    return vshEnumComplete(VIR_KEYCODE_SET_LAST,
+                           virKeycodeSetTypeToString);
 }
 
 
@@ -1002,8 +1064,8 @@ virshDomainCoreDumpFormatCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_CORE_DUMP_FORMAT_LAST,
-                             virshDomainCoreDumpFormatTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_CORE_DUMP_FORMAT_LAST,
+                           virshDomainCoreDumpFormatTypeToString);
 }
 
 
@@ -1012,7 +1074,7 @@ virshDomainMigrateCompMethodsCompleter(vshControl *ctl,
                                        const vshCmd *cmd,
                                        unsigned int flags)
 {
-    const char *methods[] = {"xbzrle", "mt",  NULL};
+    const char *methods[] = {"xbzrle", "mt", "zlib", "zstd", NULL};
     const char *method = NULL;
 
     virCheckFlags(0, NULL);
@@ -1020,7 +1082,7 @@ virshDomainMigrateCompMethodsCompleter(vshControl *ctl,
     if (vshCommandOptStringQuiet(ctl, cmd, "comp-methods", &method) < 0)
         return NULL;
 
-    return virshCommaStringListComplete(method, methods);
+    return vshCommaStringListComplete(method, methods);
 }
 
 
@@ -1031,8 +1093,8 @@ virshDomainStorageFileFormatCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_STORAGE_FILE_LAST,
-                             virStorageFileFormatTypeToString);
+    return vshEnumComplete(VIR_STORAGE_FILE_LAST,
+                           virStorageFileFormatTypeToString);
 }
 
 
@@ -1043,8 +1105,8 @@ virshDomainNumatuneModeCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIR_DOMAIN_NUMATUNE_MEM_LAST,
-                             virDomainNumatuneMemModeTypeToString);
+    return vshEnumComplete(VIR_DOMAIN_NUMATUNE_MEM_LAST,
+                           virDomainNumatuneMemModeTypeToString);
 }
 
 
@@ -1055,6 +1117,143 @@ virshDomainDirtyRateCalcModeCompleter(vshControl *ctl G_GNUC_UNUSED,
 {
     virCheckFlags(0, NULL);
 
-    return virshEnumComplete(VIRSH_DOMAIN_DIRTYRATE_CALC_MODE_LAST,
-                             virshDomainDirtyRateCalcModeTypeToString);
+    return vshEnumComplete(VIRSH_DOMAIN_DIRTYRATE_CALC_MODE_LAST,
+                           virshDomainDirtyRateCalcModeTypeToString);
+}
+
+
+char **
+virshDomainNetTypeCompleter(vshControl *ctl G_GNUC_UNUSED,
+                            const vshCmd *cmd G_GNUC_UNUSED,
+                            unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return vshEnumComplete(VIR_DOMAIN_NET_TYPE_LAST,
+                           virDomainNetTypeToString);
+}
+
+
+char **
+virshDomainDisplayTypeCompleter(vshControl *ctl G_GNUC_UNUSED,
+                                const vshCmd *cmd G_GNUC_UNUSED,
+                                unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return vshEnumComplete(VIR_DOMAIN_GRAPHICS_TYPE_LAST,
+                           virDomainGraphicsTypeToString);
+}
+
+
+char **
+virshDomainXMLNativeFormatCompleter(vshControl *ctl,
+                                    const vshCmd *cmd G_GNUC_UNUSED,
+                                    unsigned int flags)
+{
+    virshControl *priv = ctl->privData;
+    const char *hvType = NULL;
+    const char **formats = NULL;
+    static const char *xenFormats[] = {"xen-xl", "xen-xm", NULL};
+    static const char *lxcFormats[] = {"lxc-tools", NULL};
+    static const char *vmxFormats[] = {"vmware-vmx", NULL};
+    static const char *bhyveFormats[] = {"bhyve-argv", NULL};
+    static const char *qemuFormats[] = {"qemu-argv", NULL};
+
+    virCheckFlags(0, NULL);
+
+    if (!priv->conn || virConnectIsAlive(priv->conn) <= 0)
+        return NULL;
+
+    if (!(hvType = virConnectGetType(priv->conn)))
+        return NULL;
+
+    if (STREQ(hvType, "Xen"))
+        formats = xenFormats;
+    else if (STREQ(hvType, "LXC"))
+        formats = lxcFormats;
+    else if (STREQ(hvType, "VMware") || STREQ(hvType, "ESX"))
+        formats = vmxFormats;
+    else if (STREQ(hvType, "BHYVE"))
+        formats = bhyveFormats;
+    else if (STREQ(hvType, "QEMU"))
+        formats = qemuFormats;
+    else
+        return NULL;
+
+    return vshCommaStringListComplete(NULL, formats);
+}
+
+
+char **
+virshDomainDiskBusCompleter(vshControl *ctl G_GNUC_UNUSED,
+                            const vshCmd *cmd G_GNUC_UNUSED,
+                            unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return vshEnumComplete(VIR_DOMAIN_DISK_BUS_LAST,
+                           virDomainDiskBusTypeToString);
+}
+
+
+char **
+virshDomainDiskDeviceTypeCompleter(vshControl *ctl G_GNUC_UNUSED,
+                                   const vshCmd *cmd G_GNUC_UNUSED,
+                                   unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return vshEnumComplete(VIR_DOMAIN_DISK_DEVICE_LAST,
+                           virDomainDiskDeviceTypeToString);
+}
+
+
+char **
+virshDomainDiskCacheCompleter(vshControl *ctl G_GNUC_UNUSED,
+                              const vshCmd *cmd G_GNUC_UNUSED,
+                              unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return vshEnumComplete(VIR_DOMAIN_DISK_CACHE_LAST,
+                           virDomainDiskCacheTypeToString);
+}
+
+
+char **
+virshDomainDiskIoCompleter(vshControl *ctl G_GNUC_UNUSED,
+                           const vshCmd *cmd G_GNUC_UNUSED,
+                           unsigned int flags)
+{
+    virCheckFlags(0, NULL);
+
+    return vshEnumComplete(VIR_DOMAIN_DISK_IO_LAST,
+                           virDomainDiskIoTypeToString);
+}
+
+
+char **
+virshDomainAttachDiskModeCompleter(vshControl *ctl G_GNUC_UNUSED,
+                                   const vshCmd *cmd G_GNUC_UNUSED,
+                                   unsigned int flags)
+{
+    static const char *modes[] = {"readonly", "shareable", NULL};
+
+    virCheckFlags(0, NULL);
+
+    return vshCommaStringListComplete(NULL, modes);
+}
+
+
+char **
+virshDomainAttachDiskSourceTypeCompleter(vshControl *ctl G_GNUC_UNUSED,
+                                         const vshCmd *cmd G_GNUC_UNUSED,
+                                         unsigned int flags)
+{
+    static const char *types[] = {"file", "block", "network", NULL};
+
+    virCheckFlags(0, NULL);
+
+    return vshCommaStringListComplete(NULL, types);
 }

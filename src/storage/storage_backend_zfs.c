@@ -69,8 +69,7 @@ virStorageBackendZFSVolModeNeeded(void)
 
     ret = virCommandRun(cmd, &exit_code);
     if ((ret < 0) || (exit_code != 2)) {
-        VIR_WARN("Command 'zfs get' either failed "
-                 "to run or exited with unexpected status");
+        VIR_WARN("Command 'zfs get' either failed to run or exited with unexpected status");
         return ret;
     }
 
@@ -85,10 +84,24 @@ virStorageBackendZFSCheckPool(virStoragePoolObj *pool G_GNUC_UNUSED,
                               bool *isActive)
 {
     virStoragePoolDef *def = virStoragePoolObjGetDef(pool);
-    g_autofree char *devpath = NULL;
+    g_autoptr(virCommand) cmd = NULL;
+    int exit_code = -1;
 
-    devpath = g_strdup_printf("/dev/zvol/%s", def->source.name);
-    *isActive = virFileIsDir(devpath);
+    /* Check for an existing dataset of type 'filesystem' by the name of our
+     * pool->source.name.  */
+    cmd = virCommandNewArgList(ZFS,
+                               "list", "-H",
+                               "-t", "filesystem",
+                               "-o", "name",
+                               def->source.name,
+                               NULL);
+
+
+    if (virCommandRun(cmd, &exit_code) < 0)
+        return -1;
+
+    /* zfs list exits with 0 if the dataset exists, 1 if it doesn't */
+    *isActive = exit_code == 0;
 
     return 0;
 }
@@ -118,8 +131,10 @@ virStorageBackendZFSParseVol(virStoragePoolObj *pool,
 
     if (vol == NULL)
         volume = virStorageVolDefFindByName(pool, vol_name);
-    else
+    else if (STREQ(vol_name, vol->name))
         volume = vol;
+    else
+        return 0;
 
     if (volume == NULL) {
         volume = g_new0(virStorageVolDef, 1);
@@ -296,8 +311,7 @@ virStorageBackendZFSCreateVol(virStoragePoolObj *pool,
 
     if (vol->target.encryption != NULL) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       "%s", _("storage pool does not support encrypted "
-                               "volumes"));
+                       "%s", _("storage pool does not support encrypted volumes"));
         return -1;
     }
 
@@ -426,6 +440,25 @@ virStorageBackendZFSDeletePool(virStoragePoolObj *pool,
     return virCommandRun(cmd, NULL);
 }
 
+static int
+virStorageBackendZFSResizeVol(virStoragePoolObj *pool,
+                              virStorageVolDef *vol,
+                              unsigned long long capacity,
+                              unsigned int flags)
+{
+    virStoragePoolDef *def = virStoragePoolObjGetDef(pool);
+    g_autoptr(virCommand) resize_cmd = NULL;
+
+    virCheckFlags(0, -1);
+
+    resize_cmd = virCommandNewArgList(ZFS, "set", NULL);
+    virCommandAddArgFormat(resize_cmd, "volsize=%llu", capacity);
+    virCommandAddArgFormat(resize_cmd, "%s/%s",
+                           def->source.name, vol->name);
+
+    return virCommandRun(resize_cmd, NULL);
+}
+
 virStorageBackend virStorageBackendZFS = {
     .type = VIR_STORAGE_POOL_ZFS,
 
@@ -437,6 +470,7 @@ virStorageBackend virStorageBackendZFS = {
     .deletePool = virStorageBackendZFSDeletePool,
     .uploadVol = virStorageBackendVolUploadLocal,
     .downloadVol = virStorageBackendVolDownloadLocal,
+    .resizeVol = virStorageBackendZFSResizeVol,
 };
 
 

@@ -679,8 +679,7 @@ libxlDomainMigrationDstPrepare(virConnectPtr dconn,
 
         if (STRPREFIX(hostname, "localhost")) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("hostname on destination resolved to localhost,"
-                             " but migration requires an FQDN"));
+                           _("hostname on destination resolved to localhost, but migration requires an FQDN"));
             goto endjob;
         }
 
@@ -1142,8 +1141,7 @@ libxlDomainMigrationSrcPerformP2P(libxlDriverPrivate *driver,
     if (useParams <= 0) {
         if (useParams == 0)
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                           _("Destination libvirt does not support migration"
-                             " with extensible parameters"));
+                           _("Destination libvirt does not support migration with extensible parameters"));
         goto cleanup;
     }
 
@@ -1260,9 +1258,8 @@ libxlDomainMigrationDstFinish(virConnectPtr dconn,
     /* Check if domain is alive */
     if (!virDomainObjIsActive(vm)) {
         /* Migration failed if domain is inactive */
-        virReportError(VIR_ERR_OPERATION_FAILED,
-                       "%s", _("Migration failed. Domain is not running "
-                               "on destination host"));
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("Migration failed. Domain is not running on destination host"));
         goto cleanup;
     }
 
@@ -1342,7 +1339,6 @@ libxlDomainMigrationSrcConfirm(libxlDriverPrivate *driver,
     libxlDriverConfig *cfg = libxlDriverConfigGet(driver);
     libxlDomainObjPrivate *priv = vm->privateData;
     virObjectEvent *event = NULL;
-    int ret = -1;
 
     if (cancelled) {
         /* Resume lock process that was paused in MigrationSrcPerform */
@@ -1351,17 +1347,6 @@ libxlDomainMigrationSrcConfirm(libxlDriverPrivate *driver,
                                    vm,
                                    priv->lockState);
         priv->lockProcessRunning = true;
-        if (libxl_domain_resume(cfg->ctx, vm->def->id, 1, 0) == 0) {
-            ret = 0;
-        } else {
-            VIR_DEBUG("Unable to resume domain '%s' after failed migration",
-                      vm->def->name);
-            virDomainObjSetState(vm, VIR_DOMAIN_PAUSED,
-                                 VIR_DOMAIN_PAUSED_MIGRATION);
-            event = virDomainEventLifecycleNewFromObj(vm, VIR_DOMAIN_EVENT_SUSPENDED,
-                                     VIR_DOMAIN_EVENT_SUSPENDED_MIGRATED);
-            ignore_value(virDomainObjSave(vm, driver->xmlopt, cfg->stateDir));
-        }
         goto cleanup;
     }
 
@@ -1380,12 +1365,10 @@ libxlDomainMigrationSrcConfirm(libxlDriverPrivate *driver,
     if (!vm->persistent || (flags & VIR_MIGRATE_UNDEFINE_SOURCE))
         virDomainObjListRemove(driver->domains, vm);
 
-    ret = 0;
-
  cleanup:
     /* EndJob for corresponding BeginJob in begin phase */
     virDomainObjEndJob(vm);
     virObjectEventStateQueue(driver->domainEventState, event);
     virObjectUnref(cfg);
-    return ret;
+    return 0;
 }

@@ -25,8 +25,6 @@
 
 #pragma once
 
-virQEMUCaps *virQEMUCapsNewCopy(virQEMUCaps *qemuCaps);
-
 virQEMUCaps *
 virQEMUCapsNewForBinaryInternal(virArch hostArch,
                                 const char *binary,
@@ -36,7 +34,8 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
                                 const char *hostCPUSignature,
                                 unsigned int microcodeVersion,
                                 const char *kernelVersion,
-                                virCPUData* cpuData);
+                                virCPUData* cpuData,
+                                virBitmap *maskedCaps);
 
 int virQEMUCapsLoadCache(virArch hostArch,
                          virQEMUCaps *qemuCaps,
@@ -82,7 +81,7 @@ virQEMUCapsGetCPUModelX86Data(virQEMUCaps *qemuCaps,
 
 virCPUDef *
 virQEMUCapsProbeHostCPU(virArch hostArch,
-                        virDomainCapsCPUModels *models) G_NO_INLINE;
+                        virDomainCapsCPUModels *models) ATTRIBUTE_MOCKABLE;
 
 void
 virQEMUCapsSetGICCapabilities(virQEMUCaps *qemuCaps,
@@ -102,20 +101,6 @@ virQEMUCapsStripMachineAliases(virQEMUCaps *qemuCaps);
 
 bool
 virQEMUCapsHasMachines(virQEMUCaps *qemuCaps);
-
-void
-virQEMUCapsAddMachine(virQEMUCaps *qemuCaps,
-                      virDomainVirtType virtType,
-                      const char *name,
-                      const char *alias,
-                      const char *defaultCPU,
-                      int maxCpus,
-                      bool hotplugCpus,
-                      bool isDefault,
-                      bool numaMemSupported,
-                      const char *defaultRAMid,
-                      bool deprecated,
-                      virTristateBool acpi);
 
 bool
 virQEMUCapsHaveAccel(virQEMUCaps *qemuCaps);

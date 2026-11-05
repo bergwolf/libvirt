@@ -2,21 +2,30 @@
 
 #include <dirent.h>
 
+#include "configmake.h"
 #include "viralloc.h"
+#include "virfile.h"
 #include "virstring.h"
 #include "virnetdev.h"
 #include "virnetdevtap.h"
 #include "virmock.h"
 #include "internal.h"
+#include "cpu/cpu.h"
+#include "testutilshostcpus.h"
 
 #define VIR_FROM_THIS VIR_FROM_BHYVE
 
 static DIR * (*real_opendir)(const char *name);
+static bool (*real_virFileExists)(const char *path);
 
 static void
 init_syms(void)
 {
-    VIR_MOCK_REAL_INIT(opendir);
+    if (!real_opendir)
+        VIR_MOCK_REAL_INIT(opendir);
+
+    if (!real_virFileExists)
+        VIR_MOCK_REAL_INIT(virFileExists);
 }
 
 #define FAKEFIRMWAREDIR abs_srcdir "/bhyvefirmwaredata/three_firmwares"
@@ -52,7 +61,7 @@ void virMacAddrGenerate(const unsigned char prefix[VIR_MAC_PREFIX_BUFLEN],
     addr->addr[5] = 0;
 }
 
-int virNetDevTapCreateInBridgePort(const char *brname G_GNUC_UNUSED,
+int virNetDevTapCreateInBridgePort(const char *brname,
                                    char **ifname,
                                    const virMacAddr *macaddr G_GNUC_UNUSED,
                                    const unsigned char *vmuuid G_GNUC_UNUSED,
@@ -63,10 +72,14 @@ int virNetDevTapCreateInBridgePort(const char *brname G_GNUC_UNUSED,
                                    const virNetDevVlan *virtVlan G_GNUC_UNUSED,
                                    virTristateBool isolatedPort G_GNUC_UNUSED,
                                    virNetDevCoalesce *coalesce G_GNUC_UNUSED,
-                                   unsigned int mtu G_GNUC_UNUSED,
+                                   unsigned int mtu,
                                    unsigned int *actualMTU G_GNUC_UNUSED,
                                    unsigned int fakeflags G_GNUC_UNUSED)
 {
+    /* Validate MTU passed by the net-mtu-bridge test */
+    if (STREQ(brname, "mtu-br0") && mtu != 9000)
+        return -1;
+
     VIR_FREE(*ifname);
     *ifname = g_strdup("vnet0");
     return 0;
@@ -88,4 +101,21 @@ int bind(int sockfd G_GNUC_UNUSED,
          socklen_t addrlen G_GNUC_UNUSED)
 {
     return 0;
+}
+
+virCPUDef *
+virCPUProbeHost(virArch arch)
+{
+    return testUtilsHostCpusGetDefForArch(arch);
+}
+
+bool
+virFileExists(const char *path)
+{
+    init_syms();
+
+    if (STREQ(path, "fakeubootpath/u-boot.bin"))
+        return true;
+
+    return real_virFileExists(path);
 }

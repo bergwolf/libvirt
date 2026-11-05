@@ -1,7 +1,11 @@
-genprotocol_prog = find_program('genprotocol.pl')
 gendispatch_prog = find_program('gendispatch.pl')
 
-socket_sources = [
+tlsconfig_sources = files(
+  'virnettlsconfig.c',
+  'virnettlscert.c',
+)
+
+socket_sources = tlsconfig_sources + [
   'virnettlscontext.c',
   'virnetsocket.c',
 ]
@@ -44,6 +48,8 @@ endif
 rpc_gen_headers = []
 rpc_gen_sources = []
 
+rpc_gen_headers += dtrace_gen_headers
+
 foreach name : [ 'virnet', 'virkeepalive' ]
   protocol_file = files('@0@protocol.x'.format(name))
   header_file = '@0@protocol.h'.format(name)
@@ -53,8 +59,10 @@ foreach name : [ 'virnet', 'virkeepalive' ]
     header_file,
     input: protocol_file,
     output: header_file,
+    depend_files: rpcgen_src,
     command: [
-      genprotocol_prog, rpcgen_prog, '-h', '@INPUT@', '@OUTPUT@',
+      rpcgen_prog,
+      '--mode=header', '@INPUT@', '@OUTPUT@',
     ],
   )
 
@@ -62,8 +70,10 @@ foreach name : [ 'virnet', 'virkeepalive' ]
     source_file,
     input: protocol_file,
     output: source_file,
+    depend_files: rpcgen_src,
     command: [
-      genprotocol_prog, rpcgen_prog, '-c', '@INPUT@', '@OUTPUT@',
+      rpcgen_prog,
+      '--mode=source', '--header=' + header_file, '@INPUT@', '@OUTPUT@',
     ],
   )
 

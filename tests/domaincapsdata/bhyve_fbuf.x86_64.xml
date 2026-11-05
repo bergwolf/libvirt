@@ -43,7 +43,13 @@
         <value>gop</value>
       </enum>
     </video>
-    <hostdev supported='no'/>
+    <hostdev supported='yes'/>
+    <console supported='yes'>
+      <enum name='type'>
+        <value>tcp</value>
+        <value>nmdm</value>
+      </enum>
+    </console>
   </devices>
   <features>
     <gic supported='no'/>

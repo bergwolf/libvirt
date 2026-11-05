@@ -59,7 +59,7 @@ int virNetDevIPAddrAdd(const char *ifname,
                        virSocketAddr *addr,
                        virSocketAddr *peer,
                        unsigned int prefix)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT G_NO_INLINE;
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT ATTRIBUTE_MOCKABLE;
 int virNetDevIPRouteAdd(const char *ifname,
                         virSocketAddr *addr,
                         unsigned int prefix,
@@ -79,7 +79,7 @@ void virNetDevIPAddrFree(virNetDevIPAddr *ip);
 /* virNetDevIPRoute object */
 void virNetDevIPRouteFree(virNetDevIPRoute *def);
 virSocketAddr *virNetDevIPRouteGetAddress(virNetDevIPRoute *def);
-int virNetDevIPRouteGetPrefix(virNetDevIPRoute *def);
+int virNetDevIPRouteGetPrefix(const virNetDevIPRoute *def);
 unsigned int virNetDevIPRouteGetMetric(virNetDevIPRoute *def);
 virSocketAddr *virNetDevIPRouteGetGateway(virNetDevIPRoute *def);
 

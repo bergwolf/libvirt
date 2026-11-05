@@ -36,6 +36,7 @@ struct _virCHDomainObjPrivate {
     virBitmap *autoCpuset;
     virBitmap *autoNodeset;
     virCgroup *cgroup;
+    char *pidfile;
 };
 
 #define CH_DOMAIN_PRIVATE(vm) \
@@ -61,7 +62,7 @@ void
 virCHDomainRemoveInactive(virCHDriver *driver,
                           virDomainObj *vm);
 
-int
+void
 virCHDomainRefreshThreadInfo(virDomainObj *vm);
 
 pid_t
@@ -75,3 +76,6 @@ virCHDomainGetMachineName(virDomainObj *vm);
 
 virDomainObj *
 virCHDomainObjFromDomain(virDomainPtr domain);
+
+int
+virCHDomainValidateActualNetDef(virDomainNetDef *net);

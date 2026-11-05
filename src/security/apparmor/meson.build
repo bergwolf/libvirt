@@ -1,9 +1,12 @@
 apparmor_gen_profiles = [
   'usr.lib.libvirt.virt-aa-helper',
-  'usr.sbin.libvirtd',
   'usr.sbin.virtqemud',
   'usr.sbin.virtxend',
 ]
+
+if conf.has('WITH_MONOLITHIC_LIBVIRTD')
+  apparmor_gen_profiles += ['usr.sbin.libvirtd']
+endif
 
 apparmor_gen_profiles_conf = configuration_data({
   'sysconfdir': sysconfdir,
@@ -32,10 +35,4 @@ install_data(
 install_data(
   [ 'TEMPLATE.qemu', 'TEMPLATE.lxc' ],
   install_dir: apparmor_dir / 'libvirt',
-)
-
-install_data(
-  'usr.lib.libvirt.virt-aa-helper.local',
-  install_dir: apparmor_dir / 'local',
-  rename: 'usr.lib.libvirt.virt-aa-helper',
 )

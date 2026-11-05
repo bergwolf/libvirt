@@ -26,7 +26,7 @@
 
 #define VIR_FROM_THIS VIR_FROM_RPC
 
-#if !defined(WIN32) && defined(WITH_YAJL)
+#if !defined(WIN32) && defined(WITH_JSON)
 struct testClientPriv {
     int magic;
 };
@@ -127,10 +127,8 @@ testCreateServer(const char *server_name, const char *host, int family)
                                            5)))
         goto error;
 
-    if (virNetServerAddService(srv, svc1) < 0)
-        goto error;
-    if (virNetServerAddService(srv, svc2) < 0)
-        goto error;
+    virNetServerAddService(srv, svc1);
+    virNetServerAddService(srv, svc2);
 
     if (virNetSocketNewConnectSockFD(fdclient[0], &sk1) < 0)
         goto error;
@@ -379,7 +377,7 @@ mymain(void)
      * the generated JSON, and replace the file descriptor
      * numbers with 100, 101, 102, 103.
      */
-    if (getenv("VIR_GENERATE_JSON")) {
+    if (g_getenv("VIR_GENERATE_JSON")) {
         char *json = testGenerateJSON(server_names[0]);
         if (!json)
             return EXIT_FAILURE;

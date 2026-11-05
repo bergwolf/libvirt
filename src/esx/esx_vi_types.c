@@ -1444,8 +1444,7 @@ esxVI_DateTime_Deserialize(xmlNodePtr node, esxVI_DateTime **dateTime)
 
     if (!(*dateTime)->value) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("XML node doesn't contain text, expecting an "
-                         "xsd:dateTime value"));
+                       _("XML node doesn't contain text, expecting an xsd:dateTime value"));
         goto failure;
     }
 
@@ -1513,11 +1512,12 @@ esxVI_DateTime_ConvertToCalendarTime(esxVI_DateTime *dateTime,
         }
 
         /* parse timezone offset if present. if missing assume UTC */
-        if (*tmp == '+' || *tmp == '-') {
-            tz = g_time_zone_new(tmp);
-        } else if (STREQ(tmp, "Z")) {
+        if (STREQ(tmp, "Z"))
             tz = g_time_zone_new_utc();
-        } else {
+
+        if (*tmp == '+' || *tmp == '-')
+            tz = g_time_zone_new_identifier(tmp);
+        if (!tz) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("xsd:dateTime value '%1$s' has unexpected format"),
                            dateTime->value);

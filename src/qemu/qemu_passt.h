@@ -27,6 +27,11 @@ qemuPasstAddNetProps(virDomainObj *vm,
                      virDomainNetDef *net,
                      virJSONValue **netprops);
 
+virCommand *qemuPasstBuildCommand(char **socketName,
+                                  char **pidfileRet,
+                                  virDomainObj *vm,
+                                  virDomainNetDef *net);
+
 int qemuPasstStart(virDomainObj *vm,
                    virDomainNetDef *net);
 
@@ -36,3 +41,9 @@ void qemuPasstStop(virDomainObj *vm,
 int qemuPasstSetupCgroup(virDomainObj *vm,
                          virDomainNetDef *net,
                          virCgroup *cgroup);
+
+void qemuPasstPrepareVhostUser(virDomainObj *vm,
+                               virDomainNetDef *net);
+
+char *qemuPasstCreateSocketPath(virDomainObj *vm,
+                                virDomainNetDef *net);

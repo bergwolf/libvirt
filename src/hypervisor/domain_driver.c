@@ -29,8 +29,19 @@
 #include "viraccessapicheck.h"
 #include "datatypes.h"
 #include "driver.h"
+#include "virlog.h"
+#include "virsystemd.h"
 
 #define VIR_FROM_THIS VIR_FROM_DOMAIN
+
+VIR_LOG_INIT("hypervisor.domain_driver");
+
+VIR_ENUM_IMPL(virDomainDriverAutoShutdownScope,
+              VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_LAST,
+              "none",
+              "persistent",
+              "transient",
+              "all");
 
 char *
 virDomainDriverGenerateRootHash(const char *drivername,
@@ -462,6 +473,7 @@ virDomainDriverNodeDeviceReAttach(virNodeDevicePtr dev,
 int
 virDomainDriverNodeDeviceDetachFlags(virNodeDevicePtr dev,
                                      virHostdevManager *hostdevMgr,
+                                     virPCIStubDriver driverType,
                                      const char *driverName)
 {
     g_autoptr(virPCIDevice) pci = NULL;
@@ -471,8 +483,10 @@ virDomainDriverNodeDeviceDetachFlags(virNodeDevicePtr dev,
     g_autoptr(virConnect) nodeconn = NULL;
     g_autoptr(virNodeDevice) nodedev = NULL;
 
-    if (!driverName)
+    if (driverType == VIR_PCI_STUB_DRIVER_NONE) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("driver type not set"));
         return -1;
+    }
 
     if (!(nodeconn = virGetConnectNodeDev()))
         return -1;
@@ -504,10 +518,8 @@ virDomainDriverNodeDeviceDetachFlags(virNodeDevicePtr dev,
     if (!pci)
         return -1;
 
-    if (STREQ(driverName, "vfio"))
-        virPCIDeviceSetStubDriver(pci, VIR_PCI_STUB_DRIVER_VFIO);
-    else if (STREQ(driverName, "xen"))
-        virPCIDeviceSetStubDriver(pci, VIR_PCI_STUB_DRIVER_XEN);
+    virPCIDeviceSetStubDriverType(pci, driverType);
+    virPCIDeviceSetStubDriverName(pci, driverName);
 
     return virHostdevPCINodeDeviceDetach(hostdevMgr, pci);
 }
@@ -533,6 +545,23 @@ virDomainDriverAddIOThreadCheck(virDomainDef *def,
     return 0;
 }
 
+
+static bool
+virDomainIothreadMappingDefHasIothread(GSList *iothreads,
+                                       unsigned int iothread_id)
+{
+    GSList *n;
+
+    for (n = iothreads; n; n = n->next) {
+        virDomainIothreadMappingDef *iothread = n->data;
+
+        if (iothread->id == iothread_id)
+            return true;
+    }
+
+    return false;
+}
+
 /**
  * virDomainDriverDelIOThreadCheck:
  * @def: domain definition
@@ -554,7 +583,8 @@ virDomainDriverDelIOThreadCheck(virDomainDef *def,
     }
 
     for (i = 0; i < def->ndisks; i++) {
-        if (def->disks[i]->iothread == iothread_id) {
+        if (virDomainIothreadMappingDefHasIothread(def->disks[i]->iothreads, iothread_id) ||
+            def->disks[i]->iothread == iothread_id) {
             virReportError(VIR_ERR_INVALID_ARG,
                            _("cannot remove IOThread %1$u since it is being used by disk '%2$s'"),
                            iothread_id, def->disks[i]->dst);
@@ -563,7 +593,8 @@ virDomainDriverDelIOThreadCheck(virDomainDef *def,
     }
 
     for (i = 0; i < def->ncontrollers; i++) {
-        if (def->controllers[i]->iothread == iothread_id) {
+        if (virDomainIothreadMappingDefHasIothread(def->controllers[i]->iothreads, iothread_id) ||
+            def->controllers[i]->iothread == iothread_id) {
             virReportError(VIR_ERR_INVALID_ARG,
                            _("cannot remove IOThread '%1$u' since it is being used by controller"),
                            iothread_id);
@@ -621,9 +652,7 @@ virDomainDriverGetIOThreadsConfig(virDomainDef *targetDef,
                 cpumask = bitmap;
             }
         }
-        if (virBitmapToData(cpumask, &info_ret[i]->cpumap,
-                            &info_ret[i]->cpumaplen) < 0)
-            goto cleanup;
+        virBitmapToData(cpumask, &info_ret[i]->cpumap, &info_ret[i]->cpumaplen);
     }
 
     *info = g_steal_pointer(&info_ret);
@@ -637,4 +666,364 @@ virDomainDriverGetIOThreadsConfig(virDomainDef *targetDef,
     }
 
     return ret;
+}
+
+typedef struct _virDomainDriverAutoStartState {
+    virDomainDriverAutoStartConfig *cfg;
+    bool first;
+} virDomainDriverAutoStartState;
+
+static int
+virDomainDriverAutoStartOne(virDomainObj *vm,
+                            void *opaque)
+{
+    virDomainDriverAutoStartState *state = opaque;
+
+    virObjectLock(vm);
+    virObjectRef(vm);
+
+    VIR_DEBUG("Autostart %s: autostart=%d autostartOnce=%d autostartOnceLink=%s",
+              vm->def->name, vm->autostart, vm->autostartOnce,
+              NULLSTR(vm->autostartOnceLink));
+
+    if ((vm->autostart || vm->autostartOnce) &&
+        !virDomainObjIsActive(vm)) {
+        virResetLastError();
+        if (state->cfg->delayMS) {
+            if (!state->first) {
+                g_usleep(state->cfg->delayMS * 1000ull);
+            } else {
+                state->first = false;
+            }
+        }
+
+        state->cfg->callback(vm, state->cfg->opaque);
+        vm->autostartOnce = 0;
+    }
+
+    if (vm->autostartOnceLink) {
+        unlink(vm->autostartOnceLink);
+        g_clear_pointer(&vm->autostartOnceLink, g_free);
+    }
+
+    virDomainObjEndAPI(&vm);
+    virResetLastError();
+
+    return 0;
+}
+
+void
+virDomainDriverAutoStart(virDomainObjList *domains,
+                         virDomainDriverAutoStartConfig *cfg)
+{
+    virDomainDriverAutoStartState state = { .cfg = cfg, .first = true };
+    bool autostart;
+    VIR_DEBUG("Run autostart stateDir=%s", cfg->stateDir);
+    if (virDriverShouldAutostart(cfg->stateDir, &autostart) < 0 ||
+        !autostart) {
+        VIR_DEBUG("Autostart already processed");
+        return;
+    }
+
+    virDomainObjListForEach(domains, false, virDomainDriverAutoStartOne, &state);
+}
+
+
+bool
+virDomainDriverAutoShutdownActive(virDomainDriverAutoShutdownConfig *cfg)
+{
+    return cfg->trySave != VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE ||
+        cfg->tryShutdown != VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE ||
+        cfg->poweroff != VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE;
+}
+
+
+enum {
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SAVE = 1 << 1,
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SHUTDOWN = 1 << 2,
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_POWEROFF = 1 << 3,
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_RESTORE = 1 << 4,
+} virDomainDriverAutoShutdownModeFlag;
+
+
+static void
+virDomainDriverAutoShutdownDoSave(virDomainPtr *domains,
+                                  unsigned int *modes,
+                                  size_t numDomains,
+                                  virDomainDriverAutoShutdownConfig *cfg)
+{
+    g_autofree unsigned int *flags = g_new0(unsigned int, numDomains);
+    bool hasSave = false;
+    size_t i;
+
+    for (i = 0; i < numDomains; i++) {
+        int state;
+
+        if (!(modes[i] & VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SAVE))
+            continue;
+
+        hasSave = true;
+
+        virSystemdNotifyStatus("Suspending '%s' (%zu of %zu)",
+                               virDomainGetName(domains[i]), i + 1, numDomains);
+        VIR_INFO("Suspending '%s'", virDomainGetName(domains[i]));
+
+        /*
+         * Pause all VMs to make them stop dirtying pages,
+         * so save is quicker. We remember if any VMs were
+         * paused so we can restore that on resume.
+         */
+        flags[i] = VIR_DOMAIN_SAVE_RUNNING;
+        if (virDomainGetState(domains[i], &state, NULL, 0) == 0) {
+            if (state == VIR_DOMAIN_PAUSED)
+                flags[i] = VIR_DOMAIN_SAVE_PAUSED;
+        }
+        if (cfg->saveBypassCache)
+            flags[i] |= VIR_DOMAIN_SAVE_BYPASS_CACHE;
+
+        if (flags[i] & VIR_DOMAIN_SAVE_RUNNING)
+            virDomainSuspend(domains[i]);
+    }
+
+    if (!hasSave)
+        return;
+
+    for (i = 0; i < numDomains; i++) {
+        if (!(modes[i] & VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SAVE))
+            continue;
+
+        virSystemdNotifyStatus("Saving '%s' (%zu of %zu)",
+                               virDomainGetName(domains[i]), i + 1, numDomains);
+        VIR_INFO("Saving '%s'", virDomainGetName(domains[i]));
+
+        if (virDomainManagedSave(domains[i], flags[i]) < 0) {
+            VIR_WARN("auto-shutdown: unable to perform managed save of '%s': %s",
+                     domains[i]->name,
+                     virGetLastErrorMessage());
+            if (flags[i] & VIR_DOMAIN_SAVE_RUNNING)
+                virDomainResume(domains[i]);
+            continue;
+        }
+
+        modes[i] = 0;
+    }
+}
+
+
+static void
+virDomainDriverAutoShutdownDoShutdown(virDomainPtr *domains,
+                                      unsigned int *modes,
+                                      size_t numDomains,
+                                      virDomainDriverAutoShutdownConfig *cfg)
+{
+    GTimer *timer = NULL;
+    bool hasShutdown = false;
+    size_t i;
+
+    for (i = 0; i < numDomains; i++) {
+        if (!(modes[i] & VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SHUTDOWN))
+            continue;
+
+        hasShutdown = true;
+
+        virSystemdNotifyStatus("Shutting down '%s' (%zu of %zu)",
+                               virDomainGetName(domains[i]), i + 1, numDomains);
+        VIR_INFO("Shutting down '%s'", virDomainGetName(domains[i]));
+
+        if (virDomainShutdown(domains[i]) < 0) {
+            VIR_WARN("auto-shutdown: unable to request graceful shutdown of '%s': %s",
+                     domains[i]->name,
+                     virGetLastErrorMessage());
+            break;
+        }
+    }
+
+    if (!hasShutdown)
+        return;
+
+    timer = g_timer_new();
+    virSystemdNotifyStatus("Waiting %u secs for VM shutdown completion",
+                           cfg->waitShutdownSecs);
+    VIR_INFO("Waiting %u secs for VM shutdown completion", cfg->waitShutdownSecs);
+
+    while (1) {
+        bool anyRunning = false;
+        for (i = 0; i < numDomains; i++) {
+            if (!(modes[i] & VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SHUTDOWN))
+                continue;
+
+            if (virDomainIsActive(domains[i]) == 1) {
+                anyRunning = true;
+            } else {
+                modes[i] = 0;
+            }
+        }
+
+        if (!anyRunning)
+            break;
+        if (g_timer_elapsed(timer, NULL) > cfg->waitShutdownSecs)
+            break;
+        g_usleep(1000*500);
+    }
+    g_timer_destroy(timer);
+}
+
+
+static void
+virDomainDriverAutoShutdownDoPoweroff(virDomainPtr *domains,
+                                      unsigned int *modes,
+                                      size_t numDomains)
+{
+    size_t i;
+
+    for (i = 0; i < numDomains; i++) {
+        if (!(modes[i] & VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_POWEROFF))
+            continue;
+
+        virSystemdNotifyStatus("Destroying '%s' (%zu of %zu)",
+                               virDomainGetName(domains[i]), i + 1, numDomains);
+        VIR_INFO("Destroying '%s'", virDomainGetName(domains[i]));
+        /*
+         * NB might fail if we gave up on waiting for
+         * virDomainShutdown, but it then completed anyway,
+         * hence we're not checking for failure
+         */
+        virDomainDestroy(domains[i]);
+
+        modes[i] = 0;
+    }
+}
+
+static unsigned int
+virDomainDriverAutoShutdownGetMode(virDomainPtr domain,
+                                   virDomainDriverAutoShutdownConfig *cfg)
+{
+    unsigned int mode = 0;
+
+    if (virDomainIsPersistent(domain) != 0) {
+        if (cfg->trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+            cfg->trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_PERSISTENT)
+            mode |= VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SAVE;
+
+        if (cfg->tryShutdown == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+            cfg->tryShutdown == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_PERSISTENT)
+            mode |= VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SHUTDOWN;
+
+        if (cfg->poweroff == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+            cfg->poweroff == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_PERSISTENT)
+            mode |= VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_POWEROFF;
+
+        /* Don't restore VMs which weren't selected for auto-shutdown */
+        if (mode != 0 && cfg->autoRestore)
+            mode |= VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_RESTORE;
+    } else {
+        if (cfg->tryShutdown == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+            cfg->tryShutdown == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_TRANSIENT)
+            mode |= VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_SHUTDOWN;
+
+        if (cfg->poweroff == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+            cfg->poweroff == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_TRANSIENT)
+            mode |= VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_POWEROFF;
+
+        if (cfg->autoRestore)
+            VIR_DEBUG("Cannot auto-restore transient VM '%s'",
+                      virDomainGetName(domain));
+    }
+
+    return mode;
+}
+
+
+void
+virDomainDriverAutoShutdown(virDomainDriverAutoShutdownConfig *cfg)
+{
+    g_autoptr(virConnect) conn = NULL;
+    int numDomains = 0;
+    size_t i;
+    virDomainPtr *domains = NULL;
+    g_autofree unsigned int *modes = NULL;
+
+    VIR_DEBUG("Run autoshutdown uri=%s trySave=%s tryShutdown=%s poweroff=%s waitShutdownSecs=%u saveBypassCache=%d autoRestore=%d",
+              cfg->uri,
+              virDomainDriverAutoShutdownScopeTypeToString(cfg->trySave),
+              virDomainDriverAutoShutdownScopeTypeToString(cfg->tryShutdown),
+              virDomainDriverAutoShutdownScopeTypeToString(cfg->poweroff),
+              cfg->waitShutdownSecs, cfg->saveBypassCache, cfg->autoRestore);
+
+    /*
+     * Ideally guests will shutdown in a few seconds, but it would
+     * not be unsual for it to take a while longer, especially under
+     * load, or if the guest OS has inhibitors slowing down shutdown.
+     *
+     * If we wait too long, then guests which ignore the shutdown
+     * request will significantly delay host shutdown.
+     *
+     * Pick 30 seconds as a moderately safe default, assuming that
+     * most guests are well behaved.
+     */
+    if (cfg->waitShutdownSecs <= 0)
+        cfg->waitShutdownSecs = 30;
+
+    /* We expect the hypervisor driver to enforce this when loading
+     * their config file, but in case some bad setting gets through,
+     * disabling saving of transient VMs since it is a guaranteed
+     * error scenario...
+     */
+    if (cfg->trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+        cfg->trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_TRANSIENT) {
+        VIR_WARN("auto-shutdown: managed save not supported for transient VMs");
+        cfg->trySave = (cfg->trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ?
+                        VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_PERSISTENT :
+                        VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE);
+    }
+
+    /* Short-circuit if all actions are disabled */
+    if (!virDomainDriverAutoShutdownActive(cfg))
+        return;
+
+    if (!(conn = virConnectOpen(cfg->uri)))
+        return;
+
+    if ((numDomains = virConnectListAllDomains(conn,
+                                               &domains,
+                                               VIR_CONNECT_LIST_DOMAINS_ACTIVE)) < 0)
+        return;
+
+    VIR_DEBUG("Auto shutdown with %d running domains", numDomains);
+
+    modes = g_new0(unsigned int, numDomains);
+
+    for (i = 0; i < numDomains; i++) {
+        modes[i] = virDomainDriverAutoShutdownGetMode(domains[i], cfg);
+
+        if (modes[i] == 0) {
+            /* VM wasn't selected for any of the shutdown modes. There's not
+             * much we can do about that as the host is powering off, logging
+             * at least lets admins know */
+            VIR_WARN("auto-shutdown: domain '%s' not successfully shut off by any action",
+                     domains[i]->name);
+        }
+
+        if (modes[i] & VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_MODE_RESTORE) {
+            VIR_DEBUG("Mark '%s' for autostart on next boot",
+                      virDomainGetName(domains[i]));
+            if (virDomainSetAutostartOnce(domains[i], 1) < 0) {
+                VIR_WARN("Unable to mark domain '%s' for auto restore: %s",
+                         virDomainGetName(domains[i]),
+                         virGetLastErrorMessage());
+            }
+        }
+    }
+
+    virDomainDriverAutoShutdownDoSave(domains, modes, numDomains, cfg);
+    virDomainDriverAutoShutdownDoShutdown(domains, modes, numDomains, cfg);
+    virDomainDriverAutoShutdownDoPoweroff(domains, modes, numDomains);
+
+    virSystemdNotifyStatus("Processed %d domains", numDomains);
+    VIR_INFO("Processed %d domains", numDomains);
+
+    for (i = 0; i < numDomains; i++)
+        virObjectUnref(domains[i]);
+
+    VIR_FREE(domains);
 }

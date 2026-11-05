@@ -158,7 +158,9 @@ virConnectAuthCallbackDefault(virConnectCredentialPtr cred,
             if (fflush(stdout) != 0)
                 return -1;
 
-            bufptr = virGetPassword();
+            if (!(bufptr = virGetPassword()))
+                return -1;
+
             if (STREQ(bufptr, ""))
                 VIR_FREE(bufptr);
             break;
@@ -168,7 +170,7 @@ virConnectAuthCallbackDefault(virConnectCredentialPtr cred,
         }
 
         if (cred[i].type != VIR_CRED_EXTERNAL) {
-            cred[i].result = bufptr ? bufptr : g_strdup(cred[i].defresult ? cred[i].defresult : "");
+            cred[i].result = bufptr ? bufptr : g_strdup(NULLSTR_EMPTY(cred[i].defresult));
             cred[i].resultlen = strlen(cred[i].result);
         }
     }
@@ -214,6 +216,14 @@ virGlobalInit(void)
     if (virErrorInitialize() < 0)
         goto error;
 
+    /* Make glib initialize its own global state. See more:
+     *
+     *   https://gitlab.gnome.org/GNOME/glib/-/issues/3034
+     *
+     * TODO: Remove ASAP.
+     */
+    g_ascii_strtoull("0", NULL, 0);
+
     virFileActivateDirOverrideForLib();
 
     if (getuid() != geteuid() ||
@@ -222,6 +232,10 @@ virGlobalInit(void)
                        _("libvirt.so is not safe to use from setuid/setgid programs"));
         goto error;
     }
+
+    /* Do this upfront rather than every time a child is spawned. */
+    if (virCloseRangeInit() < 0)
+        goto error;
 
     if (virLogSetFromEnv() < 0)
         goto error;
@@ -676,7 +690,13 @@ virStateInitialize(bool privileged,
 /**
  * virStateShutdownPrepare:
  *
- * Run each virtualization driver's shutdown prepare method.
+ * Tell each driver to prepare for shutdown of the daemon. This should
+ * trigger any actions required to stop processing background work.
+ *
+ * This method is called directly from the main event loop thread, so
+ * the event loop will not execute while this method is running. After
+ * this method returns, the event loop will continue running until
+ * the virStateShutdownWait method completes.
  *
  * Returns 0 if all succeed, -1 upon any failure.
  */
@@ -697,7 +717,12 @@ virStateShutdownPrepare(void)
 /**
  * virStateShutdownWait:
  *
- * Run each virtualization driver's shutdown wait method.
+ * Tell each driver to finalize any work required to enable
+ * graceful shutdown of the daemon. This method is invoked
+ * from a background thread, and when it completes, the event
+ * loop will terminate. As such drivers can register callbacks
+ * that will prevent the event loop terminating until actions
+ * initiated by virStateShutdownPrepare are complete.
  *
  * Returns 0 if all succeed, -1 upon any failure.
  */
@@ -718,7 +743,12 @@ virStateShutdownWait(void)
 /**
  * virStateCleanup:
  *
- * Run each virtualization driver's cleanup method.
+ * Tell each driver to release all resources it holds in
+ * order to fully shutdown the daemon. When this is called
+ * the event loop will no longer be running. Thus any
+ * cleanup that depends on execution of the event loop
+ * must have been triggered by the virStateShutdownPrepare
+ * method.
  *
  * Returns 0 if all succeed, -1 upon any failure.
  */
@@ -740,7 +770,8 @@ virStateCleanup(void)
 /**
  * virStateReload:
  *
- * Run each virtualization driver's reload method.
+ * Tell each driver to reload their global configuration
+ * file(s).
  *
  * Returns 0 if all succeed, -1 upon any failure.
  */
@@ -762,7 +793,24 @@ virStateReload(void)
 /**
  * virStateStop:
  *
- * Run each virtualization driver's "stop" method.
+ * Tell each driver to prepare for system/session stop.
+ *
+ * In an unprivileged daemon, this indicates that the
+ * current user's primary login session is about to
+ * be terminated.
+ *
+ * In a privileged daemon, this indicates that the host
+ * OS is about to shutdown.
+ *
+ * This is a signal that the driver should stop and/or
+ * preserve any resources affected by the system/session
+ * stop.
+ *
+ * On host OS stop there is a very short wait for the
+ * stop action to complete. For any prolonged tasks
+ * the driver must acquire inhibitor locks, or send
+ * a request to systemd to extend the shutdown wait
+ * timeout.
  *
  * Returns 0 if successful, -1 on failure
  */
@@ -833,7 +881,7 @@ static int
 virConnectGetDefaultURI(virConf *conf,
                         char **name)
 {
-    const char *defname = getenv("LIBVIRT_DEFAULT_URI");
+    const char *defname = g_getenv("LIBVIRT_DEFAULT_URI");
     if (defname && *defname) {
         VIR_DEBUG("Using LIBVIRT_DEFAULT_URI '%s'", defname);
         *name = g_strdup(defname);

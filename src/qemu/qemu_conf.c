@@ -26,12 +26,17 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#ifdef WITH_SYS_MMAN_H
+# include <sys/mman.h>
+#endif
+
 #include "virerror.h"
 #include "qemu_conf.h"
 #include "qemu_capabilities.h"
 #include "qemu_domain.h"
 #include "qemu_firmware.h"
 #include "qemu_namespace.h"
+#include "qemu_saveimage.h"
 #include "qemu_security.h"
 #include "viruuid.h"
 #include "virconf.h"
@@ -60,11 +65,17 @@ VIR_LOG_INIT("qemu.qemu_conf");
 #define QEMU_REMOTE_PORT_MIN 5900
 #define QEMU_REMOTE_PORT_MAX 65535
 
+#define QEMU_RDP_PORT_MIN 3389
+#define QEMU_RDP_PORT_MAX 65535
+
 #define QEMU_WEBSOCKET_PORT_MIN 5700
 #define QEMU_WEBSOCKET_PORT_MAX 65535
 
 #define QEMU_MIGRATION_PORT_MIN 49152
 #define QEMU_MIGRATION_PORT_MAX 49215
+
+#define QEMU_BACKUP_PORT_MIN 10809
+#define QEMU_BACKUP_PORT_MAX 10872
 
 VIR_ENUM_IMPL(virQEMUSchedCore,
               QEMU_SCHED_CORE_LAST,
@@ -73,6 +84,11 @@ VIR_ENUM_IMPL(virQEMUSchedCore,
               "emulator",
               "full");
 
+VIR_ENUM_IMPL(virQEMUDeprecatedFeatures,
+              QEMU_DEPRECATED_FEATURES_LAST,
+              "off",
+              "on",
+              "none");
 
 static virClass *virQEMUDriverConfigClass;
 static void virQEMUDriverConfigDispose(void *obj);
@@ -99,6 +115,8 @@ VIR_ONCE_GLOBAL_INIT(virQEMUConfig);
 
 #define QEMU_BRIDGE_HELPER "qemu-bridge-helper"
 #define QEMU_PR_HELPER "qemu-pr-helper"
+#define QEMU_RDP "qemu-rdp"
+#define QEMU_VNC "qemu-vnc"
 #define QEMU_DBUS_DAEMON "dbus-daemon"
 
 
@@ -143,6 +161,7 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
         cfg->configBaseDir = g_strdup_printf("%s/etc", root);
         cfg->stateDir = g_strdup_printf("%s/run/qemu", root);
         cfg->swtpmStateDir = g_strdup_printf("%s/run/swtpm", root);
+        cfg->channelTargetDir = g_strdup_printf("%s/channel", cfg->stateDir);
         cfg->cacheDir = g_strdup_printf("%s/cache/qemu", root);
         cfg->libDir = g_strdup_printf("%s/lib/qemu", root);
         cfg->swtpmStorageDir = g_strdup_printf("%s/lib/swtpm", root);
@@ -151,8 +170,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
         cfg->snapshotDir = g_strdup_printf("%s/snapshot", cfg->libDir);
         cfg->checkpointDir = g_strdup_printf("%s/checkpoint", cfg->libDir);
         cfg->autoDumpPath = g_strdup_printf("%s/dump", cfg->libDir);
-        cfg->channelTargetDir = g_strdup_printf("%s/channel/target", cfg->libDir);
         cfg->nvramDir = g_strdup_printf("%s/nvram", cfg->libDir);
+        cfg->varstoreDir = g_strdup_printf("%s/varstore", cfg->libDir);
         cfg->memoryBackingDir = g_strdup_printf("%s/ram", cfg->libDir);
     } else if (privileged) {
         cfg->logDir = g_strdup_printf("%s/log/libvirt/qemu", LOCALSTATEDIR);
@@ -163,8 +182,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
         cfg->configBaseDir = g_strdup(SYSCONFDIR "/libvirt");
 
         cfg->stateDir = g_strdup_printf("%s/libvirt/qemu", RUNSTATEDIR);
-
-        cfg->swtpmStateDir = g_strdup_printf("%s/libvirt/qemu/swtpm", RUNSTATEDIR);
+        cfg->swtpmStateDir = g_strdup_printf("%s/swtpm", cfg->stateDir);
+        cfg->channelTargetDir = g_strdup_printf("%s/channel", cfg->stateDir);
 
         cfg->cacheDir = g_strdup_printf("%s/cache/libvirt/qemu", LOCALSTATEDIR);
 
@@ -173,8 +192,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
         cfg->snapshotDir = g_strdup_printf("%s/snapshot", cfg->libDir);
         cfg->checkpointDir = g_strdup_printf("%s/checkpoint", cfg->libDir);
         cfg->autoDumpPath = g_strdup_printf("%s/dump", cfg->libDir);
-        cfg->channelTargetDir = g_strdup_printf("%s/channel/target", cfg->libDir);
         cfg->nvramDir = g_strdup_printf("%s/nvram", cfg->libDir);
+        cfg->varstoreDir = g_strdup_printf("%s/varstore", cfg->libDir);
         cfg->memoryBackingDir = g_strdup_printf("%s/ram", cfg->libDir);
         cfg->swtpmStorageDir = g_strdup_printf("%s/lib/libvirt/swtpm",
                                                LOCALSTATEDIR);
@@ -190,8 +209,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
 
         rundir = virGetUserRuntimeDirectory();
         cfg->stateDir = g_strdup_printf("%s/qemu/run", rundir);
-
         cfg->swtpmStateDir = g_strdup_printf("%s/swtpm", cfg->stateDir);
+        cfg->channelTargetDir = g_strdup_printf("%s/channel", cfg->stateDir);
 
         cfg->configBaseDir = virGetUserConfigDirectory();
 
@@ -201,9 +220,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
         cfg->checkpointDir = g_strdup_printf("%s/qemu/checkpoint",
                                              cfg->configBaseDir);
         cfg->autoDumpPath = g_strdup_printf("%s/qemu/dump", cfg->configBaseDir);
-        cfg->channelTargetDir = g_strdup_printf("%s/qemu/channel/target",
-                                                cfg->configBaseDir);
         cfg->nvramDir = g_strdup_printf("%s/qemu/nvram", cfg->configBaseDir);
+        cfg->varstoreDir = g_strdup_printf("%s/qemu/varstore", cfg->configBaseDir);
         cfg->memoryBackingDir = g_strdup_printf("%s/qemu/ram", cfg->configBaseDir);
         cfg->swtpmStorageDir = g_strdup_printf("%s/qemu/swtpm",
                                                cfg->configBaseDir);
@@ -224,6 +242,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
     cfg->configDir = g_strdup_printf("%s/qemu", cfg->configBaseDir);
     cfg->autostartDir = g_strdup_printf("%s/qemu/autostart", cfg->configBaseDir);
     cfg->slirpStateDir = g_strdup_printf("%s/slirp", cfg->stateDir);
+    cfg->rdpStateDir = g_strdup_printf("%s/rdp", cfg->stateDir);
+    cfg->vncStateDir = g_strdup_printf("%s/vnc", cfg->stateDir);
     cfg->passtStateDir = g_strdup_printf("%s/passt", cfg->stateDir);
     cfg->dbusStateDir = g_strdup_printf("%s/dbus", cfg->stateDir);
 
@@ -238,16 +258,23 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
     }
 
     cfg->vncListen = g_strdup(VIR_LOOPBACK_IPV4_ADDR);
+    cfg->rdpListen = g_strdup(VIR_LOOPBACK_IPV4_ADDR);
     cfg->spiceListen = g_strdup(VIR_LOOPBACK_IPV4_ADDR);
 
     cfg->remotePortMin = QEMU_REMOTE_PORT_MIN;
     cfg->remotePortMax = QEMU_REMOTE_PORT_MAX;
+
+    cfg->rdpPortMin = QEMU_RDP_PORT_MIN;
+    cfg->rdpPortMax = QEMU_RDP_PORT_MAX;
 
     cfg->webSocketPortMin = QEMU_WEBSOCKET_PORT_MIN;
     cfg->webSocketPortMax = QEMU_WEBSOCKET_PORT_MAX;
 
     cfg->migrationPortMin = QEMU_MIGRATION_PORT_MIN;
     cfg->migrationPortMax = QEMU_MIGRATION_PORT_MAX;
+
+    cfg->backupPortMin = QEMU_BACKUP_PORT_MIN;
+    cfg->backupPortMax = QEMU_BACKUP_PORT_MAX;
 
     /* For privileged driver, try and find hugetlbfs mounts automatically.
      * Non-privileged driver requires admin to create a dir for the
@@ -263,6 +290,8 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
     cfg->prHelperName = g_strdup(QEMU_PR_HELPER);
     cfg->slirpHelperName = g_strdup(QEMU_SLIRP_HELPER);
     cfg->dbusDaemonName = g_strdup(QEMU_DBUS_DAEMON);
+    cfg->qemuRdpName = g_strdup(QEMU_RDP);
+    cfg->qemuVncName = g_strdup(QEMU_VNC);
 
     cfg->securityDefaultConfined = true;
     cfg->securityRequireConfined = false;
@@ -288,6 +317,35 @@ virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
         return NULL;
 
     cfg->deprecationBehavior = g_strdup("none");
+    cfg->storageUseNbdkit = USE_NBDKIT_DEFAULT;
+
+#ifdef MADV_DONTDUMP
+    cfg->maxCore = ULLONG_MAX;
+#else
+    /* QEMU uses Linux extensions to madvise() (MADV_DODUMP/MADV_DONTDUMP) to
+     * include/exclude guest memory from core dump. On non-Linux systems
+     * core dumps will unavoidably include all guest RAM, so toggle the
+     * default to reflect this and warn the admin.
+     */
+    VIR_INFO("Host kernel doesn't support MADV_DONTDUMP. Enabling dump_guest_core");
+    cfg->dumpGuestCore = true;
+#endif
+
+    if (privileged) {
+        /*
+         * Defer to libvirt-guests.service.
+         *
+         * XXX, or query if libvirt-guests.service is enabled perhaps ?
+         */
+        cfg->autoShutdown.trySave = VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE;
+        cfg->autoShutdown.tryShutdown = VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE;
+        cfg->autoShutdown.poweroff = VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE;
+    } else {
+        cfg->autoShutdown.trySave = VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_PERSISTENT;
+        cfg->autoShutdown.tryShutdown = VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL;
+        cfg->autoShutdown.poweroff = VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL;
+    }
+    cfg->autoShutdown.autoRestore = true;
 
     return g_steal_pointer(&cfg);
 }
@@ -312,6 +370,8 @@ static void virQEMUDriverConfigDispose(void *obj)
     g_free(cfg->slirpStateDir);
     g_free(cfg->passtStateDir);
     g_free(cfg->dbusStateDir);
+    g_free(cfg->rdpStateDir);
+    g_free(cfg->vncStateDir);
 
     g_free(cfg->libDir);
     g_free(cfg->cacheDir);
@@ -320,6 +380,7 @@ static void virQEMUDriverConfigDispose(void *obj)
     g_free(cfg->checkpointDir);
     g_free(cfg->channelTargetDir);
     g_free(cfg->nvramDir);
+    g_free(cfg->varstoreDir);
 
     g_free(cfg->defaultTLSx509certdir);
     g_free(cfg->defaultTLSx509secretUUID);
@@ -335,11 +396,13 @@ static void virQEMUDriverConfigDispose(void *obj)
     g_free(cfg->spicePassword);
     g_free(cfg->spiceSASLdir);
 
+    g_free(cfg->rdpTLSx509certdir);
+    g_free(cfg->rdpListen);
+    g_free(cfg->rdpUsername);
+    g_free(cfg->rdpPassword);
+
     g_free(cfg->chardevTLSx509certdir);
     g_free(cfg->chardevTLSx509secretUUID);
-
-    g_free(cfg->vxhsTLSx509certdir);
-    g_free(cfg->vxhsTLSx509secretUUID);
 
     g_free(cfg->nbdTLSx509certdir);
     g_free(cfg->nbdTLSx509secretUUID);
@@ -359,10 +422,9 @@ static void virQEMUDriverConfigDispose(void *obj)
     g_free(cfg->prHelperName);
     g_free(cfg->slirpHelperName);
     g_free(cfg->dbusDaemonName);
+    g_free(cfg->qemuRdpName);
+    g_free(cfg->qemuVncName);
 
-    g_free(cfg->saveImageFormat);
-    g_free(cfg->dumpImageFormat);
-    g_free(cfg->snapshotImageFormat);
     g_free(cfg->autoDumpPath);
 
     g_strfreev(cfg->securityDriverNames);
@@ -375,6 +437,8 @@ static void virQEMUDriverConfigDispose(void *obj)
     g_free(cfg->swtpmStorageDir);
 
     g_strfreev(cfg->capabilityfilters);
+
+    g_strfreev(cfg->sharedFilesystems);
 
     g_free(cfg->deprecationBehavior);
 }
@@ -409,6 +473,9 @@ virQEMUDriverConfigLoadDefaultTLSEntry(virQEMUDriverConfig *cfg,
         cfg->defaultTLSx509verifyPresent = true;
     if (virConfGetValueString(conf, "default_tls_x509_secret_uuid",
                               &cfg->defaultTLSx509secretUUID) < 0)
+        return -1;
+    if (virConfGetValueString(conf, "default_tls_priority",
+                              &cfg->defaultTLSpriority) < 0)
         return -1;
 
     return 0;
@@ -484,6 +551,21 @@ virQEMUDriverConfigLoadSPICEEntry(virQEMUDriverConfig *cfg,
     return 0;
 }
 
+static int
+virQEMUDriverConfigLoadRDPEntry(virQEMUDriverConfig *cfg,
+                                virConf *conf)
+{
+    if (virConfGetValueString(conf, "rdp_tls_x509_cert_dir", &cfg->rdpTLSx509certdir) < 0)
+        return -1;
+    if (virConfGetValueString(conf, "rdp_listen", &cfg->rdpListen) < 0)
+        return -1;
+    if (virConfGetValueString(conf, "rdp_username", &cfg->rdpUsername) < 0)
+        return -1;
+    if (virConfGetValueString(conf, "rdp_password", &cfg->rdpPassword) < 0)
+        return -1;
+
+    return 0;
+}
 
 static int
 virQEMUDriverConfigLoadSpecificTLSEntry(virQEMUDriverConfig *cfg,
@@ -491,8 +573,6 @@ virQEMUDriverConfigLoadSpecificTLSEntry(virQEMUDriverConfig *cfg,
 {
     int rv;
 
-    if (virConfGetValueBool(conf, "vxhs_tls", &cfg->vxhsTLS) < 0)
-        return -1;
     if (virConfGetValueBool(conf, "nbd_tls", &cfg->nbdTLS) < 0)
         return -1;
     if (virConfGetValueBool(conf, "chardev_tls", &cfg->chardevTLS) < 0)
@@ -508,6 +588,9 @@ virQEMUDriverConfigLoadSpecificTLSEntry(virQEMUDriverConfig *cfg,
         if (virConfGetValueString(conf, \
                                   #val "_tls_x509_secret_uuid", \
                                   &cfg->val## TLSx509secretUUID) < 0) \
+            return -1; \
+        if ((rv = virConfGetValueString(conf, #val "_tls_priority", \
+                                        &cfg->val## TLSpriority)) < 0) \
             return -1; \
     } while (0)
 
@@ -529,8 +612,6 @@ virQEMUDriverConfigLoadSpecificTLSEntry(virQEMUDriverConfig *cfg,
     GET_CONFIG_TLS_CERTINFO_COMMON(backup);
     GET_CONFIG_TLS_CERTINFO_SERVER(backup);
 
-    GET_CONFIG_TLS_CERTINFO_COMMON(vxhs);
-
     GET_CONFIG_TLS_CERTINFO_COMMON(nbd);
 
 #undef GET_CONFIG_TLS_CERTINFO_COMMON
@@ -550,7 +631,7 @@ virQEMUDriverConfigLoadRemoteDisplayEntry(virQEMUDriverConfig *cfg,
         /* if the port is too low, we can't get the display name
          * to tell to vnc (usually subtract 5700, e.g. localhost:1
          * for port 5701) */
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                        _("%1$s: remote_websocket_port_min: port must be greater than or equal to %2$d"),
                         filename, QEMU_WEBSOCKET_PORT_MIN);
         return -1;
@@ -560,14 +641,14 @@ virQEMUDriverConfigLoadRemoteDisplayEntry(virQEMUDriverConfig *cfg,
         return -1;
     if (cfg->webSocketPortMax > QEMU_WEBSOCKET_PORT_MAX ||
         cfg->webSocketPortMax < cfg->webSocketPortMin) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                         _("%1$s: remote_websocket_port_max: port must be between the minimal port and %2$d"),
                        filename, QEMU_WEBSOCKET_PORT_MAX);
         return -1;
     }
 
     if (cfg->webSocketPortMin > cfg->webSocketPortMax) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                         _("%1$s: remote_websocket_port_min: min port must not be greater than max port"),
                         filename);
         return -1;
@@ -579,7 +660,7 @@ virQEMUDriverConfigLoadRemoteDisplayEntry(virQEMUDriverConfig *cfg,
         /* if the port is too low, we can't get the display name
          * to tell to vnc (usually subtract 5900, e.g. localhost:1
          * for port 5901) */
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                        _("%1$s: remote_display_port_min: port must be greater than or equal to %2$d"),
                         filename, QEMU_REMOTE_PORT_MIN);
         return -1;
@@ -589,14 +670,14 @@ virQEMUDriverConfigLoadRemoteDisplayEntry(virQEMUDriverConfig *cfg,
         return -1;
     if (cfg->remotePortMax > QEMU_REMOTE_PORT_MAX ||
         cfg->remotePortMax < cfg->remotePortMin) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                         _("%1$s: remote_display_port_max: port must be between the minimal port and %2$d"),
                        filename, QEMU_REMOTE_PORT_MAX);
         return -1;
     }
 
     if (cfg->remotePortMin > cfg->remotePortMax) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                         _("%1$s: remote_display_port_min: min port must not be greater than max port"),
                         filename);
         return -1;
@@ -610,17 +691,125 @@ static int
 virQEMUDriverConfigLoadSaveEntry(virQEMUDriverConfig *cfg,
                                  virConf *conf)
 {
-    if (virConfGetValueString(conf, "save_image_format", &cfg->saveImageFormat) < 0)
+    g_autofree char *savestr = NULL;
+    g_autofree char *dumpstr = NULL;
+    g_autofree char *snapstr = NULL;
+    g_autofree char *autoShutdownTrySave = NULL;
+    g_autofree char *autoShutdownTryShutdown = NULL;
+    g_autofree char *autoShutdownPoweroff = NULL;
+    int autoShutdownVal;
+
+    if (virConfGetValueString(conf, "save_image_format", &savestr) < 0)
         return -1;
-    if (virConfGetValueString(conf, "dump_image_format", &cfg->dumpImageFormat) < 0)
+    if (savestr) {
+        int formatVal;
+
+        if ((formatVal = qemuSaveFormatTypeFromString(savestr)) < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Invalid save_image_format '%1$s'"),
+                           savestr);
+            return -1;
+        }
+
+        cfg->saveImageFormat = formatVal;
+    }
+
+    if (virConfGetValueString(conf, "dump_image_format", &dumpstr) < 0)
         return -1;
-    if (virConfGetValueString(conf, "snapshot_image_format", &cfg->snapshotImageFormat) < 0)
+    if (dumpstr) {
+        int formatVal;
+
+        if ((formatVal = qemuSaveFormatTypeFromString(dumpstr)) < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Invalid dump_image_format '%1$s'"),
+                           dumpstr);
+            return -1;
+        }
+
+        cfg->dumpImageFormat = formatVal;
+    }
+
+    if (virConfGetValueString(conf, "snapshot_image_format", &snapstr) < 0)
         return -1;
+    if (snapstr) {
+        int formatVal;
+
+        if ((formatVal = qemuSaveFormatTypeFromString(snapstr)) < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Invalid snapshot_image_format '%1$s'"),
+                           snapstr);
+            return -1;
+        }
+
+        cfg->snapshotImageFormat = formatVal;
+    }
+
     if (virConfGetValueString(conf, "auto_dump_path", &cfg->autoDumpPath) < 0)
         return -1;
     if (virConfGetValueBool(conf, "auto_dump_bypass_cache", &cfg->autoDumpBypassCache) < 0)
         return -1;
+    if (virConfGetValueBytes(conf, "auto_dump_max_size", &cfg->autoDumpMaxSize) < 0)
+        return -1;
     if (virConfGetValueBool(conf, "auto_start_bypass_cache", &cfg->autoStartBypassCache) < 0)
+        return -1;
+    if (virConfGetValueUInt(conf, "auto_start_delay", &cfg->autoStartDelayMS) < 0)
+        return -1;
+    if (virConfGetValueString(conf, "auto_shutdown_try_save", &autoShutdownTrySave) < 0)
+        return -1;
+
+    if (autoShutdownTrySave != NULL) {
+        if ((autoShutdownVal =
+             virDomainDriverAutoShutdownScopeTypeFromString(autoShutdownTrySave)) < 0) {
+            virReportError(VIR_ERR_INVALID_ARG,
+                           _("unknown auto_shutdown_try_save '%1$s'"),
+                           autoShutdownTrySave);
+            return -1;
+        }
+        cfg->autoShutdown.trySave = autoShutdownVal;
+    }
+
+    if (cfg->autoShutdown.trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL ||
+        cfg->autoShutdown.trySave == VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_TRANSIENT) {
+        virReportError(VIR_ERR_INVALID_ARG, "%s",
+                       _("managed save cannot be requested for transient domains"));
+        return -1;
+    }
+
+    if (virConfGetValueString(conf, "auto_shutdown_try_shutdown", &autoShutdownTryShutdown) < 0)
+        return -1;
+
+    if (autoShutdownTryShutdown != NULL) {
+        if ((autoShutdownVal =
+             virDomainDriverAutoShutdownScopeTypeFromString(autoShutdownTryShutdown)) < 0) {
+            virReportError(VIR_ERR_INVALID_ARG,
+                           _("unknown auto_shutdown_try_shutdown '%1$s'"),
+                           autoShutdownTryShutdown);
+            return -1;
+        }
+        cfg->autoShutdown.tryShutdown = autoShutdownVal;
+    }
+
+    if (virConfGetValueString(conf, "auto_shutdown_poweroff", &autoShutdownPoweroff) < 0)
+        return -1;
+
+    if (autoShutdownPoweroff != NULL) {
+        if ((autoShutdownVal =
+             virDomainDriverAutoShutdownScopeTypeFromString(autoShutdownPoweroff)) < 0) {
+            virReportError(VIR_ERR_INVALID_ARG,
+                           _("unknown auto_shutdown_poweroff '%1$s'"),
+                           autoShutdownPoweroff);
+            return -1;
+        }
+        cfg->autoShutdown.poweroff = autoShutdownVal;
+    }
+
+    if (virConfGetValueUInt(conf, "auto_shutdown_wait",
+                            &cfg->autoShutdown.waitShutdownSecs) < 0)
+        return -1;
+    if (virConfGetValueBool(conf, "auto_shutdown_restore", &cfg->autoShutdown.autoRestore) < 0)
+        return -1;
+    if (virConfGetValueBool(conf, "auto_save_bypass_cache",
+                            &cfg->autoShutdown.saveBypassCache) < 0)
         return -1;
 
     return 0;
@@ -669,6 +858,12 @@ virQEMUDriverConfigLoadProcessEntry(virQEMUDriverConfig *cfg,
         return -1;
 
     if (virConfGetValueString(conf, "dbus_daemon", &cfg->dbusDaemonName) < 0)
+        return -1;
+
+    if (virConfGetValueString(conf, "qemu_rdp", &cfg->qemuRdpName) < 0)
+        return -1;
+
+    if (virConfGetValueString(conf, "qemu_vnc", &cfg->qemuVncName) < 0)
         return -1;
 
     if (virConfGetValueBool(conf, "set_process_name", &cfg->setProcessName) < 0)
@@ -794,7 +989,7 @@ virQEMUDriverConfigLoadNetworkEntry(virQEMUDriverConfig *cfg,
     if (virConfGetValueUInt(conf, "migration_port_min", &cfg->migrationPortMin) < 0)
         return -1;
     if (cfg->migrationPortMin <= 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                        _("%1$s: migration_port_min: port must be greater than 0"),
                         filename);
         return -1;
@@ -804,9 +999,28 @@ virQEMUDriverConfigLoadNetworkEntry(virQEMUDriverConfig *cfg,
         return -1;
     if (cfg->migrationPortMax > 65535 ||
         cfg->migrationPortMax < cfg->migrationPortMin) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_CONF_SYNTAX,
                         _("%1$s: migration_port_max: port must be between the minimal port %2$d and 65535"),
                        filename, cfg->migrationPortMin);
+        return -1;
+    }
+
+    if (virConfGetValueUInt(conf, "backup_port_min", &cfg->backupPortMin) < 0)
+        return -1;
+    if (cfg->backupPortMin <= 0) {
+        virReportError(VIR_ERR_CONF_SYNTAX,
+                       _("%1$s: backup_port_min: port must be greater than 0"),
+                        filename);
+        return -1;
+    }
+
+    if (virConfGetValueUInt(conf, "backup_port_max", &cfg->backupPortMax) < 0)
+        return -1;
+    if (cfg->backupPortMax > 65535 ||
+        cfg->backupPortMax < cfg->backupPortMin) {
+        virReportError(VIR_ERR_CONF_SYNTAX,
+                        _("%1$s: backup_port_max: port must be between the minimal port %2$d and 65535"),
+                       filename, cfg->backupPortMin);
         return -1;
     }
 
@@ -867,9 +1081,7 @@ virQEMUDriverConfigLoadNVRAMEntry(virQEMUDriverConfig *cfg,
             return -1;
 
         if (fwList) {
-            VIR_WARN("Obsolete nvram variable is set while firmware metadata "
-                     "files found. Note that the nvram config file variable is "
-                     "going to be ignored.");
+            VIR_WARN("Obsolete nvram variable is set while firmware metadata files found. Note that the nvram config file variable is going to be ignored.");
             return 0;
         }
 
@@ -1068,6 +1280,75 @@ virQEMUDriverConfigLoadCapsFiltersEntry(virQEMUDriverConfig *cfg,
 }
 
 
+static int
+virQEMUDriverConfigLoadStorageEntry(virQEMUDriverConfig *cfg,
+                                    virConf *conf)
+{
+    if (virConfGetValueBool(conf, "storage_use_nbdkit", &cfg->storageUseNbdkit) < 0)
+        return -1;
+
+#if !WITH_NBDKIT
+    if (cfg->storageUseNbdkit) {
+        VIR_WARN("Ignoring configuration option 'storage_use_nbdkit': nbdkit is not supported by this libvirt");
+        cfg->storageUseNbdkit = false;
+    }
+#endif /* WITH_NBDKIT */
+
+    return 0;
+}
+
+
+static int
+virQEMUDriverConfigLoadFilesystemEntry(virQEMUDriverConfig *cfg,
+                                       virConf *conf)
+{
+    char **iter;
+
+    if (virConfGetValueStringList(conf, "shared_filesystems", false,
+                                  &cfg->sharedFilesystems) < 0)
+        return -1;
+
+    if (!cfg->sharedFilesystems)
+        return 0;
+
+    /* The paths provided by the user might contain trailing slashes
+     * and other fun diversions, which would break the naive string
+     * comparisons that we're later going to use them for */
+    for (iter = cfg->sharedFilesystems; *iter; iter++) {
+        char *canon = virFileCanonicalizePath(*iter);
+        g_free(*iter);
+        *iter = canon;
+    }
+
+    return 0;
+}
+
+
+static int
+virQEMUDriverConfigLoadDeprecatedFeaturesEntry(virQEMUDriverConfig *cfg,
+                                               virConf *conf)
+{
+    g_autofree char *depFeats = NULL;
+
+    if (virConfGetValueString(conf, "default_cpu_deprecated_features", &depFeats) < 0)
+        return -1;
+    if (depFeats) {
+        int val = virQEMUDeprecatedFeaturesTypeFromString(depFeats);
+
+        if (val < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Unknown default_cpu_deprecated_features value %1$s"),
+                           depFeats);
+            return -1;
+        }
+
+        cfg->defaultDeprecatedFeatures = val;
+    }
+
+    return 0;
+}
+
+
 int virQEMUDriverConfigLoadFile(virQEMUDriverConfig *cfg,
                                 const char *filename,
                                 bool privileged)
@@ -1095,6 +1376,9 @@ int virQEMUDriverConfigLoadFile(virQEMUDriverConfig *cfg,
         return -1;
 
     if (virQEMUDriverConfigLoadSPICEEntry(cfg, conf) < 0)
+        return -1;
+
+    if (virQEMUDriverConfigLoadRDPEntry(cfg, conf) < 0)
         return -1;
 
     if (virQEMUDriverConfigLoadSpecificTLSEntry(cfg, conf) < 0)
@@ -1139,6 +1423,15 @@ int virQEMUDriverConfigLoadFile(virQEMUDriverConfig *cfg,
     if (virQEMUDriverConfigLoadCapsFiltersEntry(cfg, conf) < 0)
         return -1;
 
+    if (virQEMUDriverConfigLoadStorageEntry(cfg, conf) < 0)
+        return -1;
+
+    if (virQEMUDriverConfigLoadFilesystemEntry(cfg, conf) < 0)
+        return -1;
+
+    if (virQEMUDriverConfigLoadDeprecatedFeaturesEntry(cfg, conf) < 0)
+        return -1;
+
     return 0;
 }
 
@@ -1178,6 +1471,14 @@ virQEMUDriverConfigValidate(virQEMUDriverConfig *cfg)
         return -1;
     }
 
+    if (cfg->rdpTLSx509certdir &&
+        !virFileExists(cfg->rdpTLSx509certdir)) {
+        virReportError(VIR_ERR_CONF_SYNTAX,
+                       _("rdp_tls_x509_cert_dir directory '%1$s' does not exist"),
+                       cfg->rdpTLSx509certdir);
+        return -1;
+    }
+
     if (cfg->chardevTLSx509certdir &&
         !virFileExists(cfg->chardevTLSx509certdir)) {
         virReportError(VIR_ERR_CONF_SYNTAX,
@@ -1199,14 +1500,6 @@ virQEMUDriverConfigValidate(virQEMUDriverConfig *cfg)
         virReportError(VIR_ERR_CONF_SYNTAX,
                        _("backup_tls_x509_cert_dir directory '%1$s' does not exist"),
                        cfg->backupTLSx509certdir);
-        return -1;
-    }
-
-    if (cfg->vxhsTLSx509certdir &&
-        !virFileExists(cfg->vxhsTLSx509certdir)) {
-        virReportError(VIR_ERR_CONF_SYNTAX,
-                       _("vxhs_tls_x509_cert_dir directory '%1$s' does not exist"),
-                       cfg->vxhsTLSx509certdir);
         return -1;
     }
 
@@ -1238,10 +1531,25 @@ virQEMUDriverConfigSetDefaults(virQEMUDriverConfig *cfg)
     SET_TLS_SECRET_UUID_DEFAULT(chardev);
     SET_TLS_SECRET_UUID_DEFAULT(migrate);
     SET_TLS_SECRET_UUID_DEFAULT(backup);
-    SET_TLS_SECRET_UUID_DEFAULT(vxhs);
     SET_TLS_SECRET_UUID_DEFAULT(nbd);
 
 #undef SET_TLS_SECRET_UUID_DEFAULT
+
+#define SET_TLS_PRIORITY_DEFAULT(val) \
+    do { \
+        if (!cfg->val## TLSpriority && \
+            cfg->defaultTLSpriority) { \
+            cfg->val## TLSpriority = g_strdup(cfg->defaultTLSpriority); \
+        } \
+    } while (0)
+
+    SET_TLS_PRIORITY_DEFAULT(vnc);
+    SET_TLS_PRIORITY_DEFAULT(chardev);
+    SET_TLS_PRIORITY_DEFAULT(migrate);
+    SET_TLS_PRIORITY_DEFAULT(backup);
+    SET_TLS_PRIORITY_DEFAULT(nbd);
+
+#undef SET_TLS_PRIORITY_DEFAULT
 
     /*
      * If a "SYSCONFDIR" + "pki/libvirt-<val>" exists, then assume someone
@@ -1263,10 +1571,10 @@ virQEMUDriverConfigSetDefaults(virQEMUDriverConfig *cfg)
 
     SET_TLS_X509_CERT_DEFAULT(vnc);
     SET_TLS_X509_CERT_DEFAULT(spice);
+    SET_TLS_X509_CERT_DEFAULT(rdp);
     SET_TLS_X509_CERT_DEFAULT(chardev);
     SET_TLS_X509_CERT_DEFAULT(migrate);
     SET_TLS_X509_CERT_DEFAULT(backup);
-    SET_TLS_X509_CERT_DEFAULT(vxhs);
     SET_TLS_X509_CERT_DEFAULT(nbd);
 
 #undef SET_TLS_X509_CERT_DEFAULT
@@ -1361,9 +1669,14 @@ virCaps *virQEMUDriverCreateCapabilities(virQEMUDriver *driver)
         return NULL;
     }
 
+    /* Ensure top lock is acquired before nested locks */
+    qemuSecurityStackLock(driver->securityManager);
+
     /* access sec drivers and create a sec model for each one */
-    if (!(sec_managers = qemuSecurityGetNested(driver->securityManager)))
+    if (!(sec_managers = qemuSecurityGetNested(driver->securityManager))) {
+        qemuSecurityStackUnlock(driver->securityManager);
         return NULL;
+    }
 
     /* calculate length */
     for (i = 0; sec_managers[i]; i++)
@@ -1383,13 +1696,17 @@ virCaps *virQEMUDriverCreateCapabilities(virQEMUDriver *driver)
             lbl = qemuSecurityGetBaseLabel(sec_managers[i], virtTypes[j]);
             type = virDomainVirtTypeToString(virtTypes[j]);
             if (lbl &&
-                virCapabilitiesHostSecModelAddBaseLabel(sm, type, lbl) < 0)
+                virCapabilitiesHostSecModelAddBaseLabel(sm, type, lbl) < 0) {
+                qemuSecurityStackUnlock(driver->securityManager);
                 return NULL;
+            }
         }
 
         VIR_DEBUG("Initialized caps for security driver \"%s\" with "
                   "DOI \"%s\"", model, doi);
     }
+
+    qemuSecurityStackUnlock(driver->securityManager);
 
     caps->host.numa = virCapabilitiesHostNUMANewHost();
     caps->host.cpu = virQEMUDriverGetHostCPU(driver);
@@ -1446,7 +1763,8 @@ virQEMUDriverGetDomainCapabilities(virQEMUDriver *driver,
                                    virQEMUCaps *qemuCaps,
                                    const char *machine,
                                    virArch arch,
-                                   virDomainVirtType virttype)
+                                   virDomainVirtType virttype,
+                                   unsigned int flags)
 {
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     g_autoptr(virDomainCaps) domCaps = NULL;
@@ -1476,10 +1794,12 @@ virQEMUDriverGetDomainCapabilities(virQEMUDriver *driver,
     if (!(domCaps = virDomainCapsNew(path, machine, arch, virttype)))
         return NULL;
 
-    if (virQEMUCapsFillDomainCaps(qemuCaps, driver->hostarch,
-                                  domCaps, driver->privileged,
-                                  cfg->firmwares,
-                                  cfg->nfirmwares) < 0)
+    if (virQEMUCapsFillDomainCaps(cfg,
+                                  qemuCaps,
+                                  driver->hostarch,
+                                  domCaps,
+                                  driver->privileged,
+                                  flags) < 0)
         return NULL;
 
     return g_steal_pointer(&domCaps);
@@ -1498,7 +1818,7 @@ qemuTranslateSnapshotDiskSourcePool(virDomainSnapshotDiskDef *def)
     if (def->src->type != VIR_STORAGE_TYPE_VOLUME)
         return 0;
 
-    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+    virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                    _("Snapshots are not yet supported with 'pool' volumes"));
     return -1;
 }
@@ -1551,9 +1871,8 @@ qemuGetDomainHupageMemPath(virQEMUDriver *driver,
     size_t i = 0;
 
     if (!cfg->nhugetlbfs) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("hugetlbfs filesystem is not mounted "
-                               "or disabled by administrator config"));
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("hugetlbfs filesystem is not mounted or disabled by administrator config"));
         return -1;
     }
 
@@ -1572,64 +1891,6 @@ qemuGetDomainHupageMemPath(virQEMUDriver *driver,
     if (!(*memPath = qemuGetDomainHugepagePath(driver, def, &cfg->hugetlbfs[i])))
         return -1;
 
-    return 0;
-}
-
-
-int
-qemuGetMemoryBackingDomainPath(virQEMUDriver *driver,
-                               const virDomainDef *def,
-                               char **path)
-{
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
-    const char *root = driver->embeddedRoot;
-    g_autofree char *shortName = NULL;
-
-    if (!(shortName = virDomainDefGetShortName(def)))
-        return -1;
-
-    if (root && !STRPREFIX(cfg->memoryBackingDir, root)) {
-        g_autofree char * hash = virDomainDriverGenerateRootHash("qemu", root);
-        *path = g_strdup_printf("%s/%s-%s", cfg->memoryBackingDir, hash, shortName);
-    } else {
-        *path = g_strdup_printf("%s/%s", cfg->memoryBackingDir, shortName);
-    }
-
-    return 0;
-}
-
-
-/**
- * qemuGetMemoryBackingPath:
- * @driver: the qemu driver
- * @def: domain definition
- * @alias: memory object alias
- * @memPath: constructed path
- *
- * Constructs path to memory backing dir and stores it at @memPath.
- *
- * Returns: 0 on success,
- *          -1 otherwise (with error reported).
- */
-int
-qemuGetMemoryBackingPath(virQEMUDriver *driver,
-                         const virDomainDef *def,
-                         const char *alias,
-                         char **memPath)
-{
-    g_autofree char *domainPath = NULL;
-
-    if (!alias) {
-        /* This should never happen (TM) */
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("memory device alias is not assigned"));
-        return -1;
-    }
-
-    if (qemuGetMemoryBackingDomainPath(driver, def, &domainPath) < 0)
-        return -1;
-
-    *memPath = g_strdup_printf("%s/%s", domainPath, alias);
     return 0;
 }
 
@@ -1658,4 +1919,26 @@ qemuHugepageMakeBasedir(virQEMUDriver *driver,
         return -1;
 
     return 0;
+}
+
+
+/*
+ * qemuGetNbdkitCaps:
+ * @driver: the qemu driver
+ *
+ * Gets the capabilities for Nbdkit for the specified driver. These can be used
+ * to determine whether a particular disk source can be served by nbdkit or
+ * not.
+ *
+ * Returns: a reference to qemuNbdkitCaps or NULL
+ */
+qemuNbdkitCaps*
+qemuGetNbdkitCaps(virQEMUDriver *driver)
+{
+    g_autofree char *nbdkitBinary = virFindFileInPath("nbdkit");
+
+    if (!nbdkitBinary)
+        return NULL;
+
+    return virFileCacheLookup(driver->nbdkitCapsCache, nbdkitBinary);
 }

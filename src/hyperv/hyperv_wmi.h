@@ -26,7 +26,6 @@
 #include "virbuffer.h"
 #include "hyperv_private.h"
 #include "hyperv_wmi_classes.h"
-#include "virhash.h"
 
 
 #define HYPERV_WQL_QUERY_INITIALIZER { NULL, NULL }
@@ -35,6 +34,23 @@
 
 #define MSVM_VIRTUALSYSTEMMANAGEMENTSERVICE_SELECTOR \
     "CreationClassName=Msvm_VirtualSystemManagementService"
+
+#define MSVM_IMAGEMANAGEMENTSERVICE_SELECTOR \
+    "CreationClassName=Msvm_ImageManagementService"
+
+#define MSVM_VIRTUALSYSTEMSETTINGDATA_VIRTUALTYPE_SNAPSHOT \
+    "Microsoft:Hyper-V:Snapshot:Realized"
+
+#define MSVM_VIRTUALSYSTEMSNAPSHOTSERVICE_SELECTOR \
+    "CreationClassName=Msvm_VirtualSystemSnapshotService"
+
+/* Msvm_VirtualSystemSnapshotSettingData ConsistencyLevel values */
+#define HYPERV_SNAPSHOT_CONSISTENCY_APP_CONSISTENT   "1" /* VSS (production checkpoint) */
+#define HYPERV_SNAPSHOT_CONSISTENCY_CRASH_CONSISTENT "2" /* Standard checkpoint */
+
+/* Msvm_VirtualSystemSnapshotService CreateSnapshot SnapshotType values */
+#define HYPERV_SNAPSHOT_TYPE_FULL      "2" /* Full snapshot including memory if running */
+#define HYPERV_SNAPSHOT_TYPE_DISK_ONLY "3" /* Disk-only, no memory state */
 
 int hypervVerifyResponse(WsManClient *client, WsXmlDocH response,
                          const char *detail);
@@ -125,13 +141,13 @@ hypervInvokeParamsList *hypervCreateInvokeParamsList(const char *method,
 void hypervFreeInvokeParams(hypervInvokeParamsList *params);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(hypervInvokeParamsList, hypervFreeInvokeParams);
 
-int hypervAddSimpleParam(hypervInvokeParamsList *params, const char *name,
-                         const char *value);
+void hypervAddSimpleParam(hypervInvokeParamsList *params, const char *name,
+                          const char *value);
 
-int hypervAddEprParam(hypervInvokeParamsList *params,
-                      const char *name,
-                      virBuffer *query,
-                      hypervWmiClassInfo *eprInfo);
+void hypervAddEprParam(hypervInvokeParamsList *params,
+                       const char *name,
+                       virBuffer *query,
+                       hypervWmiClassInfo *eprInfo);
 
 GHashTable *hypervCreateEmbeddedParam(hypervWmiClassInfo *info);
 
@@ -139,16 +155,22 @@ int hypervSetEmbeddedProperty(GHashTable *table,
                               const char *name,
                               const char *value);
 
-int hypervAddEmbeddedParam(hypervInvokeParamsList *params,
-                           const char *name,
-                           GHashTable **table,
-                           hypervWmiClassInfo *info);
+void hypervAddEmbeddedParam(hypervInvokeParamsList *params,
+                            const char *name,
+                            GHashTable **table,
+                            hypervWmiClassInfo *info);
 
 void hypervFreeEmbeddedParam(GHashTable *p);
 
 int hypervInvokeMethod(hypervPrivate *priv,
                        hypervInvokeParamsList **paramsPtr,
                        WsXmlDocH *res);
+
+int hypervResponseGetOutputParam(hypervPrivate *priv,
+                                 WsXmlDocH response,
+                                 const char *paramName,
+                                 hypervWmiClassInfo *paramClassInfo,
+                                 hypervObject **outParam);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * CIM/Msvm_ReturnCode
@@ -235,6 +257,10 @@ int hypervGetMsvmVirtualSystemSettingDataFromUUID(hypervPrivate *priv,
                                                   const char *uuid_string,
                                                   Msvm_VirtualSystemSettingData **list);
 
+int hypervGetDomainSnapshotsSD(hypervPrivate *priv,
+                               const char *domain_uuid_string,
+                               Msvm_VirtualSystemSettingData **list);
+
 int hypervGetResourceAllocationSD(hypervPrivate *priv,
                                   const char *id,
                                   Msvm_ResourceAllocationSettingData **data);
@@ -262,6 +288,14 @@ int hypervGetSyntheticEthernetPortSD(hypervPrivate *priv,
 int hypervGetEthernetPortAllocationSD(hypervPrivate *priv,
                                       const char *id,
                                       Msvm_EthernetPortAllocationSettingData **data);
+
+int hypervImageManagementServiceGetVHDSD(hypervPrivate *priv,
+                                         const char *vhdPath,
+                                         WsXmlDocH *settingDataDoc);
+
+int hypervGetSecuritySD(hypervPrivate *priv,
+                        const char *vssd_instanceid,
+                        Msvm_SecuritySettingData **data);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Msvm_VirtualSystemManagementService

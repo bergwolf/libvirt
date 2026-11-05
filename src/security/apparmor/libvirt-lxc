@@ -116,3 +116,5 @@
   deny /sys/fs/cgrou[^p]*{,/**} wklx,
   deny /sys/fs/cgroup?*{,/**} wklx,
   deny /sys/fs?*{,/**} wklx,
+
+  include if exists <abstractions/libvirt-lxc.d>

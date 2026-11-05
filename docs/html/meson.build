@@ -27,6 +27,7 @@ index_api_gen = custom_target(
     xsltproc_prog, '--nonet', '-o', docs_builddir,
     '--stringparam', 'builddir', meson.project_build_root(),
     '--stringparam', 'timestamp', docs_timestamp,
+    '--stringparam', 'href_base', '../',
     '@INPUT@',
   ],
   install: true,
@@ -53,6 +54,7 @@ foreach name : [ 'admin', 'lxc', 'qemu' ]
       xsltproc_prog, '--nonet', '-o', docs_builddir,
       '--stringparam', 'builddir', meson.project_build_root(),
       '--stringparam', 'timestamp', docs_timestamp,
+      '--stringparam', 'href_base', '../',
       '@INPUT@',
     ],
     install: true,
@@ -99,7 +101,9 @@ foreach data : html_xslt_gen
       '--stringparam', 'pagesrc', data.get('source', ''),
       '--stringparam', 'builddir', meson.project_build_root(),
       '--stringparam', 'timestamp', docs_timestamp,
-      '--stringparam', 'href_base', data.get('href_base', ''),
+      '--stringparam', 'link_href_base', data.get('href_base', ''),
+      '--stringparam', 'asset_href_base', data.get('href_base', ''),
+      '--stringparam', 'edit_href_base', 'https://gitlab.com/libvirt/libvirt/-/blob/master/',
       '--nonet',
       site_xsl,
       '@INPUT@',
@@ -119,11 +123,14 @@ html_xslt_gen = []
 
 # --- end of XSLT processing ---
 
-test(
-  'check-html',
-  xmllint_prog,
-  args: [
-    '--nonet', '--noout', docs_html_paths,
-  ],
-  depends: docs_html_dep,
-)
+if tests_enabled[0]
+  test(
+    'check-html',
+    xmllint_prog,
+    args: [
+      '--nonet', '--noout', docs_html_paths,
+    ],
+    depends: docs_html_dep,
+    suite: 'script'
+  )
+endif

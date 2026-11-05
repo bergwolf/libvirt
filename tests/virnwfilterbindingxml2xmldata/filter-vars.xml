@@ -8,4 +8,5 @@
   <filterref filter='clean-traffic'>
     <parameter name='MAC' value='52:54:00:7b:35:93'/>
   </filterref>
+  <backend name='iptables'/>
 </filterbinding>

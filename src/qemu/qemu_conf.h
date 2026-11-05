@@ -36,11 +36,15 @@
 #include "virthreadpool.h"
 #include "locking/lock_manager.h"
 #include "qemu_capabilities.h"
+#include "qemu_nbdkit.h"
+#include "qemu_saveimage_format.h"
 #include "virclosecallbacks.h"
 #include "virhostdev.h"
 #include "virfile.h"
 #include "virfilecache.h"
 #include "virfirmware.h"
+#include "virinhibitor.h"
+#include "domain_driver.h"
 
 #define QEMU_DRIVER_NAME "QEMU"
 
@@ -54,6 +58,16 @@ typedef enum {
 } virQEMUSchedCore;
 
 VIR_ENUM_DECL(virQEMUSchedCore);
+
+typedef enum {
+    QEMU_DEPRECATED_FEATURES_OFF = 0,
+    QEMU_DEPRECATED_FEATURES_ON,
+    QEMU_DEPRECATED_FEATURES_NONE,
+
+    QEMU_DEPRECATED_FEATURES_LAST
+} virQEMUDeprecatedFeatures;
+
+VIR_ENUM_DECL(virQEMUDeprecatedFeatures);
 
 typedef struct _virQEMUDriver virQEMUDriver;
 
@@ -97,6 +111,8 @@ struct _virQEMUDriverConfig {
     char *slirpStateDir;
     char *passtStateDir;
     char *dbusStateDir;
+    char *rdpStateDir;
+    char *vncStateDir;
     /* These two directories are ones QEMU processes use (so must match
      * the QEMU user/group */
     char *libDir;
@@ -106,6 +122,7 @@ struct _virQEMUDriverConfig {
     char *checkpointDir;
     char *channelTargetDir;
     char *nvramDir;
+    char *varstoreDir;
     char *swtpmStorageDir;
 
     char *defaultTLSx509certdir;
@@ -113,6 +130,7 @@ struct _virQEMUDriverConfig {
     bool defaultTLSx509verify;
     bool defaultTLSx509verifyPresent;
     char *defaultTLSx509secretUUID;
+    char *defaultTLSpriority;
 
     bool vncAutoUnixSocket;
     bool vncTLS;
@@ -121,6 +139,7 @@ struct _virQEMUDriverConfig {
     bool vncSASL;
     char *vncTLSx509certdir;
     char *vncTLSx509secretUUID;
+    char *vncTLSpriority;
     char *vncListen;
     char *vncPassword;
     char *vncSASLdir;
@@ -133,33 +152,41 @@ struct _virQEMUDriverConfig {
     char *spicePassword;
     bool spiceAutoUnixSocket;
 
+    char *rdpTLSx509certdir;
+    char *rdpListen;
+    char *rdpUsername;
+    char *rdpPassword;
+
     bool chardevTLS;
     char *chardevTLSx509certdir;
     bool chardevTLSx509verify;
     bool chardevTLSx509verifyPresent;
     char *chardevTLSx509secretUUID;
+    char *chardevTLSpriority;
 
     char *migrateTLSx509certdir;
     bool migrateTLSx509verify;
     bool migrateTLSx509verifyPresent;
     char *migrateTLSx509secretUUID;
+    char *migrateTLSpriority;
     bool migrateTLSForce;
 
     char *backupTLSx509certdir;
     bool backupTLSx509verify;
     bool backupTLSx509verifyPresent;
     char *backupTLSx509secretUUID;
-
-    bool vxhsTLS;
-    char *vxhsTLSx509certdir;
-    char *vxhsTLSx509secretUUID;
+    char *backupTLSpriority;
 
     bool nbdTLS;
     char *nbdTLSx509certdir;
     char *nbdTLSx509secretUUID;
+    char *nbdTLSpriority;
 
     unsigned int remotePortMin;
     unsigned int remotePortMax;
+
+    unsigned int rdpPortMin;
+    unsigned int rdpPortMax;
 
     unsigned int webSocketPortMin;
     unsigned int webSocketPortMax;
@@ -171,6 +198,8 @@ struct _virQEMUDriverConfig {
     char *prHelperName;
     char *slirpHelperName;
     char *dbusDaemonName;
+    char *qemuRdpName;
+    char *qemuVncName;
 
     bool macFilter;
 
@@ -191,13 +220,16 @@ struct _virQEMUDriverConfig {
     bool securityDefaultConfined;
     bool securityRequireConfined;
 
-    char *saveImageFormat;
-    char *dumpImageFormat;
-    char *snapshotImageFormat;
+    virQEMUSaveFormat saveImageFormat;
+    virQEMUSaveFormat dumpImageFormat;
+    virQEMUSaveFormat snapshotImageFormat;
 
     char *autoDumpPath;
     bool autoDumpBypassCache;
+    unsigned long long autoDumpMaxSize;
     bool autoStartBypassCache;
+    unsigned int autoStartDelayMS;
+    virDomainDriverAutoShutdownConfig autoShutdown;
 
     char *lockManagerName;
 
@@ -211,6 +243,9 @@ struct _virQEMUDriverConfig {
     char *migrationAddress;
     unsigned int migrationPortMin;
     unsigned int migrationPortMax;
+
+    unsigned int backupPortMin;
+    unsigned int backupPortMax;
 
     bool logTimestamp;
     bool stdioLogD;
@@ -229,7 +264,13 @@ struct _virQEMUDriverConfig {
 
     char *deprecationBehavior;
 
+    bool storageUseNbdkit;
+
     virQEMUSchedCore schedCore;
+
+    char **sharedFilesystems;
+
+    virQEMUDeprecatedFeatures defaultDeprecatedFeatures;
 };
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virQEMUDriverConfig, virObjectUnref);
@@ -252,23 +293,15 @@ struct _virQEMUDriver {
     /* Atomic increment only */
     int lastvmid;
 
-    /* Atomic inc/dec only */
-    unsigned int nactive;
-
     /* Immutable values */
     bool privileged;
     char *embeddedRoot;
-    bool hostFips; /* FIPS mode is enabled on the host */
 
-    /* Immutable pointers. Caller must provide locking */
-    virStateInhibitCallback inhibitCallback;
-    void *inhibitOpaque;
+    /* Immutable pointer, self-locking APIs */
+    virInhibitor *inhibitor;
 
     /* Immutable pointer, self-locking APIs */
     virDomainObjList *domains;
-
-    /* Immutable pointer */
-    char *qemuImgBinary;
 
     /* Immutable pointer, lockless APIs. Pointless abstraction */
     ebtablesContext *ebtables;
@@ -307,7 +340,13 @@ struct _virQEMUDriver {
     virPortAllocatorRange *webSocketPorts;
 
     /* Immutable pointer, immutable object */
+    virPortAllocatorRange *rdpPorts;
+
+    /* Immutable pointer, immutable object */
     virPortAllocatorRange *migrationPorts;
+
+    /* Immutable pointer, immutable object */
+    virPortAllocatorRange *backupPorts;
 
     /* Immutable pointer, lockless APIs */
     virSysinfoDef *hostsysinfo;
@@ -317,6 +356,9 @@ struct _virQEMUDriver {
 
     /* Immutable pointer, self-locking APIs */
     virHashAtomic *migrationErrors;
+
+    /* Immutable pointer, self-locking APIs */
+    virFileCache *nbdkitCapsCache;
 };
 
 virQEMUDriverConfig *virQEMUDriverConfigNew(bool privileged,
@@ -344,7 +386,8 @@ virQEMUDriverGetDomainCapabilities(virQEMUDriver *driver,
                                    virQEMUCaps *qemuCaps,
                                    const char *machine,
                                    virArch arch,
-                                   virDomainVirtType virttype);
+                                   virDomainVirtType virttype,
+                                   unsigned int flags);
 
 int qemuDriverAllocateID(virQEMUDriver *driver);
 virDomainXMLOption *virQEMUDriverCreateXMLConf(virQEMUDriver *driver,
@@ -363,13 +406,7 @@ int qemuGetDomainHupageMemPath(virQEMUDriver *driver,
                                unsigned long long pagesize,
                                char **memPath);
 
-int qemuGetMemoryBackingDomainPath(virQEMUDriver *driver,
-                                   const virDomainDef *def,
-                                   char **path);
-int qemuGetMemoryBackingPath(virQEMUDriver *driver,
-                             const virDomainDef *def,
-                             const char *alias,
-                             char **memPath);
-
 int qemuHugepageMakeBasedir(virQEMUDriver *driver,
                             virHugeTLBFS *hugepage);
+
+qemuNbdkitCaps* qemuGetNbdkitCaps(virQEMUDriver *driver);

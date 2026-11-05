@@ -588,7 +588,7 @@ virNWFilterSnoopReqPut(virNWFilterSnoopReq *req)
     if (!req)
         return;
 
-    if (!!g_atomic_int_dec_and_test(&req->refctr)) {
+    if (g_atomic_int_dec_and_test(&req->refctr)) {
         /*
          * delete the request:
          * - if we don't find req on the global list anymore
@@ -743,7 +743,7 @@ virNWFilterSnoopReqLeaseDel(virNWFilterSnoopReq *req,
  skip_instantiate:
     g_free(ipl);
 
-    ignore_value(!!g_atomic_int_dec_and_test(&virNWFilterSnoopState.nLeases));
+    ignore_value(g_atomic_int_dec_and_test(&virNWFilterSnoopState.nLeases));
     return ret;
 }
 
@@ -817,7 +817,7 @@ virNWFilterSnoopDHCPDecode(virNWFilterSnoopReq *req,
     struct iphdr *pip;
     struct udphdr *pup;
     virNWFilterSnoopDHCPHdr *pd;
-    virNWFilterSnoopIPLease ipl;
+    virNWFilterSnoopIPLease ipl = { 0 };
     uint8_t mtype;
     uint32_t leasetime;
     uint32_t nwint;
@@ -862,8 +862,6 @@ virNWFilterSnoopDHCPDecode(virNWFilterSnoopReq *req,
 
     if (virNWFilterSnoopDHCPGetOpt(pd, len, &mtype, &leasetime) < 0)
         return -2;
-
-    memset(&ipl, 0, sizeof(ipl));
 
     memcpy(&nwint, &pd->d_yiaddr, sizeof(nwint));
     virSocketAddrSetIPv4AddrNetOrder(&ipl.ipAddress, nwint);
@@ -1006,7 +1004,7 @@ static void virNWFilterDHCPDecodeWorker(void *jobdata, void *opaque)
                        _("Instantiation of rules failed on interface '%1$s'"),
                        req->binding->portdevname);
     }
-    ignore_value(!!g_atomic_int_dec_and_test(job->qCtr));
+    ignore_value(g_atomic_int_dec_and_test(job->qCtr));
 }
 
 /*
@@ -1333,8 +1331,7 @@ virNWFilterDHCPSnoopThread(void *req0)
                     pcapConf[i].maxQSize) {
                     if (last_displayed_queue - time(0) > 10) {
                         last_displayed_queue = time(0);
-                        VIR_WARN("Worker thread for interface '%s' has a "
-                                 "job queue that is too long",
+                        VIR_WARN("Worker thread for interface '%s' has a job queue that is too long",
                                  req->binding->portdevname);
                     }
                     continue;
@@ -1390,7 +1387,7 @@ virNWFilterDHCPSnoopThread(void *req0)
             pcap_close(pcapConf[i].handle);
     }
 
-    ignore_value(!!g_atomic_int_dec_and_test(&virNWFilterSnoopState.nThreads));
+    ignore_value(g_atomic_int_dec_and_test(&virNWFilterSnoopState.nThreads));
 
     return;
 }
@@ -1443,9 +1440,7 @@ virNWFilterDHCPSnoopReq(virNWFilterTechDriver *techdriver,
     /* check that all tools are available for applying the filters (late) */
     if (!techdriver->canApplyBasicRules()) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("IP parameter must be provided since "
-                         "snooping the IP address does not work "
-                         "possibly due to missing tools"));
+                       _("IP parameter must be provided since snooping the IP address does not work possibly due to missing tools"));
         goto exit_snoopreqput;
     }
 
@@ -1456,8 +1451,7 @@ virNWFilterDHCPSnoopReq(virNWFilterTechDriver *techdriver,
                                        &req->binding->mac,
                                        dhcpsrvrs, false) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("applyDHCPOnlyRules "
-                         "failed - spoofing not protected!"));
+                       _("applyDHCPOnlyRules failed - spoofing not protected!"));
         goto exit_snoopreqput;
     }
 
@@ -1992,9 +1986,8 @@ virNWFilterDHCPSnoopReq(virNWFilterTechDriver *techdriver G_GNUC_UNUSED,
                         virNWFilterDriverState *driver G_GNUC_UNUSED)
 {
     virReportError(VIR_ERR_INTERNAL_ERROR,
-                   _("libvirt was not compiled with libpcap and \""
-                     NWFILTER_VARNAME_CTRL_IP_LEARNING
-                     "='dhcp'\" requires it."));
+                   _("libvirt was not compiled with libpcap and \"%1$s\" requires it"),
+                     NWFILTER_VARNAME_CTRL_IP_LEARNING "='dhcp'");
     return -1;
 }
 #endif /* WITH_LIBPCAP */

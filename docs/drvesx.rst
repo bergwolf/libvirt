@@ -56,8 +56,9 @@ URIs have this general form (``[...]`` marks an optional part).
 
    type://[username@]hostname[:port]/[[folder/...]datacenter/[folder/...][cluster/]server][?extraparameters]
 
-The ``type://`` is either ``esx://`` or ``gsx://`` or ``vpx://`` :since:`since
-0.8.3` . The driver selects the default port depending on the ``type://``. For
+The ``type://`` is either ``esx://`` or ``gsx://`` or ``vpx://``
+:since:`since 0.8.3`.
+The driver selects the default port depending on the ``type://``. For
 ``esx://`` and ``vpx://`` the default HTTPS port is 443, for ``gsx://`` it is
 8333. If the port parameter is given, it overrides the default port.
 
@@ -75,7 +76,7 @@ of datacenter ``dc1``.
    vpx://example-vcenter.com/dc1/cluster1/example-esx.com
 
 Datacenters and clusters can be organized in folders, those have to be specified
-as well. The driver can handle folders :since:`since 0.9.7` .
+as well. The driver can handle folders :since:`since 0.9.7`.
 
 ::
 
@@ -90,7 +91,7 @@ Multiple parameters are separated by ``&``.
 
 ::
 
-   ?no_verify=1&auto_answer=1&proxy=socks://example-proxy.com:23456
+   ?no_verify=1&auto_answer=1&proxy=socks://example-proxy.com:23456&cacert=certs/ca-bundle.pem
 
 The driver understands the extra parameters shown below.
 
@@ -129,12 +130,12 @@ The driver understands the extra parameters shown below.
 |                 |                             | set to 0, questions are     |
 |                 |                             | reported as errors. The     |
 |                 |                             | default value is 0.         |
-|                 |                             | :since:`Since 0.7.5` .      |
+|                 |                             | :since:`Since 0.7.5`.       |
 +-----------------+-----------------------------+-----------------------------+
 | ``proxy``       | ``[type://]host[:port]``    | Allows to specify a proxy   |
 |                 |                             | for HTTP and HTTPS          |
 |                 |                             | communication.              |
-|                 |                             | :since:`Since 0.8.2` . The  |
+|                 |                             | :since:`Since 0.8.2`. The   |
 |                 |                             | optional ``type`` part may  |
 |                 |                             | be one of: ``http``,        |
 |                 |                             | ``socks``, ``socks4``,      |
@@ -144,6 +145,25 @@ The driver understands the extra parameters shown below.
 |                 |                             | ``socks5``. The optional    |
 |                 |                             | ``port`` allows to override |
 |                 |                             | the default port 1080.      |
++-----------------+-----------------------------+-----------------------------+
+| ``cacert``      | Path to a file with one     | The specified file will be  |
+|                 | or more certificates        | used for verifying the      |
+|                 |                             | remote host certificate     |
+|                 |                             | instead of the default      |
+|                 |                             | system one.                 |
+|                 |                             | :since:`Since 11.5.0`.      |
+|                 |                             | Does nothing if             |
+|                 |                             | ``no_verify`` is set        |
+|                 |                             | to ``1``.                   |
++-----------------+-----------------------------+-----------------------------+
+| ``legacy_uuid`` | ``0`` or ``1``              | If set to ``1``, the driver |
+|                 |                             | will track VMs based on     |
+|                 |                             | their "Host-unique" UUID.   |
+|                 |                             | If set to ``0`` it will use |
+|                 |                             | the "Cluster-unique" UUID   |
+|                 |                             | instead. The default value  |
+|                 |                             | is ``0``.                   |
+|                 |                             | :since:`Since 12.4.0`.      |
 +-----------------+-----------------------------+-----------------------------+
 
 Authentication
@@ -160,6 +180,21 @@ distinguish between requests for ESX server and vCenter.
 **Note**: During the ongoing driver development, testing is done using an
 unrestricted ``root`` account. Problems may occur if you use a restricted
 account. Detailed testing with restricted accounts has not been done yet.
+
+UUID Stability
+~~~~~~~~~~~~~~
+
+:since:`Since 12.4.0` there is a change to which UUIDs a domain can be
+identified with.  Before this version there was a possible clash of UUIDs even
+on the same host, leading to unexpected issues.  In order to fix this libvirt
+started using a different UUID which might cause issues if any user has a domain
+UUID saved anywhere.  The older UUID is still available under ``<hwuuid>`` in
+the `General metadata <formatdomain.html#general-metadata>`__ section of the
+domain XML.
+
+In order to restore the previous behaviour parameter ``legacy_uuid=1`` (see
+`Extra parameters`_) can be appended to the URI, but only if needed as it may
+cause the aforementioned issues.
 
 Certificates for HTTPS
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -180,8 +215,10 @@ error like this one:
 
    error: internal error curl_easy_perform() returned an error: Peer certificate cannot be authenticated with known CA certificates (60)
 
-Where are two ways to solve this problem:
+Where are three ways to solve this problem:
 
+-  Use the ``cacert`` `Extra parameters`_ to point to a certificate bundle
+   with the CA that signed the SSL certificate used on the ESX server.
 -  Use the ``no_verify=1`` `Extra parameters`_ to disable server
    certificate verification.
 -  Generate new SSL certificates signed by a CA known to your client computer
@@ -272,8 +309,8 @@ will complain if this restrictions are violated.
 -  Memory size has to be a multiple of 4096
 -  Number of virtual CPU has to be 1 or a multiple of 2. :since:`Since 4.10.0`
    any number of vCPUs is supported.
--  Valid MAC address prefixes are ``00:0c:29`` and ``00:50:56``. :since:`Since
-   0.7.6` arbitrary `MAC addresses`_ are supported.
+-  Valid MAC address prefixes are ``00:0c:29`` and ``00:50:56``.
+   :since:`Since 0.7.6` arbitrary `MAC addresses`_ are supported.
 
 Datastore references
 ~~~~~~~~~~~~~~~~~~~~
@@ -331,7 +368,7 @@ the ESX server from rejecting out-of-predefined-range MAC addresses.
 
    ethernet0.checkMACAddress = "false"
 
-:since:`Since 6.6.0` , one can force libvirt to keep the provided MAC address
+:since:`Since 6.6.0`, one can force libvirt to keep the provided MAC address
 when it's in the reserved VMware range by adding a ``type="static"`` attribute
 to the ``<mac/>`` element. Note that this attribute is useless if the provided
 MAC address is outside of the reserved VMWare ranges.
@@ -374,7 +411,7 @@ Here a domain XML snippet:
    <controller type='scsi' index='0' model='lsilogic'/>
    ...
 
-The controller element is supported :since:`since 0.8.2` . Prior to this
+The controller element is supported :since:`since 0.8.2`. Prior to this
 ``<driver name='lsilogic'/>`` was abused to specify the SCSI controller model.
 This attribute usage is deprecated now.
 

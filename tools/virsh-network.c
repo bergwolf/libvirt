@@ -32,8 +32,9 @@
 
 #define VIRSH_COMMON_OPT_NETWORK(_helpstr, cflags) \
     {.name = "network", \
-     .type = VSH_OT_DATA, \
-     .flags = VSH_OFLAG_REQ, \
+     .type = VSH_OT_STRING, \
+     .positional = true, \
+     .required = true, \
      .help = _helpstr, \
      .completer = virshNetworkNameCompleter, \
      .completer_flags = cflags, \
@@ -42,21 +43,11 @@
 #define VIRSH_COMMON_OPT_NETWORK_FULL(cflags) \
     VIRSH_COMMON_OPT_NETWORK(N_("network name or uuid"), cflags)
 
-#define VIRSH_COMMON_OPT_NETWORK_OT_STRING(_helpstr, cflags) \
-    {.name = "network", \
-     .type = VSH_OT_STRING, \
-     .help = _helpstr, \
-     .completer = virshNetworkNameCompleter, \
-     .completer_flags = cflags, \
-    }
-
-#define VIRSH_COMMON_OPT_NETWORK_OT_STRING_FULL(cflags) \
-    VIRSH_COMMON_OPT_NETWORK_OT_STRING(N_("network name or uuid"), cflags)
-
 #define VIRSH_COMMON_OPT_NETWORK_PORT(cflags) \
     {.name = "port", \
-     .type = VSH_OT_DATA, \
-     .flags = VSH_OFLAG_REQ, \
+     .type = VSH_OT_STRING, \
+     .positional = true, \
+     .required = true, \
      .help = N_("port UUID"), \
      .completer = virshNetworkPortUUIDCompleter, \
      .completer_flags = cflags, \
@@ -74,10 +65,10 @@ virshCommandOptNetworkBy(vshControl *ctl, const vshCmd *cmd,
 
     virCheckFlags(VIRSH_BYUUID | VIRSH_BYNAME, NULL);
 
-    if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
+    if (vshCommandOptString(ctl, cmd, optname, &n) < 0)
         return NULL;
 
-    vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s\n",
+    vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s",
              cmd->def->name, optname, n);
 
     if (name)
@@ -85,13 +76,13 @@ virshCommandOptNetworkBy(vshControl *ctl, const vshCmd *cmd,
 
     /* try it by UUID */
     if ((flags & VIRSH_BYUUID) && strlen(n) == VIR_UUID_STRING_BUFLEN-1) {
-        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <%s> trying as network UUID\n",
+        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <%s> trying as network UUID",
                  cmd->def->name, optname);
         network = virNetworkLookupByUUIDString(priv->conn, n);
     }
     /* try it by NAME */
     if (!network && (flags & VIRSH_BYNAME)) {
-        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <%s> trying as network NAME\n",
+        vshDebug(ctl, VSH_ERR_DEBUG, "%s: <%s> trying as network NAME",
                  cmd->def->name, optname);
         network = virNetworkLookupByName(priv->conn, n);
     }
@@ -112,16 +103,16 @@ virshCommandOptNetworkPort(vshControl *ctl, const vshCmd *cmd,
     const char *n = NULL;
     const char *optname = "port";
 
-    if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
+    if (vshCommandOptString(ctl, cmd, optname, &n) < 0)
         return NULL;
 
-    vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s\n",
+    vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s",
              cmd->def->name, optname, n);
 
     if (name)
         *name = n;
 
-    vshDebug(ctl, VSH_ERR_DEBUG, "%s: <%s> trying as network UUID\n",
+    vshDebug(ctl, VSH_ERR_DEBUG, "%s: <%s> trying as network UUID",
              cmd->def->name, optname);
     port = virNetworkPortLookupByUUIDString(net, n);
 
@@ -134,14 +125,9 @@ virshCommandOptNetworkPort(vshControl *ctl, const vshCmd *cmd,
 /*
  * "net-autostart" command
  */
-static const vshCmdInfo info_network_autostart[] = {
-    {.name = "help",
-     .data = N_("autostart a network")
-    },
-    {.name = "desc",
-     .data = N_("Configure a network to be automatically started at boot.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_autostart = {
+    .help = N_("autostart a network"),
+    .desc = N_("Configure a network to be automatically started at boot."),
 };
 
 static const vshCmdOptDef opts_network_autostart[] = {
@@ -184,14 +170,9 @@ cmdNetworkAutostart(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-create" command
  */
-static const vshCmdInfo info_network_create[] = {
-    {.name = "help",
-     .data = N_("create a network from an XML file")
-    },
-    {.name = "desc",
-     .data = N_("Create a network.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_create = {
+    .help = N_("create a network from an XML file"),
+    .desc = N_("Create a network."),
 };
 
 static const vshCmdOptDef opts_network_create[] = {
@@ -212,7 +193,7 @@ cmdNetworkCreate(vshControl *ctl, const vshCmd *cmd)
     unsigned int flags = 0;
     virshControl *priv = ctl->privData;
 
-    if (vshCommandOptStringReq(ctl, cmd, "file", &from) < 0)
+    if (vshCommandOptString(ctl, cmd, "file", &from) < 0)
         return false;
 
     if (vshCommandOptBool(cmd, "validate"))
@@ -239,15 +220,10 @@ cmdNetworkCreate(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-define" command
  */
-static const vshCmdInfo info_network_define[] = {
-    {.name = "help",
-     .data = N_("define an inactive persistent virtual network or modify "
-                "an existing persistent one from an XML file")
-    },
-    {.name = "desc",
-     .data = N_("Define or modify a persistent virtual network.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_define = {
+     .help = N_("define an inactive persistent virtual network or modify "
+                "an existing persistent one from an XML file"),
+     .desc = N_("Define or modify a persistent virtual network."),
 };
 
 static const vshCmdOptDef opts_network_define[] = {
@@ -268,7 +244,7 @@ cmdNetworkDefine(vshControl *ctl, const vshCmd *cmd)
     unsigned int flags = 0;
     virshControl *priv = ctl->privData;
 
-    if (vshCommandOptStringReq(ctl, cmd, "file", &from) < 0)
+    if (vshCommandOptString(ctl, cmd, "file", &from) < 0)
         return false;
 
     if (vshCommandOptBool(cmd, "validate"))
@@ -295,14 +271,9 @@ cmdNetworkDefine(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-destroy" command
  */
-static const vshCmdInfo info_network_destroy[] = {
-    {.name = "help",
-     .data = N_("destroy (stop) a network")
-    },
-    {.name = "desc",
-     .data = N_("Forcefully stop a given network.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_destroy = {
+    .help = N_("destroy (stop) a network"),
+    .desc = N_("Forcefully stop a given network."),
 };
 
 static const vshCmdOptDef opts_network_destroy[] = {
@@ -331,16 +302,333 @@ cmdNetworkDestroy(vshControl *ctl, const vshCmd *cmd)
 }
 
 /*
- * "net-dumpxml" command
+ * "net-desc" command
  */
-static const vshCmdInfo info_network_dumpxml[] = {
-    {.name = "help",
-     .data = N_("network information in XML")
+static const vshCmdInfo info_network_desc = {
+    .help = N_("show or set network's description or title"),
+    .desc = N_("Allows setting or modifying the description or title of a network."),
+};
+
+static const vshCmdOptDef opts_network_desc[] = {
+    VIRSH_COMMON_OPT_NETWORK_FULL(0),
+    VIRSH_COMMON_OPT_LIVE(N_("modify/get running state")),
+    VIRSH_COMMON_OPT_CONFIG(N_("modify/get persistent configuration")),
+    VIRSH_COMMON_OPT_CURRENT(N_("modify/get current state configuration")),
+    {.name = "title",
+     .type = VSH_OT_BOOL,
+     .help = N_("modify/get the title instead of description")
     },
-    {.name = "desc",
-     .data = N_("Output the network information as an XML dump to stdout.")
+    {.name = "edit",
+     .type = VSH_OT_BOOL,
+     .help = N_("open an editor to modify the description")
+    },
+    {.name = "new-desc",
+     .type = VSH_OT_ARGV,
+     .positional = true,
+     .completer = vshCompleteEmpty,
+     .help = N_("message")
     },
     {.name = NULL}
+};
+
+/* extract description or title from network xml */
+static char *
+virshGetNetworkDescription(vshControl *ctl, virNetworkPtr net,
+                           bool title, unsigned int flags,
+                           unsigned int queryflags)
+{
+    char *desc = NULL;
+    g_autoptr(xmlDoc) doc = NULL;
+    g_autoptr(xmlXPathContext) ctxt = NULL;
+    int type;
+
+    if (title)
+        type = VIR_NETWORK_METADATA_TITLE;
+    else
+        type = VIR_NETWORK_METADATA_DESCRIPTION;
+
+    if ((desc = virNetworkGetMetadata(net, type, NULL, flags))) {
+        return desc;
+    } else {
+        int errCode = virGetLastErrorCode();
+
+        if (errCode == VIR_ERR_NO_NETWORK_METADATA) {
+            desc = g_strdup("");
+            vshResetLibvirtError();
+            return desc;
+        }
+
+        if (errCode != VIR_ERR_NO_SUPPORT)
+            return desc;
+    }
+
+    /* fall back to xml */
+    if (virshNetworkGetXMLFromNet(ctl, net, queryflags, &doc, &ctxt) < 0)
+        return NULL;
+
+    if (title)
+        desc = virXPathString("string(./title[1])", ctxt);
+    else
+        desc = virXPathString("string(./description[1])", ctxt);
+
+    if (!desc)
+        desc = g_strdup("");
+
+    return desc;
+}
+
+static bool
+cmdNetworkDesc(vshControl *ctl, const vshCmd *cmd)
+{
+    g_autoptr(virshNetwork) net = NULL;
+    bool config = vshCommandOptBool(cmd, "config");
+    bool live = vshCommandOptBool(cmd, "live");
+    bool current = vshCommandOptBool(cmd, "current");
+    bool title = vshCommandOptBool(cmd, "title");
+    bool edit = vshCommandOptBool(cmd, "edit");
+
+    int type;
+    g_autofree char *descArg = NULL;
+    unsigned int flags = VIR_NETWORK_UPDATE_AFFECT_CURRENT;
+    unsigned int queryflags = 0;
+
+    VSH_EXCLUSIVE_OPTIONS_VAR(current, live);
+    VSH_EXCLUSIVE_OPTIONS_VAR(current, config);
+
+    if (config) {
+        flags |= VIR_NETWORK_UPDATE_AFFECT_CONFIG;
+        queryflags |= VIR_NETWORK_XML_INACTIVE;
+    }
+    if (live)
+        flags |= VIR_NETWORK_UPDATE_AFFECT_LIVE;
+
+    if (!(net = virshCommandOptNetwork(ctl, cmd, NULL)))
+        return false;
+
+    if (title)
+        type = VIR_NETWORK_METADATA_TITLE;
+    else
+        type = VIR_NETWORK_METADATA_DESCRIPTION;
+
+    descArg = g_strdup(vshCommandOptArgvString(cmd, "new-desc"));
+
+    if (edit || descArg) {
+        g_autofree char *descNet = NULL;
+        g_autofree char *descNew = NULL;
+
+        if (!(descNet = virshGetNetworkDescription(ctl, net, title, flags, queryflags)))
+            return false;
+
+        if (!descArg)
+            descArg = g_strdup(descNet);
+
+        if (edit) {
+            g_autofree char *desc_edited = NULL;
+
+            /* Create and open the temporary file. */
+            if (vshEditString(ctl, &desc_edited, descArg) < 0)
+                return false;
+
+            /* Compare original XML with edited.  Has it changed at all? */
+            if (STREQ(descNet, desc_edited)) {
+                if (title)
+                    vshPrintExtra(ctl, "%s", _("Network title not changed\n"));
+                else
+                    vshPrintExtra(ctl, "%s", _("Network description not changed\n"));
+
+                return true;
+            }
+
+            descNew = g_steal_pointer(&desc_edited);
+        } else {
+            descNew = g_steal_pointer(&descArg);
+        }
+
+        if (virNetworkSetMetadata(net, type, descNew, NULL, NULL, flags) < 0) {
+            if (title)
+                vshError(ctl, "%s", _("Failed to set new network title"));
+            else
+                vshError(ctl, "%s", _("Failed to set new network description"));
+
+            return false;
+        }
+
+        if (title)
+            vshPrintExtra(ctl, "%s", _("Network title updated successfully"));
+        else
+            vshPrintExtra(ctl, "%s", _("Network description updated successfully"));
+
+    } else {
+        g_autofree char *desc = virshGetNetworkDescription(ctl, net, title, flags, queryflags);
+        if (!desc)
+            return false;
+
+        if (strlen(desc) > 0) {
+            vshPrint(ctl, "%s", desc);
+        } else {
+            if (title)
+                vshPrintExtra(ctl, _("No title for network: %1$s"), virNetworkGetName(net));
+            else
+                vshPrintExtra(ctl, _("No description for network: %1$s"), virNetworkGetName(net));
+        }
+    }
+
+    return true;
+}
+
+/*
+ * "net-metadata" command
+ */
+static const vshCmdInfo info_network_metadata = {
+    .help = N_("show or set network's custom XML metadata"),
+    .desc = N_("Shows or modifies the XML metadata of a network."),
+};
+
+static const vshCmdOptDef opts_network_metadata[] = {
+    VIRSH_COMMON_OPT_NETWORK_FULL(0),
+    {.name = "uri",
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
+     .help = N_("URI of the namespace")
+    },
+    VIRSH_COMMON_OPT_LIVE(N_("modify/get running state")),
+    VIRSH_COMMON_OPT_CONFIG(N_("modify/get persistent configuration")),
+    VIRSH_COMMON_OPT_CURRENT(N_("modify/get current state configuration")),
+    {.name = "edit",
+     .type = VSH_OT_BOOL,
+     .help = N_("use an editor to change the metadata")
+    },
+    {.name = "key",
+     .unwanted_positional = true,
+     .type = VSH_OT_STRING,
+     .help = N_("key to be used as a namespace identifier"),
+    },
+    {.name = "set",
+     .type = VSH_OT_STRING,
+     .unwanted_positional = true,
+     .completer = vshCompleteEmpty,
+     .help = N_("new metadata to set"),
+    },
+    {.name = "remove",
+     .type = VSH_OT_BOOL,
+     .help = N_("remove the metadata corresponding to an uri")
+    },
+    {.name = NULL}
+};
+
+/* helper to add new metadata using the --edit option */
+static char *
+virshNetworkGetEditMetadata(vshControl *ctl G_GNUC_UNUSED,
+                            virNetworkPtr net,
+                            const char *uri,
+                            unsigned int flags)
+{
+    char *ret;
+
+    if (!(ret = virNetworkGetMetadata(net, VIR_NETWORK_METADATA_ELEMENT,
+                                      uri, flags))) {
+        vshResetLibvirtError();
+        ret = g_strdup("\n");
+    }
+
+    return ret;
+}
+
+static bool
+cmdNetworkMetadata(vshControl *ctl, const vshCmd *cmd)
+{
+    g_autoptr(virshNetwork) net = NULL;
+    bool config = vshCommandOptBool(cmd, "config");
+    bool live = vshCommandOptBool(cmd, "live");
+    bool current = vshCommandOptBool(cmd, "current");
+    bool edit = vshCommandOptBool(cmd, "edit");
+    bool rem = vshCommandOptBool(cmd, "remove");
+    const char *set = NULL;
+    const char *uri = NULL;
+    const char *key = NULL;
+    unsigned int flags = VIR_NETWORK_UPDATE_AFFECT_CURRENT;
+    bool ret = false;
+
+    VSH_EXCLUSIVE_OPTIONS_VAR(current, live);
+    VSH_EXCLUSIVE_OPTIONS_VAR(current, config);
+    VSH_EXCLUSIVE_OPTIONS("edit", "set");
+    VSH_EXCLUSIVE_OPTIONS("remove", "set");
+    VSH_EXCLUSIVE_OPTIONS("remove", "edit");
+
+    if (config)
+        flags |= VIR_NETWORK_UPDATE_AFFECT_CONFIG;
+    if (live)
+        flags |= VIR_NETWORK_UPDATE_AFFECT_LIVE;
+
+    if (!(net = virshCommandOptNetwork(ctl, cmd, NULL)))
+        return false;
+
+    if (vshCommandOptString(ctl, cmd, "uri", &uri) < 0 ||
+        vshCommandOptString(ctl, cmd, "key", &key) < 0 ||
+        vshCommandOptString(ctl, cmd, "set", &set) < 0)
+        return false;
+
+    if ((set || edit) && !key) {
+        vshError(ctl, "%s",
+                 _("namespace key is required when modifying metadata"));
+        return false;
+    }
+
+    if (set || rem) {
+        if (virNetworkSetMetadata(net, VIR_NETWORK_METADATA_ELEMENT,
+                                  set, key, uri, flags))
+            return false;
+
+        if (rem)
+            vshPrintExtra(ctl, "%s\n", _("Metadata removed"));
+        else
+            vshPrintExtra(ctl, "%s\n", _("Metadata modified"));
+    } else if (edit) {
+#define EDIT_GET_XML \
+        virshNetworkGetEditMetadata(ctl, net, uri, flags)
+#define EDIT_NOT_CHANGED \
+        do { \
+            vshPrintExtra(ctl, "%s", _("Metadata not changed")); \
+            ret = true; \
+            goto edit_cleanup; \
+        } while (0)
+
+#define EDIT_DEFINE \
+        (virNetworkSetMetadata(net, VIR_NETWORK_METADATA_ELEMENT, doc_edited, \
+                               key, uri, flags) == 0)
+#include "virsh-edit.c"
+
+        vshPrintExtra(ctl, "%s\n", _("Metadata modified"));
+    } else {
+        g_autofree char *data = NULL;
+
+        /* get */
+        if (!(data = virNetworkGetMetadata(net, VIR_NETWORK_METADATA_ELEMENT,
+                                           uri, flags))) {
+            if (virGetLastErrorCode() == VIR_ERR_NO_NETWORK_METADATA) {
+                virResetLastError();
+                data = g_strdup("");
+            } else {
+                return false;
+            }
+        }
+
+        vshPrint(ctl, "%s\n", data);
+    }
+
+    ret = true;
+
+ cleanup:
+    return ret;
+}
+
+/*
+ * "net-dumpxml" command
+ */
+static const vshCmdInfo info_network_dumpxml = {
+    .help = N_("network information in XML"),
+    .desc = N_("Output the network information as an XML dump to stdout."),
 };
 
 static const vshCmdOptDef opts_network_dumpxml[] = {
@@ -351,8 +639,7 @@ static const vshCmdOptDef opts_network_dumpxml[] = {
     },
     {.name = "xpath",
      .type = VSH_OT_STRING,
-     .flags = VSH_OFLAG_REQ_OPT,
-     .completer = virshCompleteEmpty,
+     .completer = vshCompleteEmpty,
      .help = N_("xpath expression to filter the XML document")
     },
     {.name = "wrap",
@@ -389,14 +676,9 @@ cmdNetworkDumpXML(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-info" command
  */
-static const vshCmdInfo info_network_info[] = {
-    {.name = "help",
-     .data = N_("network information")
-    },
-    {.name = "desc",
-     .data = N_("Returns basic information about the network")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_info = {
+    .help = N_("network information"),
+    .desc = N_("Returns basic information about the network"),
 };
 
 static const vshCmdOptDef opts_network_info[] = {
@@ -433,7 +715,7 @@ cmdNetworkInfo(vshControl *ctl, const vshCmd *cmd)
         vshPrint(ctl, "%-15s %s\n", _("Persistent:"), persistent ? _("yes") : _("no"));
 
     if (virNetworkGetAutostart(network, &autostart) < 0)
-        vshPrint(ctl, "%-15s %s\n", _("Autostart:"), _("no autostart"));
+        vshPrint(ctl, "%-15s %s\n", _("Autostart:"), _("unknown"));
     else
         vshPrint(ctl, "%-15s %s\n", _("Autostart:"), autostart ? _("yes") : _("no"));
 
@@ -445,7 +727,9 @@ cmdNetworkInfo(vshControl *ctl, const vshCmd *cmd)
 }
 
 static int
-virshNetworkSorter(const void *a, const void *b)
+virshNetworkSorter(const void *a,
+                   const void *b,
+                   void *opaque G_GNUC_UNUSED)
 {
     virNetworkPtr *na = (virNetworkPtr *) a;
     virNetworkPtr *nb = (virNetworkPtr *) b;
@@ -636,9 +920,10 @@ virshNetworkListCollect(vshControl *ctl,
 
  finished:
     /* sort the list */
-    if (list->nets && list->nnets)
-        qsort(list->nets, list->nnets,
-              sizeof(*list->nets), virshNetworkSorter);
+    if (list->nets && list->nnets) {
+        g_qsort_with_data(list->nets, list->nnets,
+                          sizeof(*list->nets), virshNetworkSorter, NULL);
+    }
 
     /* truncate the list if filter simulation deleted entries */
     if (deleted)
@@ -661,14 +946,9 @@ virshNetworkListCollect(vshControl *ctl,
 /*
  * "net-list" command
  */
-static const vshCmdInfo info_network_list[] = {
-    {.name = "help",
-     .data = N_("list networks")
-    },
-    {.name = "desc",
-     .data = N_("Returns list of networks.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_list = {
+    .help = N_("list networks"),
+    .desc = N_("Returns list of networks."),
 };
 
 static const vshCmdOptDef opts_network_list[] = {
@@ -708,6 +988,10 @@ static const vshCmdOptDef opts_network_list[] = {
      .type = VSH_OT_BOOL,
      .help = N_("list table (default)")
     },
+    {.name = "title",
+     .type = VSH_OT_BOOL,
+     .help = N_("show network title")
+    },
     {.name = NULL}
 };
 
@@ -721,6 +1005,7 @@ cmdNetworkList(vshControl *ctl, const vshCmd *cmd G_GNUC_UNUSED)
     size_t i;
     bool ret = false;
     bool optName = vshCommandOptBool(cmd, "name");
+    bool optTitle = vshCommandOptBool(cmd, "title");
     bool optTable = vshCommandOptBool(cmd, "table");
     bool optUUID = vshCommandOptBool(cmd, "uuid");
     char uuid[VIR_UUID_STRING_BUFLEN];
@@ -742,8 +1027,7 @@ cmdNetworkList(vshControl *ctl, const vshCmd *cmd G_GNUC_UNUSED)
 
     if (optTable + optName + optUUID > 1) {
         vshError(ctl, "%s",
-                 _("Only one argument from --table, --name and --uuid "
-                   "may be specified."));
+                 _("Only one argument from --table, --name and --uuid may be specified."));
         return false;
     }
 
@@ -754,8 +1038,12 @@ cmdNetworkList(vshControl *ctl, const vshCmd *cmd G_GNUC_UNUSED)
         return false;
 
     if (optTable) {
-        table = vshTableNew(_("Name"), _("State"), _("Autostart"),
-                            _("Persistent"), NULL);
+        if (optTitle)
+            table = vshTableNew(_("Name"), _("State"), _("Autostart"),
+                                _("Persistent"), _("Title"), NULL);
+        else
+            table = vshTableNew(_("Name"), _("State"), _("Autostart"),
+                                _("Persistent"), NULL);
         if (!table)
             goto cleanup;
     }
@@ -767,20 +1055,41 @@ cmdNetworkList(vshControl *ctl, const vshCmd *cmd G_GNUC_UNUSED)
 
         if (optTable) {
             if (virNetworkGetAutostart(network, &is_autostart) < 0)
-                autostartStr = _("no autostart");
+                autostartStr = _("unknown");
             else
                 autostartStr = is_autostart ? _("yes") : _("no");
 
-            if (vshTableRowAppend(table,
-                                  virNetworkGetName(network),
-                                  virNetworkIsActive(network) ?
-                                  _("active") : _("inactive"),
-                                  autostartStr,
-                                  virNetworkIsPersistent(network) ?
-                                  _("yes") : _("no"),
-                                  NULL) < 0)
-                goto cleanup;
+            if (optTitle) {
+                g_autofree char *title = NULL;
+
+                if (!(title = virshGetNetworkDescription(ctl, network, true, 0, 0)))
+                    goto cleanup;
+                if (vshTableRowAppend(table,
+                            virNetworkGetName(network),
+                            virNetworkIsActive(network) ?
+                            _("active") : _("inactive"),
+                            autostartStr,
+                            virNetworkIsPersistent(network) ?
+                            _("yes") : _("no"),
+                            title,
+                            NULL) < 0)
+                    goto cleanup;
+
+            } else {
+                if (vshTableRowAppend(table,
+                            virNetworkGetName(network),
+                            virNetworkIsActive(network) ?
+                            _("active") : _("inactive"),
+                            autostartStr,
+                            virNetworkIsPersistent(network) ?
+                            _("yes") : _("no"),
+                            NULL) < 0)
+                    goto cleanup;
+
+            }
+
         } else if (optUUID) {
+
             if (virNetworkGetUUIDString(network, uuid) < 0) {
                 vshError(ctl, "%s", _("Failed to get network's UUID"));
                 goto cleanup;
@@ -804,20 +1113,16 @@ cmdNetworkList(vshControl *ctl, const vshCmd *cmd G_GNUC_UNUSED)
 /*
  * "net-name" command
  */
-static const vshCmdInfo info_network_name[] = {
-    {.name = "help",
-     .data = N_("convert a network UUID to network name")
-    },
-    {.name = "desc",
-     .data = ""
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_name = {
+    .help = N_("convert a network UUID to network name"),
+    .desc = "",
 };
 
 static const vshCmdOptDef opts_network_name[] = {
     {.name = "network",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .completer = virshNetworkUUIDCompleter,
      .help = N_("network uuid")
     },
@@ -840,14 +1145,9 @@ cmdNetworkName(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-start" command
  */
-static const vshCmdInfo info_network_start[] = {
-    {.name = "help",
-     .data = N_("start a (previously defined) inactive network")
-    },
-    {.name = "desc",
-     .data = N_("Start a network.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_start = {
+    .help = N_("start a (previously defined) inactive network"),
+    .desc = N_("Start a network."),
 };
 
 static const vshCmdOptDef opts_network_start[] = {
@@ -877,14 +1177,9 @@ cmdNetworkStart(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-undefine" command
  */
-static const vshCmdInfo info_network_undefine[] = {
-    {.name = "help",
-     .data = N_("undefine a persistent network")
-    },
-    {.name = "desc",
-     .data = N_("Undefine the configuration for a persistent network.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_undefine = {
+    .help = N_("undefine a persistent network"),
+    .desc = N_("Undefine the configuration for a persistent network."),
 };
 
 static const vshCmdOptDef opts_network_undefine[] = {
@@ -915,39 +1210,38 @@ cmdNetworkUndefine(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-update" command
  */
-static const vshCmdInfo info_network_update[] = {
-    {.name = "help",
-     .data = N_("update parts of an existing network's configuration")
-    },
-    {.name = "desc",
-     .data = ""
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_update = {
+    .help = N_("update parts of an existing network's configuration"),
+    .desc = "",
 };
 
 static const vshCmdOptDef opts_network_update[] = {
     VIRSH_COMMON_OPT_NETWORK_FULL(0),
     {.name = "command",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .completer = virshNetworkUpdateCommandCompleter,
      .help = N_("type of update (add-first, add-last (add), delete, or modify)")
     },
     {.name = "section",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .completer = virshNetworkUpdateSectionCompleter,
      .help = N_("which section of network configuration to update")
     },
     {.name = "xml",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
-     .completer = virshCompletePathLocalExisting,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
+     .completer = vshCompletePathLocalExisting,
      .help = N_("name of file containing xml (or, if it starts with '<', the complete "
                 "xml element itself) to add/modify, or to be matched for search")
     },
     {.name = "parent-index",
      .type = VSH_OT_INT,
+     .unwanted_positional = true,
      .help = N_("which parent object to search through")
     },
     VIRSH_COMMON_OPT_CONFIG(N_("affect next network startup")),
@@ -987,7 +1281,7 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
     if (!(network = virshCommandOptNetwork(ctl, cmd, NULL)))
         return false;
 
-    if (vshCommandOptStringReq(ctl, cmd, "command", &commandStr) < 0)
+    if (vshCommandOptString(ctl, cmd, "command", &commandStr) < 0)
         goto cleanup;
 
     if (STREQ(commandStr, "add")) {
@@ -1001,7 +1295,7 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
         }
     }
 
-    if (vshCommandOptStringReq(ctl, cmd, "section", &sectionStr) < 0)
+    if (vshCommandOptString(ctl, cmd, "section", &sectionStr) < 0)
         goto cleanup;
 
     section = virshNetworkSectionTypeFromString(sectionStr);
@@ -1020,7 +1314,7 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
      * the desired xml.
      */
 
-    if (vshCommandOptStringReq(ctl, cmd, "xml", &xml) < 0)
+    if (vshCommandOptString(ctl, cmd, "xml", &xml) < 0)
         goto cleanup;
 
     if (*xml != '<') {
@@ -1075,14 +1369,9 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-uuid" command
  */
-static const vshCmdInfo info_network_uuid[] = {
-    {.name = "help",
-     .data = N_("convert a network name to network UUID")
-    },
-    {.name = "desc",
-     .data = ""
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_uuid = {
+    .help = N_("convert a network name to network UUID"),
+    .desc = "",
 };
 
 static const vshCmdOptDef opts_network_uuid[] = {
@@ -1100,25 +1389,21 @@ cmdNetworkUuid(vshControl *ctl, const vshCmd *cmd)
                                              VIRSH_BYNAME)))
         return false;
 
-    if (virNetworkGetUUIDString(network, uuid) != -1)
-        vshPrint(ctl, "%s\n", uuid);
-    else
+    if (virNetworkGetUUIDString(network, uuid) == -1) {
         vshError(ctl, "%s", _("failed to get network UUID"));
+        return false;
+    }
 
+    vshPrint(ctl, "%s\n", uuid);
     return true;
 }
 
 /*
  * "net-edit" command
  */
-static const vshCmdInfo info_network_edit[] = {
-    {.name = "help",
-     .data = N_("edit XML configuration for a network")
-    },
-    {.name = "desc",
-     .data = N_("Edit the XML configuration for a network.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_edit = {
+    .help = N_("edit XML configuration for a network"),
+    .desc = N_("Edit the XML configuration for a network."),
 };
 
 static const vshCmdOptDef opts_network_edit[] = {
@@ -1206,7 +1491,8 @@ typedef struct virshNetEventData virshNetEventData;
 VIR_ENUM_DECL(virshNetworkEventId);
 VIR_ENUM_IMPL(virshNetworkEventId,
               VIR_NETWORK_EVENT_ID_LAST,
-              "lifecycle");
+              "lifecycle",
+              "metadata-change");
 
 static void
 vshEventLifecyclePrint(virConnectPtr conn G_GNUC_UNUSED,
@@ -1239,26 +1525,70 @@ vshEventLifecyclePrint(virConnectPtr conn G_GNUC_UNUSED,
         vshEventDone(data->ctl);
 }
 
+VIR_ENUM_DECL(virshNetworkEventMetadataChangeType);
+VIR_ENUM_IMPL(virshNetworkEventMetadataChangeType,
+              VIR_NETWORK_METADATA_LAST,
+              N_("description"),
+              N_("title"),
+              N_("element"));
+
+#define UNKNOWNSTR(str) (str ? str : N_("unsupported value"))
+
+static void
+vshEventMetadataChangePrint(virConnectPtr conn G_GNUC_UNUSED,
+                            virNetworkPtr net,
+                            int type,
+                            const char *nsuri,
+                            void *opaque)
+{
+    virshNetEventData *data = opaque;
+
+    if (!data->loop && data->count)
+        return;
+
+    if (data->timestamp) {
+        char timestamp[VIR_TIME_STRING_BUFLEN];
+
+        if (virTimeStringNowRaw(timestamp) < 0)
+            timestamp[0] = '\0';
+
+        vshPrint(data->ctl, _("%1$s: event 'metadata-change' for network %2$s: type %3$s, uri %4$s\n"),
+                 timestamp, virNetworkGetName(net),
+                 UNKNOWNSTR(virshNetworkEventMetadataChangeTypeTypeToString(type)), NULLSTR(nsuri));
+    } else {
+        vshPrint(data->ctl, _("event 'metadata-change' for network %1$s: type %2$s, uri %3$s\n"),
+                 virNetworkGetName(net),
+                 UNKNOWNSTR(virshNetworkEventMetadataChangeTypeTypeToString(type)), NULLSTR(nsuri));
+    }
+
+    data->count++;
+    if (!data->loop)
+        vshEventDone(data->ctl);
+}
+
 virshNetworkEventCallback virshNetworkEventCallbacks[] = {
     { "lifecycle",
       VIR_NETWORK_EVENT_CALLBACK(vshEventLifecyclePrint), },
+    { "metadata-change",
+      VIR_NETWORK_EVENT_CALLBACK(vshEventMetadataChangePrint), },
 };
 G_STATIC_ASSERT(VIR_NETWORK_EVENT_ID_LAST == G_N_ELEMENTS(virshNetworkEventCallbacks));
 
-static const vshCmdInfo info_network_event[] = {
-    {.name = "help",
-     .data = N_("Network Events")
-    },
-    {.name = "desc",
-     .data = N_("List event types, or wait for network events to occur")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_event = {
+    .help = N_("Network Events"),
+    .desc = N_("List event types, or wait for network events to occur"),
 };
 
 static const vshCmdOptDef opts_network_event[] = {
-    VIRSH_COMMON_OPT_NETWORK_OT_STRING(N_("filter by network name or uuid"), 0),
+    {.name = "network",
+     .type = VSH_OT_STRING,
+     .unwanted_positional = true,
+     .help = N_("filter by network name or uuid"),
+     .completer = virshNetworkNameCompleter,
+    },
     {.name = "event",
      .type = VSH_OT_STRING,
+     .unwanted_positional = true,
      .completer = virshNetworkEventNameCompleter,
      .help = N_("which event type to wait for")
     },
@@ -1268,6 +1598,7 @@ static const vshCmdOptDef opts_network_event[] = {
     },
     {.name = "timeout",
      .type = VSH_OT_INT,
+     .unwanted_positional = true,
      .help = N_("timeout seconds")
     },
     {.name = "list",
@@ -1301,7 +1632,7 @@ cmdNetworkEvent(vshControl *ctl, const vshCmd *cmd)
         return true;
     }
 
-    if (vshCommandOptStringReq(ctl, cmd, "event", &eventName) < 0)
+    if (vshCommandOptString(ctl, cmd, "event", &eventName) < 0)
         return false;
     if (!eventName) {
         vshError(ctl, "%s", _("either --list or --event <type> is required"));
@@ -1360,21 +1691,16 @@ cmdNetworkEvent(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-dhcp-leases" command
  */
-static const vshCmdInfo info_network_dhcp_leases[] = {
-    {.name = "help",
-     .data = N_("print lease info for a given network")
-    },
-    {.name = "desc",
-     .data = N_("Print lease info for a given network")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_dhcp_leases = {
+    .help = N_("print lease info for a given network"),
+    .desc = N_("Print lease info for a given network"),
 };
 
 static const vshCmdOptDef opts_network_dhcp_leases[] = {
     VIRSH_COMMON_OPT_NETWORK_FULL(VIR_CONNECT_LIST_NETWORKS_ACTIVE),
     {.name = "mac",
      .type = VSH_OT_STRING,
-     .flags = VSH_OFLAG_NONE,
+     .unwanted_positional = true,
      .help = N_("MAC address"),
      .completer = virshNetworkDhcpMacCompleter,
     },
@@ -1382,7 +1708,9 @@ static const vshCmdOptDef opts_network_dhcp_leases[] = {
 };
 
 static int
-virshNetworkDHCPLeaseSorter(const void *a, const void *b)
+virshNetworkDHCPLeaseSorter(const void *a,
+                            const void *b,
+                            void *opaque G_GNUC_UNUSED)
 {
     virNetworkDHCPLeasePtr *lease1 = (virNetworkDHCPLeasePtr *) a;
     virNetworkDHCPLeasePtr *lease2 = (virNetworkDHCPLeasePtr *) b;
@@ -1409,7 +1737,7 @@ cmdNetworkDHCPLeases(vshControl *ctl, const vshCmd *cmd)
     g_autoptr(virshNetwork) network = NULL;
     g_autoptr(vshTable) table = NULL;
 
-    if (vshCommandOptStringReq(ctl, cmd, "mac", &mac) < 0)
+    if (vshCommandOptString(ctl, cmd, "mac", &mac) < 0)
         return false;
 
     if (!(network = virshCommandOptNetwork(ctl, cmd, &name)))
@@ -1421,7 +1749,8 @@ cmdNetworkDHCPLeases(vshControl *ctl, const vshCmd *cmd)
     }
 
     /* Sort the list according to MAC Address/IAID */
-    qsort(leases, nleases, sizeof(*leases), virshNetworkDHCPLeaseSorter);
+    g_qsort_with_data(leases, nleases,
+                      sizeof(*leases), virshNetworkDHCPLeaseSorter, NULL);
 
     table = vshTableNew(_("Expiry Time"), _("MAC address"), _("Protocol"),
                         _("IP address"), _("Hostname"), _("Client ID or DUID"),
@@ -1472,14 +1801,9 @@ cmdNetworkDHCPLeases(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-port-create" command
  */
-static const vshCmdInfo info_network_port_create[] = {
-    {.name = "help",
-     .data = N_("create a network port from an XML file")
-    },
-    {.name = "desc",
-     .data = N_("Create a network port.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_port_create = {
+    .help = N_("create a network port from an XML file"),
+    .desc = N_("Create a network port."),
 };
 
 static const vshCmdOptDef opts_network_port_create[] = {
@@ -1506,7 +1830,7 @@ cmdNetworkPortCreate(vshControl *ctl, const vshCmd *cmd)
     if (network == NULL)
         goto cleanup;
 
-    if (vshCommandOptStringReq(ctl, cmd, "file", &from) < 0)
+    if (vshCommandOptString(ctl, cmd, "file", &from) < 0)
         goto cleanup;
 
     if (vshCommandOptBool(cmd, "validate"))
@@ -1539,14 +1863,9 @@ cmdNetworkPortCreate(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-port-dumpxml" command
  */
-static const vshCmdInfo info_network_port_dumpxml[] = {
-    {.name = "help",
-     .data = N_("network port information in XML")
-    },
-    {.name = "desc",
-     .data = N_("Output the network port information as an XML dump to stdout.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_port_dumpxml = {
+    .help = N_("network port information in XML"),
+    .desc = N_("Output the network port information as an XML dump to stdout."),
 };
 
 static const vshCmdOptDef opts_network_port_dumpxml[] = {
@@ -1554,8 +1873,7 @@ static const vshCmdOptDef opts_network_port_dumpxml[] = {
     VIRSH_COMMON_OPT_NETWORK_PORT(0),
     {.name = "xpath",
      .type = VSH_OT_STRING,
-     .flags = VSH_OFLAG_REQ_OPT,
-     .completer = virshCompleteEmpty,
+     .completer = vshCompleteEmpty,
      .help = N_("xpath expression to filter the XML document")
     },
     {.name = "wrap",
@@ -1600,14 +1918,9 @@ cmdNetworkPortDumpXML(vshControl *ctl, const vshCmd *cmd)
 /*
  * "net-port-delete" command
  */
-static const vshCmdInfo info_network_port_delete[] = {
-    {.name = "help",
-     .data = N_("delete the specified network port")
-    },
-    {.name = "desc",
-     .data = N_("Delete the specified network port.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_port_delete = {
+    .help = N_("delete the specified network port"),
+    .desc = N_("Delete the specified network port."),
 };
 
 static const vshCmdOptDef opts_network_port_delete[] = {
@@ -1649,7 +1962,9 @@ cmdNetworkPortDelete(vshControl *ctl, const vshCmd *cmd)
 
 
 static int
-virshNetworkPortSorter(const void *a, const void *b)
+virshNetworkPortSorter(const void *a,
+                       const void *b,
+                       void *opaque G_GNUC_UNUSED)
 {
     virNetworkPortPtr *na = (virNetworkPortPtr *) a;
     virNetworkPortPtr *nb = (virNetworkPortPtr *) b;
@@ -1710,9 +2025,10 @@ virshNetworkPortListCollect(vshControl *ctl,
     list->nports = ret;
 
     /* sort the list */
-    if (list->ports && list->nports)
-        qsort(list->ports, list->nports,
-              sizeof(*list->ports), virshNetworkPortSorter);
+    if (list->ports && list->nports) {
+        g_qsort_with_data(list->ports, list->nports,
+                          sizeof(*list->ports), virshNetworkPortSorter, NULL);
+    }
 
     success = true;
 
@@ -1727,14 +2043,9 @@ virshNetworkPortListCollect(vshControl *ctl,
 /*
  * "net-list" command
  */
-static const vshCmdInfo info_network_port_list[] = {
-    {.name = "help",
-     .data = N_("list network ports")
-    },
-    {.name = "desc",
-     .data = N_("Returns list of network ports.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_network_port_list = {
+    .help = N_("list network ports"),
+    .desc = N_("Returns list of network ports."),
 };
 
 static const vshCmdOptDef opts_network_port_list[] = {
@@ -1764,8 +2075,7 @@ cmdNetworkPortList(vshControl *ctl, const vshCmd *cmd)
 
     if (optTable + optUUID > 1) {
         vshError(ctl, "%s",
-                 _("Only one argument from --table and --uuid "
-                   "may be specified."));
+                 _("Only one argument from --table and --uuid may be specified."));
         return false;
     }
 
@@ -1810,115 +2120,127 @@ const vshCmdDef networkCmds[] = {
     {.name = "net-autostart",
      .handler = cmdNetworkAutostart,
      .opts = opts_network_autostart,
-     .info = info_network_autostart,
+     .info = &info_network_autostart,
      .flags = 0
     },
     {.name = "net-create",
      .handler = cmdNetworkCreate,
      .opts = opts_network_create,
-     .info = info_network_create,
+     .info = &info_network_create,
      .flags = 0
     },
     {.name = "net-define",
      .handler = cmdNetworkDefine,
      .opts = opts_network_define,
-     .info = info_network_define,
+     .info = &info_network_define,
+     .flags = 0
+    },
+    {.name = "net-desc",
+     .handler = cmdNetworkDesc,
+     .opts = opts_network_desc,
+     .info = &info_network_desc,
      .flags = 0
     },
     {.name = "net-destroy",
      .handler = cmdNetworkDestroy,
      .opts = opts_network_destroy,
-     .info = info_network_destroy,
+     .info = &info_network_destroy,
      .flags = 0
     },
     {.name = "net-dhcp-leases",
      .handler = cmdNetworkDHCPLeases,
      .opts = opts_network_dhcp_leases,
-     .info = info_network_dhcp_leases,
+     .info = &info_network_dhcp_leases,
      .flags = 0,
     },
     {.name = "net-dumpxml",
      .handler = cmdNetworkDumpXML,
      .opts = opts_network_dumpxml,
-     .info = info_network_dumpxml,
+     .info = &info_network_dumpxml,
      .flags = 0
     },
     {.name = "net-edit",
      .handler = cmdNetworkEdit,
      .opts = opts_network_edit,
-     .info = info_network_edit,
+     .info = &info_network_edit,
      .flags = 0
     },
     {.name = "net-event",
      .handler = cmdNetworkEvent,
      .opts = opts_network_event,
-     .info = info_network_event,
+     .info = &info_network_event,
      .flags = 0
     },
     {.name = "net-info",
      .handler = cmdNetworkInfo,
      .opts = opts_network_info,
-     .info = info_network_info,
+     .info = &info_network_info,
      .flags = 0
     },
     {.name = "net-list",
      .handler = cmdNetworkList,
      .opts = opts_network_list,
-     .info = info_network_list,
+     .info = &info_network_list,
+     .flags = 0
+    },
+    {.name = "net-metadata",
+     .handler = cmdNetworkMetadata,
+     .opts = opts_network_metadata,
+     .info = &info_network_metadata,
      .flags = 0
     },
     {.name = "net-name",
      .handler = cmdNetworkName,
      .opts = opts_network_name,
-     .info = info_network_name,
+     .info = &info_network_name,
      .flags = 0
     },
     {.name = "net-start",
      .handler = cmdNetworkStart,
      .opts = opts_network_start,
-     .info = info_network_start,
+     .info = &info_network_start,
      .flags = 0
     },
     {.name = "net-undefine",
      .handler = cmdNetworkUndefine,
      .opts = opts_network_undefine,
-     .info = info_network_undefine,
+     .info = &info_network_undefine,
      .flags = 0
     },
     {.name = "net-update",
      .handler = cmdNetworkUpdate,
      .opts = opts_network_update,
-     .info = info_network_update,
+     .info = &info_network_update,
      .flags = 0
     },
     {.name = "net-uuid",
      .handler = cmdNetworkUuid,
      .opts = opts_network_uuid,
-     .info = info_network_uuid,
+     .info = &info_network_uuid,
      .flags = 0
     },
     {.name = "net-port-list",
      .handler = cmdNetworkPortList,
      .opts = opts_network_port_list,
-     .info = info_network_port_list,
+     .info = &info_network_port_list,
      .flags = 0
     },
     {.name = "net-port-create",
      .handler = cmdNetworkPortCreate,
      .opts = opts_network_port_create,
-     .info = info_network_port_create,
+     .info = &info_network_port_create,
      .flags = 0
     },
     {.name = "net-port-dumpxml",
      .handler = cmdNetworkPortDumpXML,
      .opts = opts_network_port_dumpxml,
-     .info = info_network_port_dumpxml,
+     .info = &info_network_port_dumpxml,
      .flags = 0
     },
     {.name = "net-port-delete",
      .handler = cmdNetworkPortDelete,
      .opts = opts_network_port_delete,
-     .info = info_network_port_delete,
+     .info = &info_network_port_delete,
      .flags = 0
     },
     {.name = NULL}

@@ -84,7 +84,7 @@ virNetDevCreateNetlinkAddressMessage(int messageType,
                                      virSocketAddr *peer)
 {
     struct nl_msg *nlmsg = NULL;
-    struct ifaddrmsg ifa;
+    struct ifaddrmsg ifa = { 0 };
     unsigned int ifindex;
     void *addrData = NULL;
     void *peerData = NULL;
@@ -109,8 +109,6 @@ virNetDevCreateNetlinkAddressMessage(int messageType,
 
     nlmsg = virNetlinkMsgNew(messageType,
                              NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL);
-
-    memset(&ifa, 0, sizeof(ifa));
 
     ifa.ifa_prefixlen = prefix;
     ifa.ifa_family = VIR_SOCKET_ADDR_FAMILY(addr);
@@ -190,8 +188,8 @@ virNetDevIPAddrAdd(const char *ifname,
 
     VIR_DEBUG("Adding IP address %s/%d%s%s%s%s to %s",
               NULLSTR(ipStr), prefix,
-              peerStr ? " peer " : "", peerStr ? peerStr : "",
-              bcastStr ? " bcast " : "", bcastStr ? bcastStr : "",
+              peerStr ? " peer " : "", NULLSTR_EMPTY(peerStr),
+              bcastStr ? " bcast " : "", NULLSTR_EMPTY(bcastStr),
               ifname);
 
     if (!(nlmsg = virNetDevCreateNetlinkAddressMessage(RTM_NEWADDR, ifname,
@@ -208,8 +206,8 @@ virNetDevIPAddrAdd(const char *ifname,
         virReportError(VIR_ERR_SYSTEM_ERROR,
                        _("Failed to add IP address %1$s/%2$d%3$s%4$s%5$s%6$s to %7$s"),
                        ipStr, prefix,
-                       peerStr ? " peer " : "", peerStr ? peerStr : "",
-                       bcastStr ? " bcast " : "", bcastStr ? bcastStr : "",
+                       peerStr ? " peer " : "", NULLSTR_EMPTY(peerStr),
+                       bcastStr ? " bcast " : "", NULLSTR_EMPTY(bcastStr),
                        ifname);
         return -1;
     }
@@ -277,7 +275,7 @@ virNetDevIPRouteAdd(const char *ifname,
 {
     unsigned int recvbuflen;
     unsigned int ifindex;
-    struct rtmsg rtmsg;
+    struct rtmsg rtmsg = { 0 };
     void *gatewayData = NULL;
     void *addrData = NULL;
     size_t addrDataLen;
@@ -322,8 +320,6 @@ virNetDevIPRouteAdd(const char *ifname,
 
     nlmsg = virNetlinkMsgNew(RTM_NEWROUTE,
                              NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL);
-
-    memset(&rtmsg, 0, sizeof(rtmsg));
 
     rtmsg.rtm_family = VIR_SOCKET_ADDR_FAMILY(gateway);
     rtmsg.rtm_table = RT_TABLE_MAIN;
@@ -394,8 +390,8 @@ virNetDevIPAddrAdd(const char *ifname,
         return -1;
     }
 
-# ifdef IFCONFIG
-    cmd = virCommandNew(IFCONFIG);
+# ifdef __FreeBSD__
+    cmd = virCommandNew("ifconfig");
     virCommandAddArg(cmd, ifname);
     if (VIR_SOCKET_ADDR_IS_FAMILY(addr, AF_INET6))
         virCommandAddArg(cmd, "inet6");
@@ -408,7 +404,7 @@ virNetDevIPAddrAdd(const char *ifname,
         virCommandAddArgList(cmd, "broadcast", bcaststr, NULL);
     virCommandAddArg(cmd, "alias");
 # else
-    cmd = virCommandNew(IP);
+    cmd = virCommandNew("ip");
     virCommandAddArgList(cmd, "addr", "add", NULL);
     virCommandAddArgFormat(cmd, "%s/%u", addrstr, prefix);
     if (peerstr)
@@ -435,8 +431,8 @@ virNetDevIPAddrDel(const char *ifname,
 
     if (!(addrstr = virSocketAddrFormat(addr)))
         return -1;
-# ifdef IFCONFIG
-    cmd = virCommandNew(IFCONFIG);
+# ifdef __FreeBSD__
+    cmd = virCommandNew("ifconfig");
     virCommandAddArg(cmd, ifname);
     if (VIR_SOCKET_ADDR_IS_FAMILY(addr, AF_INET6))
         virCommandAddArg(cmd, "inet6");
@@ -445,7 +441,7 @@ virNetDevIPAddrDel(const char *ifname,
     virCommandAddArgFormat(cmd, "%s/%u", addrstr, prefix);
     virCommandAddArg(cmd, "-alias");
 # else
-    cmd = virCommandNew(IP);
+    cmd = virCommandNew("ip");
     virCommandAddArgList(cmd, "addr", "del", NULL);
     virCommandAddArgFormat(cmd, "%s/%u", addrstr, prefix);
     virCommandAddArgList(cmd, "dev", ifname, NULL);
@@ -469,11 +465,19 @@ virNetDevIPRouteAdd(const char *ifname,
     g_autofree char *addrstr = NULL;
     g_autofree char *gatewaystr = NULL;
 
-    if (!(addrstr = virSocketAddrFormat(addr)))
-        return -1;
+    if (VIR_SOCKET_ADDR_VALID(addr)) {
+        if (!(addrstr = virSocketAddrFormat(addr)))
+            return -1;
+    } else {
+        if (VIR_SOCKET_ADDR_IS_FAMILY(gateway, AF_INET6))
+            addrstr = g_strdup(VIR_SOCKET_ADDR_IPV6_ALL);
+        else
+            addrstr = g_strdup(VIR_SOCKET_ADDR_IPV4_ALL);
+    }
+
     if (!(gatewaystr = virSocketAddrFormat(gateway)))
         return -1;
-    cmd = virCommandNew(IP);
+    cmd = virCommandNew("ip");
     virCommandAddArgList(cmd, "route", "add", NULL);
     virCommandAddArgFormat(cmd, "%s/%u", addrstr, prefix);
     virCommandAddArgList(cmd, "via", gatewaystr, "dev", ifname,
@@ -542,10 +546,6 @@ virNetDevIPCheckIPv6Forwarding(void)
                        PROC_NET_IPV6_ROUTE);
         return false;
     }
-
-    /* Dropping the last character to stop the loop */
-    if (len > 0)
-        buf[len-1] = '\0';
 
     cur = buf;
     while (cur) {
@@ -780,7 +780,7 @@ virNetDevIPRouteGetAddress(virNetDevIPRoute *def)
 }
 
 int
-virNetDevIPRouteGetPrefix(virNetDevIPRoute *def)
+virNetDevIPRouteGetPrefix(const virNetDevIPRoute *def)
 {
     int prefix = 0;
     virSocketAddr zero;

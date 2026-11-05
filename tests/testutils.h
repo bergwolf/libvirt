@@ -82,6 +82,8 @@ unsigned int virTestGetExpensive(void);
 unsigned int virTestGetRegenerate(void);
 void virTestPropagateLibvirtError(void);
 
+bool virTestHasRangeBitmap(void);
+
 #define VIR_TEST_DEBUG(fmt, ...) \
     do { \
         if (virTestGetDebug()) \
@@ -104,6 +106,44 @@ const char *virTestCounterNext(void);
 char *virTestFakeRootDirInit(void);
 void virTestFakeRootDirCleanup(char *fakerootdir);
 
+struct _virTestDummyFDContext {
+    GHashTable *hints;
+    GSList *errors;
+};
+
+typedef struct _virTestDummyFDContext virTestDummyFDContext;
+
+void virTestDummyFDContextFree(virTestDummyFDContext *ctxt);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virTestDummyFDContext, virTestDummyFDContextFree);
+
+virTestDummyFDContext *virTestDummyFDContextNew(void);
+
+void virTestDummyFDContextMarkFD(int fd,
+                                 char *hint);
+
+void virTestMakeDummyMarkDup(int newfd,
+                             int oldfd);
+
+void virTestDummyFDContextMarkError(char *error);
+
+int virTestMakeDummyFD(char *hint);
+
+/* VIR_TEST_MAKE_DUMMY_FD_INSTALL_DUP_MOCK installs a mock for dup() that
+ * marks duplicated FDs via virTestMakeDummyFD */
+#define VIR_TEST_MAKE_DUMMY_FD_INSTALL_DUP_MOCK \
+    static int (*real_dup)(int oldfd); \
+    int \
+    dup(int oldfd) \
+    { \
+        int newfd; \
+        if (!real_dup) \
+            VIR_MOCK_REAL_INIT(dup); \
+        newfd = real_dup(oldfd); \
+        virTestMakeDummyMarkDup(newfd, oldfd); \
+        return newfd; \
+    }
+
+
 /**
  * The @func shall return  EXIT_FAILURE or EXIT_SUCCESS or
  * EXIT_AM_SKIP or EXIT_AM_HARDFAIL.
@@ -111,7 +151,8 @@ void virTestFakeRootDirCleanup(char *fakerootdir);
 int virTestMain(int argc,
                 char **argv,
                 int (*func)(void),
-                ...);
+                ...)
+    G_GNUC_NULL_TERMINATED;
 
 /* Setup, then call func() */
 #define VIR_TEST_MAIN(func) \
@@ -121,26 +162,36 @@ int virTestMain(int argc,
 
 #ifdef __APPLE__
 # define PRELOAD_VAR "DYLD_INSERT_LIBRARIES"
+# define LD_LIBRARY_PATH "DYLD_LIBRARY_PATH"
 # define FORCE_FLAT_NAMESPACE \
             g_setenv("DYLD_FORCE_FLAT_NAMESPACE", "1", TRUE);
 # define MOCK_EXT ".dylib"
 #else
 # define PRELOAD_VAR "LD_PRELOAD"
+# define LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 # define FORCE_FLAT_NAMESPACE
 # define MOCK_EXT ".so"
 #endif
 
 #define VIR_TEST_PRELOAD(libs) \
     do { \
-        const char *preload = getenv(PRELOAD_VAR); \
+        const char *preload = g_getenv(PRELOAD_VAR); \
         if (preload == NULL || strstr(preload, libs) == NULL) { \
             char *newenv; \
+            char *new_library_path; \
+            const char *cur_library_path = g_getenv(LD_LIBRARY_PATH); \
             if (!preload) { \
                 newenv = (char *) libs; \
             } else { \
                 newenv = g_strdup_printf("%s:%s", libs, preload); \
             } \
+            if (!cur_library_path) { \
+                new_library_path = (char *) abs_builddir; \
+            } else { \
+                new_library_path = g_strdup_printf("%s:%s", abs_builddir, cur_library_path); \
+            } \
             g_setenv(PRELOAD_VAR, newenv, TRUE); \
+            g_setenv(LD_LIBRARY_PATH, new_library_path, TRUE); \
             FORCE_FLAT_NAMESPACE \
             execv(argv[0], argv); \
         } \
@@ -151,7 +202,7 @@ int virTestMain(int argc,
         return virTestMain(argc, argv, func, __VA_ARGS__, NULL); \
     }
 
-#define VIR_TEST_MOCK(mock) (abs_builddir "/lib" mock "mock" MOCK_EXT)
+#define VIR_TEST_MOCK(mock) ("lib" mock "mock" MOCK_EXT)
 
 virCaps *virTestGenericCapsInit(void);
 virCapsHostNUMA *virTestCapsBuildNUMATopology(int seq);
@@ -179,3 +230,17 @@ virTestStablePath(const char *path);
 #ifdef __linux__
 int virCreateAnonymousFile(const uint8_t *data, size_t len);
 #endif
+
+typedef bool (*virTestEnumerateTestCasesCB)(struct dirent *);
+
+int
+virTestEnumerateTestCases(const char *path,
+                          virTestEnumerateTestCasesCB cb,
+                          GHashTable **existingTestCases);
+
+void
+virTestCaseMarkUsed(GHashTable *existingTestCases,
+                    const char *file);
+
+int
+virTestCheckUnusedTestCases(GHashTable *existingTestCases);

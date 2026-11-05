@@ -143,7 +143,8 @@ mymain(void)
     DO_TEST_FULL(name, FLAG_EXPECT_PARSE_ERROR)
 
     driver.grubcaps = BHYVE_GRUB_CAP_CONSDEV;
-    driver.bhyvecaps = BHYVE_CAP_RTC_UTC;
+    driver.bhyvecaps = virBitmapNew(BHYVE_CAP_LAST);
+    virBhyveCapsSet(driver.bhyvecaps, BHYVE_CAP_RTC_UTC);
 
     DO_TEST("base");
     DO_TEST("wired");
@@ -161,6 +162,7 @@ mymain(void)
     DO_TEST("virtio-blk");
     DO_TEST("virtio-net");
     DO_TEST("e1000");
+    DO_TEST("passthru");
     DO_TEST_WARN("virtio-net2");
     DO_TEST_WARN("virtio-net3");
     DO_TEST_WARN("virtio-net4");
@@ -188,9 +190,11 @@ mymain(void)
     DO_TEST("vnc-vga-io");
     DO_TEST("vnc-resolution");
     DO_TEST("vnc-password");
+    DO_TEST("virtio-rnd");
 
     virObjectUnref(driver.caps);
     virObjectUnref(driver.xmlopt);
+    virBitmapFree(driver.bhyvecaps);
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

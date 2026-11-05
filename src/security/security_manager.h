@@ -43,8 +43,8 @@ typedef enum {
      VIR_SECURITY_MANAGER_PRIVILEGED)
 
 virSecurityManager *virSecurityManagerNew(const char *name,
-                                            const char *virtDriver,
-                                            unsigned int flags);
+                                          const char *virtDriver,
+                                          unsigned int flags);
 
 virSecurityManager *virSecurityManagerNewStack(virSecurityManager *primary);
 int virSecurityManagerStackAddNested(virSecurityManager *stack,
@@ -73,18 +73,20 @@ typedef int
 
 
 virSecurityManager *virSecurityManagerNewDAC(const char *virtDriver,
-                                               uid_t user,
-                                               gid_t group,
-                                               unsigned int flags,
-                                               virSecurityManagerDACChownCallback chownCallback);
+                                             uid_t user,
+                                             gid_t group,
+                                             unsigned int flags,
+                                             virSecurityManagerDACChownCallback chownCallback);
 
 int virSecurityManagerPreFork(virSecurityManager *mgr);
 void virSecurityManagerPostFork(virSecurityManager *mgr);
 
-int virSecurityManagerTransactionStart(virSecurityManager *mgr);
+int virSecurityManagerTransactionStart(virSecurityManager *mgr,
+                                       char *const *sharedFilesystems);
 int virSecurityManagerTransactionCommit(virSecurityManager *mgr,
                                         pid_t pid,
-                                        bool lock);
+                                        bool lock,
+                                        bool lockMetadataException);
 void virSecurityManagerTransactionAbort(virSecurityManager *mgr);
 
 void *virSecurityManagerGetPrivateData(virSecurityManager *mgr);
@@ -129,11 +131,13 @@ int virSecurityManagerReleaseLabel(virSecurityManager *mgr,
 int virSecurityManagerCheckAllLabel(virSecurityManager *mgr,
                                     virDomainDef *sec);
 int virSecurityManagerSetAllLabel(virSecurityManager *mgr,
+                                  char *const *sharedFilesystems,
                                   virDomainDef *sec,
                                   const char *incomingPath,
                                   bool chardevStdioLogd,
                                   bool migrated);
 int virSecurityManagerRestoreAllLabel(virSecurityManager *mgr,
+                                      char *const *sharedFilesystems,
                                       virDomainDef *def,
                                       bool migrated,
                                       bool chardevStdioLogd);
@@ -158,6 +162,8 @@ int virSecurityManagerSetTapFDLabel(virSecurityManager *mgr,
 char *virSecurityManagerGetMountOptions(virSecurityManager *mgr,
                                         virDomainDef *vm);
 virSecurityManager ** virSecurityManagerGetNested(virSecurityManager *mgr);
+void virSecurityManagerStackLock(virSecurityManager *mgr);
+void virSecurityManagerStackUnlock(virSecurityManager *mgr);
 
 typedef enum {
     VIR_SECURITY_DOMAIN_IMAGE_LABEL_BACKING_CHAIN = 1 << 0,
@@ -168,14 +174,17 @@ typedef enum {
 } virSecurityDomainImageLabelFlags;
 
 int virSecurityManagerSetImageLabel(virSecurityManager *mgr,
+                                    char *const *sharedFilesystems,
                                     virDomainDef *vm,
                                     virStorageSource *src,
                                     virSecurityDomainImageLabelFlags flags);
 int virSecurityManagerRestoreImageLabel(virSecurityManager *mgr,
+                                        char *const *sharedFilesystems,
                                         virDomainDef *vm,
                                         virStorageSource *src,
                                         virSecurityDomainImageLabelFlags flags);
 int virSecurityManagerMoveImageMetadata(virSecurityManager *mgr,
+                                        char *const *sharedFilesystems,
                                         pid_t pid,
                                         virStorageSource *src,
                                         virStorageSource *dst);
@@ -184,8 +193,8 @@ int virSecurityManagerSetMemoryLabel(virSecurityManager *mgr,
                                      virDomainDef *vm,
                                      virDomainMemoryDef *mem);
 int virSecurityManagerRestoreMemoryLabel(virSecurityManager *mgr,
-                                        virDomainDef *vm,
-                                        virDomainMemoryDef *mem);
+                                         virDomainDef *vm,
+                                         virDomainMemoryDef *mem);
 
 int virSecurityManagerSetInputLabel(virSecurityManager *mgr,
                                     virDomainDef *vm,
@@ -244,8 +253,10 @@ struct _virSecurityManagerMetadataLockState {
 
 virSecurityManagerMetadataLockState *
 virSecurityManagerMetadataLock(virSecurityManager *mgr,
+                               char *const *sharedFilesystems,
                                const char **paths,
-                               size_t npaths);
+                               size_t npaths,
+                               bool lockMetadataException);
 
 void
 virSecurityManagerMetadataUnlock(virSecurityManager *mgr,

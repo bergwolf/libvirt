@@ -268,6 +268,16 @@ typedef enum {
 # define VIR_NODE_CPU_STATS_INTR "intr"
 
 /**
+ * VIR_NODE_CPU_STATS_GUEST:
+ *
+ * The cumulative CPU time spent running guest virtual CPUs,
+ * since the node booting up (in nanoseconds).
+ *
+ * Since: 11.8.0
+ */
+# define VIR_NODE_CPU_STATS_GUEST "guest"
+
+/**
  * VIR_NODE_CPU_STATS_UTILIZATION:
  *
  * The CPU utilization of a node.
@@ -353,6 +363,16 @@ typedef enum {
  * Since: 0.9.3
  */
 # define VIR_NODE_MEMORY_STATS_CACHED "cached"
+
+/**
+ * VIR_NODE_MEMORY_STATS_AVAILABLE:
+ *
+ * Macro for the available memory: On Linux, it is only returned in case of
+ * VIR_NODE_MEMORY_STATS_ALL_CELLS.
+ *
+ * Since: 12.3.0
+ */
+# define VIR_NODE_MEMORY_STATS_AVAILABLE "available"
 
 /**
  * virNodeMemoryStats:
@@ -970,8 +990,13 @@ int virConnectGetCPUModelNames(virConnectPtr conn,
  * Since: 1.1.2
  */
 typedef enum {
-    VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES  = (1 << 0),  /* show all features (Since: 1.1.2) */
-    VIR_CONNECT_BASELINE_CPU_MIGRATABLE = (1 << 1),  /* filter out non-migratable features (Since: 1.2.14) */
+    /* show all features (Since: 1.1.2) */
+    VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES  = (1 << 0),
+    /* filter out non-migratable features (Since: 1.2.14) */
+    VIR_CONNECT_BASELINE_CPU_MIGRATABLE = (1 << 1),
+    /* when computing a baseline from several CPUs, do not make the result
+     * dependent on the current host (Since: 11.6.0) */
+    VIR_CONNECT_BASELINE_CPU_IGNORE_HOST = (1 << 2),
 } virConnectBaselineCPUFlags;
 
 char *virConnectBaselineCPU(virConnectPtr conn,

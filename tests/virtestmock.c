@@ -29,6 +29,9 @@
 #include "virfile.h"
 
 static int (*real_open)(const char *path, int flags, ...);
+#if WITH___OPEN_2
+static int (*real___open_2)(const char *path, int flags);
+#endif
 static FILE *(*real_fopen)(const char *path, const char *mode);
 static int (*real_access)(const char *path, int mode);
 static int (*real_connect)(int fd, const struct sockaddr *addr, socklen_t addrlen);
@@ -43,7 +46,14 @@ static void init_syms(void)
     if (real_open)
         return;
 
+#if defined(__GLIBC__) && defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64
+    VIR_MOCK_REAL_INIT_ALIASED(open, "open64");
+#else
     VIR_MOCK_REAL_INIT(open);
+#endif
+#if WITH___OPEN_2
+    VIR_MOCK_REAL_INIT(__open_2);
+#endif
     VIR_MOCK_REAL_INIT(fopen);
     VIR_MOCK_REAL_INIT(access);
     VIR_MOCK_REAL_INIT(connect);
@@ -54,15 +64,15 @@ printFile(const char *file,
           const char *func)
 {
     FILE *fp;
-    const char *testname = getenv("VIR_TEST_MOCK_TESTNAME");
+    const char *testname = g_getenv("VIR_TEST_MOCK_TESTNAME");
 
     if (!progname) {
-        progname = getenv("VIR_TEST_MOCK_PROGNAME");
+        progname = g_getenv("VIR_TEST_MOCK_PROGNAME");
 
         if (!progname)
             return;
 
-        output = getenv("VIR_TEST_FILE_ACCESS_OUTPUT");
+        output = g_getenv("VIR_TEST_FILE_ACCESS_OUTPUT");
         if (!output)
             output = VIR_FILE_ACCESS_DEFAULT;
     }
@@ -152,6 +162,20 @@ int open(const char *path, int flags, ...)
     }
     return ret;
 }
+
+
+#if WITH___OPEN_2
+int
+__open_2(const char *path, int flags)
+{
+    init_syms();
+
+    CHECK_PATH(path);
+
+    return real___open_2(path, flags);
+}
+#endif
+
 
 FILE *fopen(const char *path, const char *mode)
 {

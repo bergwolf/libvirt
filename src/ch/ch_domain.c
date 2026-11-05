@@ -22,6 +22,7 @@
 
 #include "ch_domain.h"
 #include "domain_driver.h"
+#include "domain_validate.h"
 #include "virchrdev.h"
 #include "virlog.h"
 #include "virtime.h"
@@ -36,7 +37,7 @@ void
 virCHDomainRemoveInactive(virCHDriver *driver,
                           virDomainObj *vm)
 {
-    if (vm->persistent) {
+    if (!vm->persistent) {
         virDomainObjListRemove(driver->domains, vm);
     }
 }
@@ -64,6 +65,10 @@ virCHDomainObjPrivateFree(void *data)
 
     virChrdevFree(priv->chrdevs);
     g_free(priv->machineName);
+    virBitmapFree(priv->autoCpuset);
+    virBitmapFree(priv->autoNodeset);
+    virCgroupFree(priv->cgroup);
+    g_free(priv->pidfile);
     g_free(priv);
 }
 
@@ -124,11 +129,14 @@ virCHDomainDefPostParse(virDomainDef *def,
 {
     virCHDriver *driver = opaque;
     g_autoptr(virCaps) caps = virCHDriverGetCapabilities(driver, false);
+
     if (!caps)
         return -1;
+
     if (!virCapabilitiesDomainSupported(caps, def->os.type,
                                         def->os.arch,
-                                        def->virtType))
+                                        def->virtType,
+                                        true))
         return -1;
 
     return 0;
@@ -142,17 +150,20 @@ virDomainXMLPrivateDataCallbacks virCHDriverPrivateDataCallbacks = {
 
 static int
 chValidateDomainDeviceDef(const virDomainDeviceDef *dev,
-                          const virDomainDef *def G_GNUC_UNUSED,
-                          void *opaque G_GNUC_UNUSED,
+                          const virDomainDef *def,
+                          void *opaque,
                           void *parseOpaque G_GNUC_UNUSED)
 {
-    switch ((virDomainDeviceType)dev->type) {
+    virCHDriver *driver = opaque;
+    switch (dev->type) {
     case VIR_DOMAIN_DEVICE_DISK:
     case VIR_DOMAIN_DEVICE_NET:
     case VIR_DOMAIN_DEVICE_MEMORY:
     case VIR_DOMAIN_DEVICE_VSOCK:
     case VIR_DOMAIN_DEVICE_CONTROLLER:
     case VIR_DOMAIN_DEVICE_CHR:
+    case VIR_DOMAIN_DEVICE_HOSTDEV:
+    case VIR_DOMAIN_DEVICE_RNG:
         break;
 
     case VIR_DOMAIN_DEVICE_LEASE:
@@ -160,7 +171,6 @@ chValidateDomainDeviceDef(const virDomainDeviceDef *dev,
     case VIR_DOMAIN_DEVICE_INPUT:
     case VIR_DOMAIN_DEVICE_SOUND:
     case VIR_DOMAIN_DEVICE_VIDEO:
-    case VIR_DOMAIN_DEVICE_HOSTDEV:
     case VIR_DOMAIN_DEVICE_WATCHDOG:
     case VIR_DOMAIN_DEVICE_GRAPHICS:
     case VIR_DOMAIN_DEVICE_HUB:
@@ -168,13 +178,13 @@ chValidateDomainDeviceDef(const virDomainDeviceDef *dev,
     case VIR_DOMAIN_DEVICE_SMARTCARD:
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
     case VIR_DOMAIN_DEVICE_NVRAM:
-    case VIR_DOMAIN_DEVICE_RNG:
     case VIR_DOMAIN_DEVICE_SHMEM:
     case VIR_DOMAIN_DEVICE_TPM:
     case VIR_DOMAIN_DEVICE_PANIC:
     case VIR_DOMAIN_DEVICE_IOMMU:
     case VIR_DOMAIN_DEVICE_AUDIO:
     case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("Cloud-Hypervisor doesn't support '%1$s' device"),
                        virDomainDeviceTypeToString(dev->type));
@@ -191,18 +201,30 @@ chValidateDomainDeviceDef(const virDomainDeviceDef *dev,
         return -1;
     }
 
-    if ((def->nconsoles &&
-         def->consoles[0]->source->type == VIR_DOMAIN_CHR_TYPE_PTY)
-        && (def->nserials &&
-            def->serials[0]->source->type == VIR_DOMAIN_CHR_TYPE_PTY)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Only a single console or serial can be configured for this domain"));
-        return -1;
-    } else if (def->nconsoles > 1) {
+    if (!virBitmapIsBitSet(driver->chCaps, CH_SERIAL_CONSOLE_IN_PARALLEL)) {
+        if ((def->nconsoles &&
+             def->consoles[0]->source->type == VIR_DOMAIN_CHR_TYPE_PTY) &&
+            (def->nserials &&
+             def->serials[0]->source->type == VIR_DOMAIN_CHR_TYPE_PTY)) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Only a single console or serial can be configured for this domain"));
+            return -1;
+        }
+    }
+
+    if (def->nconsoles > 1) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Only a single console can be configured for this domain"));
         return -1;
-    } else if (def->nserials > 1) {
+    }
+
+    if (def->nrngs > 1) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Only a single RNG device can be configured for this domain"));
+        return -1;
+    }
+
+    if (def->nserials > 1) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Only a single serial can be configured for this domain"));
         return -1;
@@ -210,22 +232,32 @@ chValidateDomainDeviceDef(const virDomainDeviceDef *dev,
 
     if (def->nconsoles && def->consoles[0]->source->type != VIR_DOMAIN_CHR_TYPE_PTY) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Console can only be enabled for a PTY"));
+                       _("Console only works in PTY mode"));
         return -1;
     }
 
-    if (def->nserials && def->serials[0]->source->type != VIR_DOMAIN_CHR_TYPE_PTY) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Serial can only be enabled for a PTY"));
-        return -1;
+    if (def->nserials) {
+        if (def->serials[0]->source->type != VIR_DOMAIN_CHR_TYPE_PTY &&
+            def->serials[0]->source->type != VIR_DOMAIN_CHR_TYPE_UNIX) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Serial only works in UNIX/PTY modes"));
+            return -1;
+        }
+        if (!virBitmapIsBitSet(driver->chCaps, CH_SOCKET_BACKEND_SERIAL_PORT) &&
+            def->serials[0]->source->type == VIR_DOMAIN_CHR_TYPE_UNIX) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Unix Socket backend is not supported by this version of ch."));
+            return -1;
+        }
     }
+
     return 0;
 }
 
-int
+void
 virCHDomainRefreshThreadInfo(virDomainObj *vm)
 {
-    size_t maxvcpus = virDomainDefGetVcpusMax(vm->def);
+    unsigned int maxvcpus = virDomainDefGetVcpusMax(vm->def);
     virCHMonitorThreadInfo *info = NULL;
     size_t nthreads;
     size_t ncpus = 0;
@@ -244,25 +276,29 @@ virCHDomainRefreshThreadInfo(virDomainObj *vm)
 
         /* TODO: hotplug support */
         vcpuInfo = &info[i].vcpuInfo;
-        vcpu = virDomainDefGetVcpu(vm->def, vcpuInfo->cpuid);
-        vcpupriv = CH_DOMAIN_VCPU_PRIVATE(vcpu);
-        vcpupriv->tid = vcpuInfo->tid;
-        ncpus++;
+
+        if ((vcpu = virDomainDefGetVcpu(vm->def, vcpuInfo->cpuid))) {
+            vcpupriv = CH_DOMAIN_VCPU_PRIVATE(vcpu);
+            vcpupriv->tid = vcpuInfo->tid;
+            ncpus++;
+        } else {
+            VIR_WARN("vcpu '%d' reported by hypervisor but not found in definition",
+                     vcpuInfo->cpuid);
+        }
     }
 
     /* TODO: Remove the warning when hotplug is implemented.*/
     if (ncpus != maxvcpus)
-        VIR_WARN("Mismatch in the number of cpus, expected: %ld, actual: %ld",
+        VIR_WARN("Mismatch in the number of cpus, expected: %u, actual: %zu",
                  maxvcpus, ncpus);
-
-    return 0;
 }
 
 virDomainDefParserConfig virCHDriverDomainDefParserConfig = {
     .domainPostParseBasicCallback = virCHDomainDefPostParseBasic,
     .domainPostParseCallback = virCHDomainDefPostParse,
     .deviceValidateCallback = chValidateDomainDeviceDef,
-    .features = VIR_DOMAIN_DEF_FEATURE_NO_STUB_CONSOLE,
+    .features = VIR_DOMAIN_DEF_FEATURE_NO_STUB_CONSOLE |
+                VIR_DOMAIN_DEF_FEATURE_USER_ALIAS,
 };
 
 virCHMonitor *
@@ -346,4 +382,44 @@ virCHDomainObjFromDomain(virDomainPtr domain)
     }
 
     return vm;
+}
+
+int
+virCHDomainValidateActualNetDef(virDomainNetDef *net)
+{
+    virDomainNetType actualType = virDomainNetGetActualType(net);
+
+    /* hypervisor-agnostic validation */
+    if (virDomainActualNetDefValidate(net) < 0)
+        return -1;
+
+    /* CH specific validation */
+    switch (actualType) {
+    case VIR_DOMAIN_NET_TYPE_ETHERNET:
+        if (net->guestIP.nips > 1) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("ethernet type supports a single guest ip"));
+            return -1;
+        }
+        break;
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_BRIDGE:
+    case VIR_DOMAIN_NET_TYPE_NETWORK:
+    case VIR_DOMAIN_NET_TYPE_DIRECT:
+    case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
+    case VIR_DOMAIN_NET_TYPE_VDPA:
+    case VIR_DOMAIN_NET_TYPE_NULL:
+    case VIR_DOMAIN_NET_TYPE_VDS:
+    case VIR_DOMAIN_NET_TYPE_LAST:
+    default:
+        break;
+    }
+
+    return 0;
 }

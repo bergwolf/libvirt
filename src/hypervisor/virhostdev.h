@@ -233,4 +233,7 @@ virHostdevUpdateActiveNVMeDevices(virHostdevManager *hostdev_mgr,
                                   virDomainDiskDef **disks,
                                   size_t ndisks);
 
-bool virHostdevIsPCIDevice(const virDomainHostdevDef *hostdev);
+bool
+virHostdevNeedsVFIO(const virDomainHostdevDef *hostdev);
+
+bool virHostdevHostSupportsPassthroughVFIO(void);

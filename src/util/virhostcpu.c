@@ -182,7 +182,7 @@ virHostCPUGetStatsFreeBSD(int cpuNum,
 # define CPUINFO_PATH "/proc/cpuinfo"
 # define PROCSTAT_PATH "/proc/stat"
 
-# define LINUX_NB_CPU_STATS 4
+# define LINUX_NB_CPU_STATS 5
 
 int
 virHostCPUGetSocket(unsigned int cpu, unsigned int *socket)
@@ -228,6 +228,28 @@ virHostCPUGetDie(unsigned int cpu, unsigned int *die)
         *die = 0;
     else
         *die = die_id;
+
+    return 0;
+}
+
+int
+virHostCPUGetCluster(unsigned int cpu, unsigned int *cluster)
+{
+    int cluster_id;
+    int ret = virFileReadValueInt(&cluster_id,
+                                  "%s/cpu/cpu%u/topology/cluster_id",
+                                  SYSFS_SYSTEM_PATH, cpu);
+
+    if (ret == -1)
+        return -1;
+
+    /* If the file doesn't exists (old kernel) or the value contained
+     * in it is -1 (architecture without CPU clusters), report 0 to
+     * indicate the lack of information */
+    if (ret == -2 || cluster_id < 0)
+        cluster_id = 0;
+
+    *cluster = cluster_id;
 
     return 0;
 }
@@ -309,6 +331,8 @@ virHostCPUParseNode(const char *node,
     int siblings;
     unsigned int cpu;
     int direrr;
+    g_autoptr(GHashTable) st = g_hash_table_new(g_direct_hash, g_direct_equal);
+    gpointer sock_resolved;
 
     *threads = 0;
     *cores = 0;
@@ -334,14 +358,28 @@ virHostCPUParseNode(const char *node,
         if (virHostCPUGetSocket(cpu, &sock) < 0)
             goto cleanup;
 
-        virBitmapSetBitExpand(sockets_map, sock);
+        if (!g_hash_table_lookup_extended(st,
+                                          GUINT_TO_POINTER(sock),
+                                          NULL,
+                                          &sock_resolved)) {
+            g_hash_table_insert(st,
+                                GUINT_TO_POINTER(sock),
+                                GUINT_TO_POINTER(sock_max));
+            sock = sock_max;
+            sock_max++;
+        } else {
+            sock = GPOINTER_TO_UINT(sock_resolved);
+        }
 
-        if (sock > sock_max)
-            sock_max = sock;
+        virBitmapSetBitExpand(sockets_map, sock);
     }
 
     if (direrr < 0)
         goto cleanup;
+
+    if (sock_max == 0) {
+        g_hash_table_insert(st, GUINT_TO_POINTER(0), GUINT_TO_POINTER(sock_max));
+    }
 
     sock_max++;
 
@@ -378,6 +416,16 @@ virHostCPUParseNode(const char *node,
 
         if (virHostCPUGetSocket(cpu, &sock) < 0)
             goto cleanup;
+
+        if (!g_hash_table_lookup_extended(st,
+                                          GUINT_TO_POINTER(sock),
+                                          NULL,
+                                          &sock_resolved)) {
+            goto cleanup;
+        }
+
+        sock = GPOINTER_TO_UINT(sock_resolved);
+
         if (!virBitmapIsBitSet(sockets_map, sock)) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                            _("CPU socket topology has changed"));
@@ -553,6 +601,8 @@ virHostCPUParseFrequency(FILE *cpuinfo,
         prefix = "clock";
     else if (ARCH_IS_S390(arch))
         prefix = "cpu MHz dynamic";
+    else if (ARCH_IS_LOONGARCH(arch))
+        prefix = "CPU MHz";
 
     if (!prefix) {
         VIR_WARN("%s is not supported by the %s parser",
@@ -579,7 +629,7 @@ virHostCPUParsePhysAddrSize(FILE *cpuinfo, unsigned int *addrsz)
         char *str;
         char *endptr;
 
-        if (!(str = STRSKIP(line, "address sizes")))
+        if (!(str = STRCASESKIP(line, "address sizes")))
             continue;
 
         /* Skip the colon. */
@@ -619,9 +669,8 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
     int nodecpus, nodecores, nodesockets, nodethreads, offline = 0;
     int threads_per_subcore = 0;
     unsigned int node;
-    int ret = -1;
-    char *sysfs_nodedir = NULL;
-    char *sysfs_cpudir = NULL;
+    g_autofree char *sysfs_nodedir = NULL;
+    g_autofree char *sysfs_cpudir_fallback = NULL;
     int direrr;
 
     *mhz = 0;
@@ -635,12 +684,11 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
 
     /* Get information about what CPUs are present in the host and what
      * CPUs are online, so that we don't have to so for each node */
-    present_cpus_map = virHostCPUGetPresentBitmap();
-    if (!present_cpus_map)
-        goto cleanup;
-    online_cpus_map = virHostCPUGetOnlineBitmap();
-    if (!online_cpus_map)
-        goto cleanup;
+    if (!(present_cpus_map = virHostCPUGetPresentBitmap()))
+        return -1;
+
+    if (!(online_cpus_map = virHostCPUGetOnlineBitmap()))
+        return -1;
 
     /* OK, we've parsed clock speed out of /proc/cpuinfo. Get the
      * core, node, socket, thread and topology information from /sys
@@ -675,7 +723,7 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
      * On hosts other than POWER this will be 0, in which case a simpler
      * thread-counting logic will be used  */
     if ((threads_per_subcore = virHostCPUGetThreadsPerSubcore(arch)) < 0)
-        goto cleanup;
+        return -1;
 
     /* If the subcore configuration is not valid, just pretend subcores
      * are not in use and count threads one by one */
@@ -683,6 +731,8 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
         threads_per_subcore = 0;
 
     while ((direrr = virDirRead(nodedir, &nodedirent, sysfs_nodedir)) > 0) {
+        g_autofree char *sysfs_cpudir = NULL;
+
         if (sscanf(nodedirent->d_name, "node%u", &node) != 1)
             continue;
 
@@ -697,9 +747,7 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
                                             threads_per_subcore,
                                             &nodesockets, &nodecores,
                                             &nodethreads, &offline)) < 0)
-            goto cleanup;
-
-        VIR_FREE(sysfs_cpudir);
+            return -1;
 
         *cpus += nodecpus;
 
@@ -714,23 +762,21 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
     }
 
     if (direrr < 0)
-        goto cleanup;
+        return -1;
 
     if (*cpus && *nodes)
         goto done;
 
  fallback:
-    VIR_FREE(sysfs_cpudir);
+    sysfs_cpudir_fallback = g_strdup_printf("%s/cpu", SYSFS_SYSTEM_PATH);
 
-    sysfs_cpudir = g_strdup_printf("%s/cpu", SYSFS_SYSTEM_PATH);
-
-    if ((nodecpus = virHostCPUParseNode(sysfs_cpudir, arch,
+    if ((nodecpus = virHostCPUParseNode(sysfs_cpudir_fallback, arch,
                                         present_cpus_map,
                                         online_cpus_map,
                                         threads_per_subcore,
                                         &nodesockets, &nodecores,
                                         &nodethreads, &offline)) < 0)
-        goto cleanup;
+        return -1;
 
     *nodes = 1;
     *cpus = nodecpus;
@@ -742,17 +788,17 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
     /* There should always be at least one cpu, socket, node, and thread. */
     if (*cpus == 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("no CPUs found"));
-        goto cleanup;
+        return -1;
     }
 
     if (*sockets == 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("no sockets found"));
-        goto cleanup;
+        return -1;
     }
 
     if (*threads == 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("no threads found"));
-        goto cleanup;
+        return -1;
     }
 
     /* Now check if the topology makes sense. There are machines that don't
@@ -772,12 +818,7 @@ virHostCPUGetInfoPopulateLinux(FILE *cpuinfo,
         *threads = 1;
     }
 
-    ret = 0;
-
- cleanup:
-    VIR_FREE(sysfs_nodedir);
-    VIR_FREE(sysfs_cpudir);
-    return ret;
+    return 0;
 }
 
 # define TICK_TO_NSEC (1000ull * 1000ull * 1000ull / sysconf(_SC_CLK_TCK))
@@ -840,6 +881,9 @@ virHostCPUGetStatsLinux(FILE *procstat,
                                       iowait * TICK_TO_NSEC) < 0)
                 return -1;
 
+            if (virHostCPUStatsAssign(&params[4], VIR_NODE_CPU_STATS_GUEST,
+                                      (guest + guest_nice) * TICK_TO_NSEC) < 0)
+                return -1;
             return 0;
         }
     }
@@ -892,8 +936,7 @@ virHostCPUStatsAssign(virNodeCPUStatsPtr param,
 {
     if (virStrcpyStatic(param->field, name) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("kernel cpu time field is too long"
-                               " for the destination"));
+                       "%s", _("kernel cpu time field is too long for the destination"));
         return -1;
     }
     param->value = value;
@@ -950,8 +993,8 @@ virHostCPUGetInfo(virArch hostarch G_GNUC_UNUSED,
 
     if (sysctlbyname("dev.cpu.0.freq", &cpu_freq, &cpu_freq_len, NULL, 0) < 0) {
         if (sysctlbyname("hw.clockrate", &cpu_freq, &cpu_freq_len, NULL, 0) < 0) {
-            virReportSystemError(errno, "%s", _("cannot obtain CPU freq"));
-            return -1;
+            VIR_DEBUG("cannot obtain CPU freq, setting to 0");
+            cpu_freq = 0;
         }
     }
 
@@ -971,6 +1014,22 @@ virHostCPUGetInfo(virArch hostarch G_GNUC_UNUSED,
     *mhz = cpu_freq / 1000000;
 # endif
 
+# ifdef __FreeBSD__
+#  define FILL_DATA_SYSCTL(var, sysctl, error_msg) \
+    do { \
+        size_t _len = sizeof(*var); \
+        if (sysctlbyname(sysctl, var, &_len, NULL, 0) < 0) { \
+            virReportSystemError(errno, "%s", error_msg); \
+            return -1; \
+        } \
+    } while (0)
+
+    FILL_DATA_SYSCTL(nodes, "vm.ndomains", _("cannot obtain NUMA domain count"));
+    FILL_DATA_SYSCTL(cores, "kern.smp.cores", _("cannot obtain CPU core count"));
+    FILL_DATA_SYSCTL(threads, "kern.smp.threads_per_core",
+                      _("cannot obtain CPU threads per core"));
+# endif /* __FreeBSD__ */
+
     return 0;
 #else
     /* XXX Solaris will need an impl later if they port QEMU driver */
@@ -984,11 +1043,8 @@ virHostCPUGetInfo(virArch hostarch G_GNUC_UNUSED,
 int
 virHostCPUGetStats(int cpuNum G_GNUC_UNUSED,
                    virNodeCPUStatsPtr params G_GNUC_UNUSED,
-                   int *nparams G_GNUC_UNUSED,
-                   unsigned int flags)
+                   int *nparams G_GNUC_UNUSED)
 {
-    virCheckFlags(0, -1);
-
 #ifdef __linux__
     {
         int ret;
@@ -1062,6 +1118,19 @@ virHostCPUGetOnlineBitmap(void)
     virFileReadValueBitmap(&ret, "%s/cpu/online", SYSFS_SYSTEM_PATH);
 
     return ret;
+#elif defined(__FreeBSD__)
+    virBitmap *ret = NULL;
+    int ncpus = virHostCPUGetCountAppleFreeBSD();
+
+    if (ncpus == -1)
+        return ret;
+
+    /* FreeBSD does not support CPU hotplug, so it is safe to assume
+     * that all available CPUs are online */
+    ret = virBitmapNew(ncpus);
+    virBitmapSetAll(ret);
+
+    return ret;
 #else
     virReportError(VIR_ERR_NO_SUPPORT, "%s",
                    _("node online CPU map not implemented on this platform"));
@@ -1072,32 +1141,27 @@ virHostCPUGetOnlineBitmap(void)
 
 int
 virHostCPUGetMap(unsigned char **cpumap,
-                 unsigned int *online,
-                 unsigned int flags)
+                 unsigned int *online)
 {
     g_autoptr(virBitmap) cpus = NULL;
-    int ret = -1;
-    int dummy;
-
-    virCheckFlags(0, -1);
+    int ncpus = virHostCPUGetCount();
 
     if (!cpumap && !online)
-        return virHostCPUGetCount();
+        return ncpus;
 
     if (!(cpus = virHostCPUGetOnlineBitmap()))
-        goto cleanup;
+        return -1;
 
-    if (cpumap && virBitmapToData(cpus, cpumap, &dummy) < 0)
-        goto cleanup;
+    if (cpumap) {
+        int len = (ncpus + CHAR_BIT) / CHAR_BIT;
+        *cpumap = g_new0(unsigned char, len);
+        virBitmapToDataBuf(cpus, *cpumap, len);
+    }
+
     if (online)
         *online = virBitmapCountBits(cpus);
 
-    ret = virHostCPUGetCount();
-
- cleanup:
-    if (ret < 0 && cpumap)
-        VIR_FREE(*cpumap);
-    return ret;
+    return ncpus;
 }
 
 
@@ -1126,6 +1190,37 @@ virHostCPUGetAvailableCPUsBitmap(void)
     }
 
     return g_steal_pointer(&bitmap);
+}
+
+
+/**
+ * virHostCPUGetIsolated:
+ * @isolated: returned bitmap of isolated CPUs
+ *
+ * Sets @isolated to point to a bitmap of isolated CPUs (e.g. those passed to
+ * isolcpus= kernel cmdline). If the file doesn't exist, @isolated is set to
+ * NULL and success is returned. If the file does exist but it's empty,
+ * @isolated is set to an empty bitmap and success is returned.
+ *
+ * Returns: 0 on success,
+ *         -1 otherwise (with error reported).
+ */
+int
+virHostCPUGetIsolated(virBitmap **isolated)
+{
+    g_autoptr(virBitmap) bitmap = NULL;
+    int rc;
+
+    rc = virFileReadValueBitmapAllowEmpty(&bitmap, "%s/cpu/isolated", SYSFS_SYSTEM_PATH);
+    if (rc == -2) {
+        *isolated = NULL;
+        return 0;
+    } else if (rc < 0) {
+        return -1;
+    }
+
+    *isolated = g_steal_pointer(&bitmap);
+    return 0;
 }
 
 
@@ -1280,9 +1375,19 @@ virHostCPUGetMicrocodeVersion(virArch hostArch G_GNUC_UNUSED)
 
 
 #if WITH_LINUX_KVM_H && defined(KVM_GET_MSRS) && \
-    (defined(__i386__) || defined(__x86_64__)) && \
-    (defined(__linux__) || defined(__FreeBSD__))
-static int
+    (defined(__i386__) || defined(__x86_64__))
+/**
+ * virHostCPUGetMSRFromKVM:
+ * @index: MSR to read
+ * @result: where to store the content of the @index register
+ *
+ * Reads the 64b content of the specified register via KVM_GET_MSRS ioctl.
+ *
+ * Returns 0 on success,
+ *         1 when the MSR is not supported by the host CPU,
+ *        -1 on error.
+ */
+int
 virHostCPUGetMSRFromKVM(unsigned long index,
                         uint64_t *result)
 {
@@ -1520,6 +1625,15 @@ virHostCPUGetCPUID(void)
 }
 
 int
+virHostCPUGetMSRFromKVM(unsigned long index G_GNUC_UNUSED,
+                        uint64_t *result G_GNUC_UNUSED)
+{
+    virReportSystemError(ENOSYS, "%s",
+                         _("Reading MSRs is not supported on this platform"));
+    return -1;
+}
+
+int
 virHostCPUGetMSR(unsigned long index G_GNUC_UNUSED,
                  uint64_t *msr G_GNUC_UNUSED)
 {
@@ -1537,8 +1651,7 @@ virHostCPUGetTscInfo(void)
 }
 
 #endif /* WITH_LINUX_KVM_H && defined(KVM_GET_MSRS) && \
-          (defined(__i386__) || defined(__x86_64__)) && \
-          (defined(__linux__) || defined(__FreeBSD__)) */
+          (defined(__i386__) || defined(__x86_64__)) */
 
 int
 virHostCPUReadSignature(virArch arch,
@@ -1646,9 +1759,17 @@ virHostCPUGetSignature(char **signature)
 }
 
 int
-virHostCPUGetPhysAddrSize(unsigned int *size)
+virHostCPUGetPhysAddrSize(const virArch hostArch,
+                          unsigned int *size)
 {
     g_autoptr(FILE) cpuinfo = NULL;
+
+    if (!(ARCH_IS_X86(hostArch) || ARCH_IS_SH4(hostArch) ||
+          ARCH_IS_LOONGARCH(hostArch))) {
+        /* Ensure size is set to 0 as physical address size is unknown */
+        *size = 0;
+        return 0;
+    }
 
     if (!(cpuinfo = fopen(CPUINFO_PATH, "r"))) {
         virReportSystemError(errno, _("Failed to open cpuinfo file '%1$s'"),
@@ -1669,7 +1790,8 @@ virHostCPUGetSignature(char **signature)
 }
 
 int
-virHostCPUGetPhysAddrSize(unsigned int *size G_GNUC_UNUSED)
+virHostCPUGetPhysAddrSize(const virArch hostArch G_GNUC_UNUSED,
+                          unsigned int *size G_GNUC_UNUSED)
 {
     errno = ENOSYS;
     return -1;

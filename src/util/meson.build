@@ -1,5 +1,4 @@
 util_sources = [
-  'glibcompat.c',
   'viracpi.c',
   'viralloc.c',
   'virarch.c',
@@ -45,8 +44,9 @@ util_sources = [
   'virhostmem.c',
   'virhostuptime.c',
   'viridentity.c',
+  'virinhibitor.c',
   'virinitctl.c',
-  'viriptables.c',
+  'viriommufd.c',
   'viriscsi.c',
   'virjson.c',
   'virkeycode.c',
@@ -194,7 +194,9 @@ virt_util_lib = static_library(
     capng_dep,
     devmapper_dep,
     gnutls_dep,
+    json_c_dep,
     intl_dep,
+    libbsd_dep,
     libm_dep,
     libnl_dep,
     libutil_dep,
@@ -203,7 +205,6 @@ virt_util_lib = static_library(
     src_dep,
     thread_dep,
     win32_dep,
-    yajl_dep,
   ],
 )
 

@@ -43,6 +43,7 @@ VIR_LOG_INIT("util.firewalld");
 VIR_ENUM_DECL(virFirewallLayerFirewallD);
 VIR_ENUM_IMPL(virFirewallLayerFirewallD,
               VIR_FIREWALL_LAYER_LAST,
+              "",
               "eb",
               "ipv4",
               "ipv6",
@@ -360,8 +361,6 @@ virFirewallDApplyRule(virFirewallLayer layer,
     if (!sysbus)
         return -1;
 
-    memset(&error, 0, sizeof(error));
-
     if (!ipv) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Unknown firewall layer %1$d"),
@@ -448,6 +447,40 @@ virFirewallDInterfaceSetZone(const char *iface,
                              "org.fedoraproject.FirewallD1.zone",
                              "changeZoneOfInterface",
                              message);
+}
+
+
+void
+virFirewallDInterfaceUnsetZone(const char *iface)
+{
+    GDBusConnection *sysbus = virGDBusGetSystemBus();
+    g_autoptr(GVariant) message = NULL;
+    g_autoptr(virError) error = NULL;
+
+    if (!sysbus)
+        return;
+
+    /* we are sending virGDBusCallMethod an error object so that it
+     * will put the error message there rather than logging it,
+     * because we want to ignore any error as it doesn't matter - the
+     * most common "error" is to inform us that the interface is
+     * already not in any zone, and that is of course just fine, since
+     * that's what we're trying to do anyway. If there is an error,
+     * we'll just throw it away without logging it anywhere.
+     */
+    error = g_new0(virError, 1);
+
+    message = g_variant_new("(ss)", "", iface);
+
+    virGDBusCallMethod(sysbus,
+                       NULL,
+                       NULL,
+                       error,
+                       VIR_FIREWALL_FIREWALLD_SERVICE,
+                       "/org/fedoraproject/FirewallD1",
+                       "org.fedoraproject.FirewallD1.zone",
+                       "removeInterface",
+                       message);
 }
 
 

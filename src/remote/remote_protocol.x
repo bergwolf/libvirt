@@ -34,6 +34,7 @@
  * 'REMOTE_'.  This makes names quite long.
  */
 
+%#define IN_LIBVIRT
 %#include <libvirt/libvirt.h>
 %#include "internal.h"
 %#include "virxdrdefs.h"
@@ -292,6 +293,10 @@ const REMOTE_DOMAIN_AUTHORIZED_SSH_KEYS_MAX = 2048;
 /* Upper limit on number of messages */
 const REMOTE_DOMAIN_MESSAGES_MAX = 2048;
 
+/*
+ * Upper limit on number of domain announce interface parameters
+ */
+const REMOTE_DOMAIN_ANNOUNCE_INTERFACE_PARAMS_MAX = 16;
 
 /* UUID.  VIR_UUID_BUFLEN definition comes from libvirt.h */
 typedef opaque remote_uuid[VIR_UUID_BUFLEN];
@@ -1055,7 +1060,7 @@ struct remote_domain_migrate_prepare_args {
     remote_string uri_in;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
 };
 
 struct remote_domain_migrate_prepare_ret {
@@ -1069,7 +1074,7 @@ struct remote_domain_migrate_perform_args {
     remote_nonnull_string uri;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
 };
 
 struct remote_domain_migrate_finish_args {
@@ -1087,7 +1092,7 @@ struct remote_domain_migrate_prepare2_args {
     remote_string uri_in;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
     remote_nonnull_string dom_xml;
 };
 
@@ -1473,6 +1478,19 @@ struct remote_domain_get_block_io_tune_args {
 struct remote_domain_get_block_io_tune_ret {
     remote_typed_param params<REMOTE_DOMAIN_BLOCK_IO_TUNE_PARAMETERS_MAX>;
     int nparams;
+};
+
+struct remote_domain_set_throttle_group_args {
+    remote_nonnull_domain dom;
+    remote_nonnull_string group;
+    remote_typed_param params<REMOTE_DOMAIN_BLOCK_IO_TUNE_PARAMETERS_MAX>;
+    unsigned int flags;
+};
+
+struct remote_domain_del_throttle_group_args {
+    remote_nonnull_domain dom;
+    remote_string group;
+    unsigned int flags;
 };
 
 struct remote_domain_get_cpu_stats_args {
@@ -2237,6 +2255,12 @@ struct remote_node_device_is_active_ret {
     int active;
 };
 
+struct remote_node_device_update_args {
+    remote_nonnull_string name;
+    remote_nonnull_string xml_desc;
+    unsigned int flags;
+};
+
 
 /*
  * Events Register/Deregister:
@@ -2354,7 +2378,7 @@ struct remote_secret_lookup_by_usage_ret {
 struct remote_domain_migrate_prepare_tunnel_args {
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
     remote_nonnull_string dom_xml;
 };
 
@@ -2928,7 +2952,7 @@ struct remote_domain_migrate_begin3_args {
     remote_string xmlin;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
 };
 
 struct remote_domain_migrate_begin3_ret {
@@ -2941,7 +2965,7 @@ struct remote_domain_migrate_prepare3_args {
     remote_string uri_in;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
     remote_nonnull_string dom_xml;
 };
 
@@ -2954,7 +2978,7 @@ struct remote_domain_migrate_prepare_tunnel3_args {
     opaque cookie_in<REMOTE_MIGRATE_COOKIE_MAX>;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
     remote_nonnull_string dom_xml;
 };
 
@@ -2970,7 +2994,7 @@ struct remote_domain_migrate_perform3_args {
     remote_string uri;
     unsigned hyper flags;
     remote_string dname;
-    unsigned hyper resource;
+    unsigned hyper bandwidth;
 };
 
 struct remote_domain_migrate_perform3_ret {
@@ -3321,6 +3345,33 @@ struct remote_network_event_lifecycle_msg {
     remote_nonnull_network net;
     int event;
     int detail;
+};
+
+struct remote_network_event_callback_metadata_change_msg {
+    int callbackID;
+    remote_nonnull_network net;
+    int type;
+    remote_string nsuri;
+};
+
+struct remote_network_set_metadata_args {
+    remote_nonnull_network network;
+    int type;
+    remote_string metadata;
+    remote_string key;
+    remote_string uri;
+    unsigned int flags;
+};
+
+struct remote_network_get_metadata_args {
+    remote_nonnull_network network;
+    int type;
+    remote_string uri;
+    unsigned int flags;
+};
+
+struct remote_network_get_metadata_ret {
+    remote_nonnull_string metadata;
 };
 
 struct remote_connect_storage_pool_event_register_any_args {
@@ -3921,6 +3972,11 @@ struct remote_domain_start_dirty_rate_calc_args {
     unsigned int flags;
 };
 
+struct remote_domain_graphics_reload_args {
+    remote_nonnull_domain dom;
+    unsigned int type;
+    unsigned int flags;
+};
 
 struct remote_domain_event_memory_device_size_change_msg {
     int callbackID;
@@ -3929,12 +3985,55 @@ struct remote_domain_event_memory_device_size_change_msg {
     unsigned hyper size;
 };
 
+struct remote_domain_event_vcpu_removed_msg {
+    int callbackID;
+    remote_nonnull_domain dom;
+    unsigned int vcpuid;
+};
+
 
 struct remote_domain_fd_associate_args {
     remote_nonnull_domain dom;
     remote_nonnull_string name;
     unsigned int flags;
 };
+
+struct remote_domain_get_autostart_once_args {
+    remote_nonnull_domain dom;
+};
+
+struct remote_domain_get_autostart_once_ret {
+    int autostart;
+};
+
+struct remote_domain_set_autostart_once_args {
+    remote_nonnull_domain dom;
+    int autostart;
+};
+
+struct remote_domain_event_nic_mac_change_msg {
+    int callbackID;
+    remote_nonnull_domain dom;
+    remote_nonnull_string alias;
+    remote_nonnull_string oldMAC;
+    remote_nonnull_string newMAC;
+};
+
+struct remote_domain_event_callback_channel_lifecycle_msg {
+    int callbackID;
+    remote_nonnull_domain dom;
+    remote_nonnull_string channelName;
+    int state;
+    int reason;
+};
+
+struct remote_domain_announce_interface_args {
+    remote_nonnull_domain dom;
+    remote_string device;
+    remote_typed_param params<REMOTE_DOMAIN_ANNOUNCE_INTERFACE_PARAMS_MAX>;
+    unsigned int flags;
+};
+
 /*----- Protocol. -----*/
 
 /* Define the program number, protocol version and procedure numbers here. */
@@ -6870,6 +6969,7 @@ enum remote_procedure {
     /**
      * @generate: both
      * @acl: node_device:write
+     * @acl: node_device:save
      */
     REMOTE_PROC_NODE_DEVICE_DEFINE_XML = 428,
 
@@ -6974,5 +7074,94 @@ enum remote_procedure {
      * @generate: none
      * @acl: domain:write
      */
-    REMOTE_PROC_DOMAIN_FD_ASSOCIATE = 443
+    REMOTE_PROC_DOMAIN_FD_ASSOCIATE = 443,
+
+    /**
+     * @generate: both
+     * @acl: network:write
+     * @acl: network:save:!VIR_NETWORK_UPDATE_AFFECT_CONFIG|VIR_NETWORK_UPDATE_AFFECT_LIVE
+     * @acl: network:save:VIR_NETWORK_UPDATE_AFFECT_CONFIG
+     */
+    REMOTE_PROC_NETWORK_SET_METADATA = 444,
+
+    /**
+     * @generate: both
+     * @acl: network:read
+     */
+    REMOTE_PROC_NETWORK_GET_METADATA = 445,
+
+    /**
+     * @generate: both
+     * @acl: none
+     */
+    REMOTE_PROC_NETWORK_EVENT_CALLBACK_METADATA_CHANGE = 446,
+
+    /**
+     * @generate: both
+     * @priority: high
+     * @acl: node_device:write
+     * @acl: node_device:save:!VIR_NODE_DEVICE_UPDATE_AFFECT_CONFIG|VIR_NODE_DEVICE_UPDATE_AFFECT_LIVE
+     * @acl: node_device:save:VIR_NODE_DEVICE_UPDATE_AFFECT_CONFIG
+     */
+    REMOTE_PROC_NODE_DEVICE_UPDATE = 447,
+
+    /**
+     * @generate: both
+     * @acl: domain:write
+     */
+    REMOTE_PROC_DOMAIN_GRAPHICS_RELOAD = 448,
+
+    /**
+     * @generate: both
+     * @priority: high
+     * @acl: domain:read
+     */
+    REMOTE_PROC_DOMAIN_GET_AUTOSTART_ONCE = 449,
+
+    /**
+     * @generate: both
+     * @priority: high
+     * @acl: domain:write
+     */
+    REMOTE_PROC_DOMAIN_SET_AUTOSTART_ONCE = 450,
+
+    /**
+     * @generate: both
+     * @acl: domain:write
+     * @acl: domain:save:!VIR_DOMAIN_AFFECT_CONFIG|VIR_DOMAIN_AFFECT_LIVE
+     * @acl: domain:save:VIR_DOMAIN_AFFECT_CONFIG
+     */
+    REMOTE_PROC_DOMAIN_SET_THROTTLE_GROUP = 451,
+
+    /**
+     * @generate: both
+     * @acl: domain:write
+     * @acl: domain:save:!VIR_DOMAIN_AFFECT_CONFIG|VIR_DOMAIN_AFFECT_LIVE
+     * @acl: domain:save:VIR_DOMAIN_AFFECT_CONFIG
+     */
+    REMOTE_PROC_DOMAIN_DEL_THROTTLE_GROUP = 452,
+
+    /**
+     * @generate: both
+     * @acl: none
+     */
+    REMOTE_PROC_DOMAIN_EVENT_NIC_MAC_CHANGE = 453,
+
+    /**
+     * @generate: both
+     * @acl: none
+     */
+    REMOTE_PROC_DOMAIN_EVENT_VCPU_REMOVED = 454,
+
+    /**
+     * @generate: both
+     * @acl: none
+     */
+    REMOTE_PROC_DOMAIN_EVENT_CALLBACK_CHANNEL_LIFECYCLE = 455,
+
+    /**
+     * @generate: both
+     * @acl: domain:write
+     */
+    REMOTE_PROC_DOMAIN_ANNOUNCE_INTERFACE = 456
 };

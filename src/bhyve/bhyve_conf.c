@@ -2,6 +2,7 @@
  * bhyve_conf.c: bhyve config file
  *
  * Copyright (C) 2017 Roman Bogorodskiy
+ * Copyright (C) 2025 The FreeBSD Foundation
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,6 +25,7 @@
 #include "viralloc.h"
 #include "virlog.h"
 #include "virstring.h"
+#include "virutil.h"
 #include "bhyve_conf.h"
 #include "bhyve_domain.h"
 #include "configmake.h"
@@ -46,7 +48,7 @@ static int virBhyveConfigOnceInit(void)
 VIR_ONCE_GLOBAL_INIT(virBhyveConfig);
 
 struct _virBhyveDriverConfig *
-virBhyveDriverConfigNew(void)
+virBhyveDriverConfigNew(bool privileged)
 {
     struct _virBhyveDriverConfig *cfg;
 
@@ -56,7 +58,44 @@ virBhyveDriverConfigNew(void)
     if (!(cfg = virObjectNew(virBhyveDriverConfigClass)))
         return NULL;
 
-    cfg->firmwareDir = g_strdup(DATADIR "/uefi-firmware");
+    if (privileged) {
+        cfg->configBaseDir = g_strdup(SYSCONFDIR "/libvirt");
+
+        cfg->firmwareDir = g_strdup(DATADIR "/uefi-firmware");
+        cfg->libDir = g_strdup_printf("%s/lib/libvirt/bhyve", LOCALSTATEDIR);
+        cfg->nvramDir = g_strdup_printf("%s/nvram", cfg->libDir);
+
+        cfg->ubootPath = g_strdup(DATADIR "/u-boot/u-boot-bhyve-arm64/u-boot.bin");
+
+        cfg->configDir = g_strdup_printf("%s/bhyve", cfg->configBaseDir);
+        cfg->autostartDir = g_strdup_printf("%s/bhyve/autostart", cfg->configBaseDir);
+        cfg->stateDir = g_strdup_printf("%s/libvirt/bhyve", RUNSTATEDIR);
+        cfg->bhyveRunDir = g_strdup(RUNSTATEDIR "/bhyve");
+        cfg->logDir = g_strdup_printf("%s/log/libvirt/bhyve", LOCALSTATEDIR);
+    } else {
+        g_autofree char *rundir = NULL;
+        g_autofree char *cachedir = NULL;
+
+        cfg->configBaseDir = virGetUserConfigDirectory();
+
+        cachedir = virGetUserCacheDirectory();
+        rundir = virGetUserRuntimeDirectory();
+
+        cfg->firmwareDir = g_strdup(DATADIR "/uefi-firmware");
+        cfg->libDir = g_strdup_printf("%s/bhyve/lib", cfg->configBaseDir);
+        cfg->nvramDir = g_strdup_printf("%s/bhyve/nvram", cfg->configBaseDir);
+
+        cfg->ubootPath = g_strdup(DATADIR "/u-boot/u-boot-bhyve-arm64/u-boot.bin");
+
+        cfg->configDir = g_strdup_printf("%s/bhyve", cfg->configBaseDir);
+        cfg->autostartDir = g_strdup_printf("%s/bhyve/autostart", cfg->configBaseDir);
+        cfg->stateDir = g_strdup_printf("%s/bhyve/run", rundir);
+        cfg->bhyveRunDir = g_strdup(cfg->stateDir);
+        cfg->logDir = g_strdup_printf("%s/bhyve/log", cachedir);
+    }
+
+    cfg->bhyveloadTimeout = 300;
+    cfg->bhyveloadTimeoutKill = 15;
 
     return cfg;
 }
@@ -79,6 +118,18 @@ virBhyveLoadDriverConfig(struct _virBhyveDriverConfig *cfg,
                               &cfg->firmwareDir) < 0)
         return -1;
 
+    if (virConfGetValueString(conf, "uboot_path",
+                              &cfg->ubootPath) < 0)
+        return -1;
+
+    if (virConfGetValueInt(conf, "bhyveload_timeout",
+                           &cfg->bhyveloadTimeout) < 0)
+        return -1;
+
+    if (virConfGetValueInt(conf, "bhyveload_timeout_kill",
+                           &cfg->bhyveloadTimeoutKill) < 0)
+        return -1;
+
     return 0;
 }
 
@@ -94,7 +145,17 @@ virBhyveDriverConfigDispose(void *obj)
 {
     struct _virBhyveDriverConfig *cfg = obj;
 
+    g_free(cfg->autostartDir);
+    g_free(cfg->configBaseDir);
+    g_free(cfg->configDir);
     g_free(cfg->firmwareDir);
+    g_free(cfg->libDir);
+    g_free(cfg->logDir);
+    g_free(cfg->nvramDir);
+    g_free(cfg->stateDir);
+    g_free(cfg->bhyveRunDir);
+
+    g_free(cfg->ubootPath);
 }
 
 void

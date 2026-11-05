@@ -37,6 +37,12 @@ The ``<host/>`` element consists of the following child elements:
    The host UUID.
 ``cpu``
    The host CPU architecture and features.
+
+   Note that, while this element contains a ``topology`` sub-element,
+   the information contained therein is fairly high-level and likely
+   not very useful when it comes to optimizing guest vCPU placement.
+   Look into the ``topology`` *element*, described below, for more
+   detailed information.
 ``power_management``
    whether host is capable of memory suspend, disk hibernation, or hybrid
    suspend.
@@ -44,16 +50,96 @@ The ``<host/>`` element consists of the following child elements:
    This element exposes information on the hypervisor's migration capabilities,
    like live migration, supported URI transports, and so on.
 ``topology``
-   This element embodies the host internal topology. Management applications may
-   want to learn this information when orchestrating new guests - e.g. due to
-   reduce inter-NUMA node transfers. Note that the ``sockets`` value reported
-   here is per-NUMA-node; this is in contrast to the value given in domain
-   definitions, which is interpreted as a total number of sockets for the
-   domain.
+   This element describes the host CPU topology in detail.
+
+   Management applications may want to use this information when defining new
+   guests: for example, in order to ensure that all vCPUs are scheduled on
+   CPUs that are in the same NUMA node or even CPU core.
+
+   The ``cells`` sub-element contains a list of NUMA nodes, each one
+   represented by a single ``cell`` element. Within each ``cell``, a ``cpus``
+   sub-element contains a list of logical CPUs, each one represented by a
+   single ``cpu`` element. In both cases, the ``num`` attribute of the
+   top-level element contains the number of children.
+
+   Each ``cpu`` element contains the following attributes:
+
+   ``id``
+     CPU identifier. Can be used to refer to it in the context of
+     `CPU tuning <formatdomain.html#cpu-tuning>`__.
+
+   ``socket_id``
+     Identifier for the physical package the CPU is in.
+
+   ``die_id``
+     Identifier for the die the CPU is in.
+
+     Note that, even if this attribute is present, you might not be able to
+     define guests with multiple CPU dies.
+
+   ``cluster_id``
+     Identifier for the cluster the CPU is in.
+
+     Note that, even if this attribute is present, you might not be able to
+     define guests with multiple CPU clusters.
+
+   ``core_id``
+     Identifier for the core the CPU is in.
+
+   ``siblings``
+     List of CPUs that are in the same core.
+
+     The list will include the current CPU, plus all other CPUs that have the
+     same values for ``socket_id``, ``die_id``, ``cluster_id`` and ``core_id``.
+
 ``secmodel``
    To find out default security labels for different security models you need to
    parse this element. In contrast with the former elements, this is repeated
    for each security model the libvirt daemon currently supports.
+
+Host CPU model and features
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As described previously in this section, libvirt exposes to
+users the list of Host CPU features. Libvirt has a special way to
+expose this list: Instead of providing the full (and thereby often
+very long) set of features, libvirt specifies a CPU model as
+baseline and additional features on top of it (as can be seen in
+`Examples`_ where the baseline is ``Skylake-Client-noTSX-IBRS``).
+
+The ideal case would be that the baseline CPU model definition matches
+exactly the CPU present in the system, and no additional feature is
+needed to express the capabilities of the CPU. For example, if you are
+running on a Server CPU you bought as ``Icelake`` type, the returned
+CPU model name could be ``Icelake-Server``. However, this ideal
+situation rarely happens, for two main reasons:
+
+- Manufacturers do not ship a single type of CPU under a given name,
+  there are various different SKUs with different features under the
+  same name. Yet it is not practical to have a database listing all of
+  those variants.
+
+- Some features might be in the hardware but unavailable for various
+  reasons (BIOS and kernel configuration, disabled for security,
+  ...). One typical example where this situation happens is related to
+  the `TSX mitigation <https://docs.kernel.org/arch/x86/tsx_async_abort.html>`__.
+  As a mitigation to the TAA side channel attack, the Linux kernel disables
+  by default TSX and its 2 features, ``rtm`` and ``hle``. Since many Linux
+  distributions keep this safer default behavior, these 2 features appear
+  as missing.
+
+Because for backward compatibility reasons, host capabilities cannot
+list features that would need to be removed from the baseline model to
+describe the host CPU, libvirt has to often use a rather old CPU
+model, for example, ``Broadwell`` rather than ``Icelake``. Therefore,
+users *should not* expect the reported CPU model name to have any
+implications other than that of a named baseline to build the complete
+available feature set of the Host CPU.
+
+`Domain capabilities <formatdomaincaps.html#cpu-configuration>`_ do
+not have such limitation, and the ``host-model`` CPU definition would
+show the correct CPU model in almost all cases.
+
 
 Guest capabilities
 ~~~~~~~~~~~~~~~~~~
@@ -86,7 +172,7 @@ The ``<guest/>`` element will typically wrap up the following elements:
       Emulator (device model) path, for use in
       `emulator <formatdomain.html#devices>`__ element of domain XML.
    ``loader``
-      Loader path, for use in `loader <formatdomain.html#bios-bootloader>`__
+      Loader path, for use in `loader <formatdomain.html#guest-firmware>`__
       element of domain XML.
    ``machine``
       Machine type, for use in
@@ -106,11 +192,11 @@ The ``<guest/>`` element will typically wrap up the following elements:
       If present, 32-bit guests can use PAE address space extensions,
       :since:`since 0.4.1`
    ``nonpae``
-      If present, 32-bit guests can be run without requiring PAE, :since:`since
-      0.4.1`
+      If present, 32-bit guests can be run without requiring PAE,
+      :since:`since 0.4.1`
    ``ia64_be``
-      If present, IA64 guests can be run in big-endian mode, :since:`since
-      0.4.1`
+      If present, IA64 guests can be run in big-endian mode,
+      :since:`since 0.4.1`
    ``acpi``
       If this element is present, the ``default`` attribute describes whether
       the hypervisor exposes ACPI to the guest by default, and the ``toggle``
@@ -131,9 +217,15 @@ The ``<guest/>`` element will typically wrap up the following elements:
       :since:`Since 0.8.8`
    ``disksnapshot``
       If this element is present, the ``default`` attribute describes whether
-      external disk snapshots are supported. If absent, external snapshots may
-      still be supported, but it requires attempting the API and checking for an
-      error to find out for sure. :since:`Since 1.2.3`
+      creating external disk snapshots is supported. If absent, creating external
+      snapshots may still be supported, but it requires attempting the API and
+      checking for an error to find out for sure. :since:`Since 1.2.3`
+   ``externalSnapshot``
+      If this element is present, the hypervisor supports deleting and
+      reverting external snapshots including memory state. Support for creation
+      of external snapshots is reported via the ``disksnapshot`` feature flag.
+      Management applications can now switch from internal snapshots to external
+      snapshots. :since:`Since 9.9.0`
 
 Examples
 ~~~~~~~~
@@ -154,7 +246,7 @@ capabilities enabled in the chip and BIOS you will see:
         <microcode version='236'/>
         <signature family='6' model='142' stepping='12'/>
         <counter name='tsc' frequency='2303997000' scaling='no'/>
-        <topology sockets='1' dies='1' cores='4' threads='2'/>
+        <topology sockets='1' dies='1' clusters='1' cores='4' threads='2'/>
         <maxphysaddr mode='emulate' bits='39'/>
         <feature name='ds'/>
         <feature name='acpi'/>
@@ -219,14 +311,14 @@ capabilities enabled in the chip and BIOS you will see:
               <sibling id='0' value='10'/>
             </distances>
             <cpus num='8'>
-              <cpu id='0' socket_id='0' die_id='0' core_id='0' siblings='0,4'/>
-              <cpu id='1' socket_id='0' die_id='0' core_id='1' siblings='1,5'/>
-              <cpu id='2' socket_id='0' die_id='0' core_id='2' siblings='2,6'/>
-              <cpu id='3' socket_id='0' die_id='0' core_id='3' siblings='3,7'/>
-              <cpu id='4' socket_id='0' die_id='0' core_id='0' siblings='0,4'/>
-              <cpu id='5' socket_id='0' die_id='0' core_id='1' siblings='1,5'/>
-              <cpu id='6' socket_id='0' die_id='0' core_id='2' siblings='2,6'/>
-              <cpu id='7' socket_id='0' die_id='0' core_id='3' siblings='3,7'/>
+              <cpu id='0' socket_id='0' die_id='0' cluster_id='0' core_id='0' siblings='0,4'/>
+              <cpu id='1' socket_id='0' die_id='0' cluster_id='0' core_id='1' siblings='1,5'/>
+              <cpu id='2' socket_id='0' die_id='0' cluster_id='0' core_id='2' siblings='2,6'/>
+              <cpu id='3' socket_id='0' die_id='0' cluster_id='0' core_id='3' siblings='3,7'/>
+              <cpu id='4' socket_id='0' die_id='0' cluster_id='0' core_id='0' siblings='0,4'/>
+              <cpu id='5' socket_id='0' die_id='0' cluster_id='0' core_id='1' siblings='1,5'/>
+              <cpu id='6' socket_id='0' die_id='0' cluster_id='0' core_id='2' siblings='2,6'/>
+              <cpu id='7' socket_id='0' die_id='0' cluster_id='0' core_id='3' siblings='3,7'/>
             </cpus>
           </cell>
         </cells>
@@ -318,6 +410,7 @@ capabilities enabled in the chip and BIOS you will see:
         <cpuselection/>
         <deviceboot/>
         <disksnapshot default='on' toggle='no'/>
+        <externalSnapshot/>
       </features>
     </guest>
 

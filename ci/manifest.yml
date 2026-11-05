@@ -6,7 +6,7 @@ gitlab:
   project: libvirt
 
 targets:
-  almalinux-8:
+  almalinux-9:
     jobs:
       - arch: x86_64
         builds: false
@@ -19,20 +19,25 @@ targets:
           RPM: skip
           CC: clang
 
-  alpine-317: x86_64
+  almalinux-10:
+    jobs:
+      - arch: x86_64
+        builds: false
+        variables:
+          RPM: skip
+
+      - arch: x86_64
+        suffix: -clang
+        variables:
+          RPM: skip
+          CC: clang
+
+  alpine-324: x86_64
 
   alpine-edge:
     jobs:
       - arch: x86_64
         allow-failure: true
-
-  centos-stream-8:
-    jobs:
-      - arch: x86_64
-        artifacts:
-          expire_in: 1 day
-          paths:
-            - libvirt-rpms
 
   centos-stream-9:
     jobs:
@@ -42,7 +47,15 @@ targets:
           paths:
             - libvirt-rpms
 
-  debian-11:
+  centos-stream-10:
+    jobs:
+      - arch: x86_64
+        artifacts:
+          expire_in: 1 day
+          paths:
+            - libvirt-rpms
+
+  debian-13:
     jobs:
       - arch: x86_64
 
@@ -63,15 +76,11 @@ targets:
         containers: false
         builds: false
 
-      - arch: mips64el
-        containers: false
-        builds: false
-
-      - arch: mipsel
-        containers: false
-        builds: false
-
       - arch: ppc64le
+        containers: false
+        builds: false
+
+      - arch: riscv64
         containers: false
         builds: false
 
@@ -100,15 +109,11 @@ targets:
         containers: false
         builds: false
 
-      - arch: mips64el
-        containers: false
-        builds: false
-
-      - arch: mipsel
-        containers: false
-        builds: false
-
       - arch: ppc64le
+        containers: false
+        builds: false
+
+      - arch: riscv64
         containers: false
         builds: false
 
@@ -116,7 +121,7 @@ targets:
         containers: false
         builds: false
 
-  fedora-37:
+  fedora-43:
     jobs:
       - arch: x86_64
         artifacts:
@@ -124,7 +129,7 @@ targets:
           paths:
             - libvirt-rpms
 
-  fedora-38:
+  fedora-44:
     jobs:
       - arch: x86_64
         artifacts:
@@ -156,11 +161,7 @@ targets:
         allow-failure: true
         builds: false
 
-  freebsd-12: x86_64
-
-  freebsd-13: x86_64
-
-  opensuse-leap-15:
+  opensuse-leap-16:
     jobs:
       - arch: x86_64
         variables:
@@ -173,22 +174,11 @@ targets:
         variables:
           RPM: skip
 
-  macos-12:
-    jobs:
-      - arch: aarch64
-        variables:
-          PATH_EXTRA: /usr/local/opt/ccache/libexec:/usr/local/opt/gettext/bin:/usr/local/opt/libpcap/bin:/usr/local/opt/libxslt/bin:/usr/local/opt/rpcgen/bin
-          PKG_CONFIG_PATH: /usr/local/opt/curl/lib/pkgconfig:/usr/local/opt/libpcap/lib/pkgconfig:/usr/local/opt/libxml2/lib/pkgconfig:/usr/local/opt/ncurses/lib/pkgconfig:/usr/local/opt/readline/lib/pkgconfig
-
-  ubuntu-2004:
+  ubuntu-2404:
     jobs:
       - arch: x86_64
-        variables:
-          ASAN_OPTIONS: verify_asan_link_order=0
-          MESON_ARGS: -Db_lundef=false -Db_sanitize=address,undefined
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
-  ubuntu-2204:
+  ubuntu-2604:
     jobs:
       - arch: x86_64
         builds: false

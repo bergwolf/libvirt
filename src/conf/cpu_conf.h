@@ -148,6 +148,7 @@ struct _virCPUDef {
     unsigned int microcodeVersion;
     unsigned int sockets;
     unsigned int dies;
+    unsigned int clusters;
     unsigned int cores;
     unsigned int threads;
     unsigned int sigFamily;
@@ -160,6 +161,7 @@ struct _virCPUDef {
     virCPUMaxPhysAddrDef *addr;
     virHostCPUTscInfo *tsc;
     virTristateSwitch migratable; /* for host-passthrough mode */
+    virTristateSwitch deprecated_feats;
 };
 
 virCPUDef *virCPUDefNew(void);
@@ -244,12 +246,12 @@ virCPUDefAddFeature(virCPUDef *cpu,
                     const char *name,
                     int policy);
 
-int
+void
 virCPUDefUpdateFeature(virCPUDef *cpu,
                        const char *name,
                        int policy);
 
-int
+void
 virCPUDefAddFeatureIfMissing(virCPUDef *def,
                              const char *name,
                              int policy);
@@ -258,7 +260,7 @@ virCPUFeatureDef *
 virCPUDefFindFeature(const virCPUDef *def,
                      const char *name);
 
-int
+void
 virCPUDefFilterFeatures(virCPUDef *cpu,
                         virCPUDefFeatureFilter filter,
                         void *opaque);
@@ -269,9 +271,15 @@ virCPUDefCheckFeatures(virCPUDef *cpu,
                        void *opaque,
                        char ***features);
 
+char **
+virCPUDefListExplicitFeatures(const virCPUDef *def);
+
 virCPUDef **
 virCPUDefListParse(const char **xmlCPUs,
                    unsigned int ncpus,
                    virCPUType cpuType);
 void
 virCPUDefListFree(virCPUDef **cpus);
+
+void
+virCPUDefSortFeatures(virCPUDef *cpu);

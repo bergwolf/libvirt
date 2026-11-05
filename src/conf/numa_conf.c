@@ -135,11 +135,8 @@ virDomainNumatuneNodeParseXML(virDomainNuma *numa,
     size_t i = 0;
     g_autofree xmlNodePtr *nodes = NULL;
 
-    if ((n = virXPathNodeSet("./numatune/memnode", ctxt, &nodes)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Cannot extract memnode nodes"));
+    if ((n = virXPathNodeSet("./numatune/memnode", ctxt, &nodes)) < 0)
         return -1;
-    }
 
     if (!n)
         return 0;
@@ -147,15 +144,13 @@ virDomainNumatuneNodeParseXML(virDomainNuma *numa,
     if (numa->memory.specified &&
         numa->memory.placement == VIR_DOMAIN_NUMATUNE_PLACEMENT_AUTO) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Per-node binding is not compatible with "
-                         "automatic NUMA placement."));
+                       _("Per-node binding is not compatible with automatic NUMA placement."));
         return -1;
     }
 
     if (!numa->nmem_nodes) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("Element 'memnode' is invalid without "
-                         "any guest NUMA cells"));
+                       _("Element 'memnode' is invalid without any guest NUMA cells"));
         return -1;
     }
 
@@ -171,8 +166,7 @@ virDomainNumatuneNodeParseXML(virDomainNuma *numa,
 
         if (cellid >= numa->nmem_nodes) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("Argument 'cellid' in memnode element must "
-                             "correspond to existing guest's NUMA cell"));
+                           _("Argument 'cellid' in memnode element must correspond to existing guest's NUMA cell"));
             return -1;
         }
 
@@ -194,8 +188,7 @@ virDomainNumatuneNodeParseXML(virDomainNuma *numa,
         tmp = virXMLPropString(cur_node, "nodeset");
         if (!tmp) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("Missing required nodeset attribute "
-                             "in memnode element"));
+                           _("Missing required nodeset attribute in memnode element"));
             return -1;
         }
         if (virBitmapParse(tmp, &mem_node->nodeset, VIR_DOMAIN_CPUMASK_LEN) < 0)
@@ -280,7 +273,6 @@ virDomainNumatuneFormatXML(virBuffer *buf,
                            virDomainNuma *numatune)
 {
     const char *tmp = NULL;
-    char *nodeset = NULL;
     bool nodesetSpecified = false;
     size_t i = 0;
 
@@ -305,10 +297,9 @@ virDomainNumatuneFormatXML(virBuffer *buf,
         virBufferAsprintf(buf, "<memory mode='%s' ", tmp);
 
         if (numatune->memory.placement == VIR_DOMAIN_NUMATUNE_PLACEMENT_STATIC) {
-            if (!(nodeset = virBitmapFormat(numatune->memory.nodeset)))
-                return -1;
+            g_autofree char *nodeset = virBitmapFormat(numatune->memory.nodeset);
+
             virBufferAsprintf(buf, "nodeset='%s'/>\n", nodeset);
-            VIR_FREE(nodeset);
         } else if (numatune->memory.placement) {
             tmp = virDomainNumatunePlacementTypeToString(numatune->memory.placement);
             virBufferAsprintf(buf, "placement='%s'/>\n", tmp);
@@ -317,19 +308,18 @@ virDomainNumatuneFormatXML(virBuffer *buf,
 
     for (i = 0; i < numatune->nmem_nodes; i++) {
         virDomainNumaNode *mem_node = &numatune->mem_nodes[i];
+        g_autofree char *nodeset = NULL;
 
         if (!mem_node->nodeset)
             continue;
 
-        if (!(nodeset = virBitmapFormat(mem_node->nodeset)))
-            return -1;
+        nodeset = virBitmapFormat(mem_node->nodeset);
 
         virBufferAsprintf(buf,
                           "<memnode cellid='%zu' mode='%s' nodeset='%s'/>\n",
                           i,
                           virDomainNumatuneMemModeTypeToString(mem_node->mode),
                           nodeset);
-        VIR_FREE(nodeset);
     }
 
     virBufferAdjustIndent(buf, -2);
@@ -350,8 +340,7 @@ virDomainNumaFree(virDomainNuma *numa)
         virBitmapFree(numa->mem_nodes[i].cpumask);
         virBitmapFree(numa->mem_nodes[i].nodeset);
 
-        if (numa->mem_nodes[i].ndistances > 0)
-            g_free(numa->mem_nodes[i].distances);
+        g_free(numa->mem_nodes[i].distances);
 
         g_free(numa->mem_nodes[i].caches);
     }
@@ -447,8 +436,7 @@ virDomainNumatuneMaybeGetNodeset(virDomainNuma *numatune,
         numatune->memory.placement == VIR_DOMAIN_NUMATUNE_PLACEMENT_AUTO &&
         !auto_nodeset) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Advice from numad is needed in case of "
-                         "automatic numa placement"));
+                       _("Advice from numad is needed in case of automatic numa placement"));
         return -1;
     }
 
@@ -470,9 +458,8 @@ virDomainNumatuneMaybeFormatNodeset(virDomainNuma *numatune,
                                          cellid) < 0)
         return -1;
 
-    if (nodeset &&
-        !(*mask = virBitmapFormat(nodeset)))
-        return -1;
+    if (nodeset)
+        *mask = virBitmapFormat(nodeset);
 
     return 0;
 }
@@ -508,7 +495,7 @@ virDomainNumatuneSet(virDomainNuma *numa,
         (placement < 0 || placement >= VIR_DOMAIN_NUMATUNE_PLACEMENT_LAST)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("Unsupported numatune placement '%1$d'"),
-                       mode);
+                       placement);
         return -1;
     }
 
@@ -533,8 +520,7 @@ virDomainNumatuneSet(virDomainNuma *numa,
     if (placement == VIR_DOMAIN_NUMATUNE_PLACEMENT_STATIC &&
         !numa->memory.nodeset) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("nodeset for NUMA memory tuning must be set "
-                         "if 'placement' is 'static'"));
+                       _("nodeset for NUMA memory tuning must be set if 'placement' is 'static'"));
         return -1;
     }
 
@@ -694,9 +680,8 @@ virDomainNumaDefNodeDistanceParseXML(virDomainNuma *def,
                                      xmlXPathContextPtr ctxt,
                                      unsigned int cur_cell)
 {
-    int ret = -1;
     int sibling;
-    xmlNodePtr *nodes = NULL;
+    g_autofree xmlNodePtr *nodes = NULL;
     size_t i, ndistances = def->nmem_nodes;
 
     if (ndistances == 0)
@@ -706,10 +691,13 @@ virDomainNumaDefNodeDistanceParseXML(virDomainNuma *def,
     if (!virXPathNode("./distances[1]", ctxt))
         return 0;
 
-    if ((sibling = virXPathNodeSet("./distances[1]/sibling", ctxt, &nodes)) <= 0) {
+    if ((sibling = virXPathNodeSet("./distances[1]/sibling", ctxt, &nodes)) < 0)
+        return -1;
+
+    if (sibling == 0) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
                        _("NUMA distances defined without siblings"));
-        goto cleanup;
+        return -1;
     }
 
     for (i = 0; i < sibling; i++) {
@@ -719,19 +707,19 @@ virDomainNumaDefNodeDistanceParseXML(virDomainNuma *def,
 
         if (virXMLPropUInt(nodes[i], "id", 10, VIR_XML_PROP_REQUIRED,
                            &sibling_id) < 0)
-            goto cleanup;
+            return -1;
 
         /* The "id" needs to be within numa/cell range */
         if (sibling_id >= ndistances) {
             virReportError(VIR_ERR_XML_ERROR,
                            _("'sibling_id %1$d' does not refer to a valid cell within NUMA 'cell id %2$d'"),
                            sibling_id, cur_cell);
-            goto cleanup;
+            return -1;
         }
 
         if (virXMLPropUInt(nodes[i], "value", 10, VIR_XML_PROP_REQUIRED,
                            &sibling_value) < 0)
-            goto cleanup;
+            return -1;
 
         /* Assure LOCAL_DISTANCE <= "value" <= UNREACHABLE
          * and correct LOCAL_DISTANCE setting if such applies.
@@ -745,7 +733,7 @@ virDomainNumaDefNodeDistanceParseXML(virDomainNuma *def,
             virReportError(VIR_ERR_XML_ERROR,
                            _("'value %1$d' is invalid for 'sibling id %2$d' under NUMA 'cell id %3$d'"),
                            sibling_value, sibling_id, cur_cell);
-            goto cleanup;
+            return -1;
         }
 
         /* Apply the local / remote distance */
@@ -776,17 +764,7 @@ virDomainNumaDefNodeDistanceParseXML(virDomainNuma *def,
             rdist[cur_cell].value = sibling_value;
     }
 
-    ret = 0;
-
- cleanup:
-    if (ret < 0) {
-        for (i = 0; i < ndistances; i++)
-            VIR_FREE(def->mem_nodes[i].distances);
-        def->mem_nodes[i].ndistances = 0;
-    }
-    VIR_FREE(nodes);
-
-    return ret;
+    return 0;
 }
 
 
@@ -858,7 +836,10 @@ virDomainNumaDefParseXML(virDomainNuma *def,
     if (!virXPathNode("./cpu/numa[1]", ctxt))
         return 0;
 
-    if ((n = virXPathNodeSet("./cpu/numa[1]/cell", ctxt, &cell)) <= 0) {
+    if ((n = virXPathNodeSet("./cpu/numa[1]/cell", ctxt, &cell)) < 0)
+        return -1;
+
+    if (n == 0) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
                        _("NUMA topology defined without NUMA cells"));
         return -1;
@@ -878,9 +859,7 @@ virDomainNumaDefParseXML(virDomainNuma *def,
         /* cells are in order of parsing or explicitly numbered */
         if (cur_cell >= n) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("Exactly one 'cell' element per guest "
-                             "NUMA cell allowed, non-contiguous ranges or "
-                             "ranges not starting from 0 are not allowed"));
+                           _("Exactly one 'cell' element per guest NUMA cell allowed, non-contiguous ranges or ranges not starting from 0 are not allowed"));
             return -1;
         }
 
@@ -1027,8 +1006,6 @@ virDomainNumaDefFormatXML(virBuffer *buf,
         if (cpumask) {
             g_autofree char *cpustr = virBitmapFormat(cpumask);
 
-            if (!cpustr)
-                return -1;
             virBufferAsprintf(&attrBuf, " cpus='%s'", cpustr);
         }
         virBufferAsprintf(&attrBuf, " memory='%llu'",
@@ -1385,8 +1362,7 @@ virDomainNumaSetNodeDistance(virDomainNuma *numa,
     if (!distances ||
         cellid >= numa->mem_nodes[node].ndistances) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("Arguments under memnode element do not "
-                         "correspond with existing guest's NUMA cell"));
+                       _("Arguments under memnode element do not correspond with existing guest's NUMA cell"));
         return -1;
     }
 
@@ -1515,6 +1491,9 @@ virDomainNumaFillCPUsInNode(virDomainNuma *numa,
 
     if (node >= virDomainNumaGetNodeCount(numa))
         return -1;
+
+    if (virDomainNumaGetNodeMemorySize(numa, node) == 0)
+        return 0;
 
     virBitmapSetAll(maxCPUsBitmap);
 

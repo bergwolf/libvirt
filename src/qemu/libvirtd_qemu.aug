@@ -25,18 +25,23 @@ module Libvirtd_qemu =
    let unlimited_val =  del /\"/ "\"" . store /unlimited/ . del /\"/ "\""
    let limits_entry (kw:string) = [ key kw . value_sep . unlimited_val ] |  [ key kw . value_sep . int_val ]
 
+   let bytes_val = del /\"/ "\"" . store /[0-9]+[a-zA-Z]+/ . del /\"/ "\""
+   let bytes_entry (kw:string) = [ key kw . value_sep . bytes_val ] | [ key kw . value_sep . int_val ]
+
 
    (* Config entry grouped by function - same order as example config *)
    let default_tls_entry = str_entry "default_tls_x509_cert_dir"
                  | bool_entry "default_tls_x509_verify"
                  | str_entry "default_tls_x509_secret_uuid"
+                 | str_entry "default_tls_priority"
 
    let vnc_entry = str_entry "vnc_listen"
                  | bool_entry "vnc_auto_unix_socket"
                  | bool_entry "vnc_tls"
                  | str_entry "vnc_tls_x509_cert_dir"
-                 | str_entry "vnc_tls_x509_secret_uuid"
                  | bool_entry "vnc_tls_x509_verify"
+                 | str_entry "vnc_tls_x509_secret_uuid"
+                 | str_entry "vnc_tls_priority"
                  | str_entry "vnc_password"
                  | bool_entry "vnc_sasl"
                  | str_entry "vnc_sasl_dir"
@@ -50,20 +55,30 @@ module Libvirtd_qemu =
                  | bool_entry "spice_sasl"
                  | str_entry "spice_sasl_dir"
 
+   let rdp_entry = str_entry "rdp_listen"
+                 | str_entry "rdp_tls_x509_cert_dir"
+                 | str_entry "rdp_username"
+                 | str_entry "rdp_password"
+
    let chardev_entry = bool_entry "chardev_tls"
                  | str_entry "chardev_tls_x509_cert_dir"
                  | bool_entry "chardev_tls_x509_verify"
                  | str_entry "chardev_tls_x509_secret_uuid"
+                 | str_entry "chardev_tls_priority"
 
    let migrate_entry = str_entry "migrate_tls_x509_cert_dir"
                  | bool_entry "migrate_tls_x509_verify"
                  | str_entry "migrate_tls_x509_secret_uuid"
+                 | str_entry "migrate_tls_priority"
                  | bool_entry "migrate_tls_force"
 
    let backup_entry = str_entry "backup_tls_x509_cert_dir"
                  | bool_entry "backup_tls_x509_verify"
                  | str_entry "backup_tls_x509_secret_uuid"
+                 | str_entry "backup_tls_priority"
 
+   (* support for vxhs was removed from qemu and the examples were dopped from *)
+   (* qemu.conf but these need to stay *)
    let vxhs_entry = bool_entry "vxhs_tls"
                  | str_entry "vxhs_tls_x509_cert_dir"
                  | str_entry "vxhs_tls_x509_secret_uuid"
@@ -71,6 +86,7 @@ module Libvirtd_qemu =
    let nbd_entry = bool_entry "nbd_tls"
                  | str_entry "nbd_tls_x509_cert_dir"
                  | str_entry "nbd_tls_x509_secret_uuid"
+                 | str_entry "nbd_tls_priority"
 
    let nogfx_entry = bool_entry "nographics_allow_host_audio"
 
@@ -96,12 +112,22 @@ module Libvirtd_qemu =
                  | str_entry "snapshot_image_format"
                  | str_entry "auto_dump_path"
                  | bool_entry "auto_dump_bypass_cache"
+                 | bytes_entry "auto_dump_max_size"
                  | bool_entry "auto_start_bypass_cache"
+                 | int_entry "auto_start_delay"
+                 | str_entry "auto_shutdown_try_save"
+                 | str_entry "auto_shutdown_try_shutdown"
+                 | str_entry "auto_shutdown_poweroff"
+                 | int_entry "auto_shutdown_wait"
+                 | bool_entry "auto_shutdown_restore"
+                 | bool_entry "auto_save_bypass_cache"
 
    let process_entry = str_entry "hugetlbfs_mount"
                  | str_entry "bridge_helper"
                  | str_entry "pr_helper"
                  | str_entry "slirp_helper"
+                 | str_entry "qemu_rdp"
+                 | str_entry "qemu_vnc"
                  | str_entry "dbus_daemon"
                  | bool_entry "set_process_name"
                  | int_entry "max_processes"
@@ -125,6 +151,8 @@ module Libvirtd_qemu =
                  | int_entry "migration_port_min"
                  | int_entry "migration_port_max"
                  | str_entry "migration_host"
+                 | int_entry "backup_port_min"
+                 | int_entry "backup_port_max"
 
    let log_entry = bool_entry "log_timestamp"
 
@@ -139,18 +167,25 @@ module Libvirtd_qemu =
    let swtpm_entry = str_entry "swtpm_user"
                 | str_entry "swtpm_group"
 
+   let capability_filters_entry = str_array_entry "capability_filters"
+
+   let storage_entry = bool_entry "storage_use_nbdkit"
+
+   let filesystem_entry = str_array_entry "shared_filesystems"
+
+   let default_cpu_deprecated_features = str_entry "default_cpu_deprecated_features"
+
    (* Entries that used to exist in the config which are now
     * deleted. We keep on parsing them so we don't break
     * ability to parse old configs after upgrade
     *)
    let obsolete_entry = bool_entry "clear_emulator_capabilities"
 
-   let capability_filters_entry = str_array_entry "capability_filters"
-
    (* Each entry in the config is one of the following ... *)
    let entry = default_tls_entry
              | vnc_entry
              | spice_entry
+             | rdp_entry
              | chardev_entry
              | migrate_entry
              | backup_entry
@@ -170,6 +205,9 @@ module Libvirtd_qemu =
              | nbd_entry
              | swtpm_entry
              | capability_filters_entry
+             | storage_entry
+             | filesystem_entry
+             | default_cpu_deprecated_features
              | obsolete_entry
 
    let comment = [ label "#comment" . del /#[ \t]*/ "# " .  store /([^ \t\n][^\n]*)?/ . del /\n/ "\n" ]

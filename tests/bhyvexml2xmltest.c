@@ -5,6 +5,7 @@
 #ifdef WITH_BHYVE
 
 # include "bhyve/bhyve_capabilities.h"
+# include "bhyve/bhyve_conf.h"
 # include "bhyve/bhyve_domain.h"
 # include "bhyve/bhyve_utils.h"
 
@@ -30,11 +31,12 @@ testCompareXMLToXMLHelper(const void *data)
     g_autofree char *xml_out = NULL;
     bool is_different = info->flags & FLAG_IS_DIFFERENT;
     int ret = -1;
+    const char *arch = virArchToString(virArchFromHost());
 
-    xml_in = g_strdup_printf("%s/bhyvexml2argvdata/bhyvexml2argv-%s.xml",
-                             abs_srcdir, info->name);
-    xml_out = g_strdup_printf("%s/bhyvexml2xmloutdata/bhyvexml2xmlout-%s.xml",
-                              abs_srcdir, info->name);
+    xml_in = g_strdup_printf("%s/bhyvexml2argvdata/%s/bhyvexml2argv-%s.xml",
+                             abs_srcdir, arch, info->name);
+    xml_out = g_strdup_printf("%s/bhyvexml2xmloutdata/%s/bhyvexml2xmlout-%s.xml",
+                              abs_srcdir, arch, info->name);
 
     ret = testCompareDomXML2XMLFiles(driver.caps, driver.xmlopt, xml_in,
                                      is_different ? xml_out : xml_in,
@@ -54,13 +56,30 @@ testCompareXMLToXMLHelper(const void *data)
 static int
 mymain(void)
 {
+    g_autofree char *fakefirmwaredir = g_strdup("fakefirmwaredir");
+    g_autofree char *fakenvramdir = g_strdup("fakenvramdir");
+    g_autofree char *fakeubootpath = g_strdup("fakeubootpath/u-boot.bin");
     int ret = 0;
 
     if ((driver.caps = virBhyveCapsBuild()) == NULL)
         return EXIT_FAILURE;
 
+    driver.privileged = true;
+
     if ((driver.xmlopt = virBhyveDriverCreateXMLConf(&driver)) == NULL)
         return EXIT_FAILURE;
+
+    if (!(driver.config = virBhyveDriverConfigNew(true)))
+        return EXIT_FAILURE;
+
+    VIR_FREE(driver.config->firmwareDir);
+    VIR_FREE(driver.config->nvramDir);
+    VIR_FREE(driver.config->ubootPath);
+    driver.config->firmwareDir = g_steal_pointer(&fakefirmwaredir);
+    driver.config->nvramDir = g_steal_pointer(&fakenvramdir);
+    driver.config->ubootPath = g_steal_pointer(&fakeubootpath);
+
+    driver.privileged = true;
 
 # define DO_TEST_FULL(name, flags) \
     do { \
@@ -76,7 +95,9 @@ mymain(void)
 # define DO_TEST_FAILURE(name) \
     DO_TEST_FULL(name, FLAG_EXPECT_FAILURE)
 
-    driver.bhyvecaps = BHYVE_CAP_AHCI32SLOT;
+    driver.bhyvecaps = virBitmapNew(BHYVE_CAP_LAST);
+    virBhyveCapsSet(driver.bhyvecaps, BHYVE_CAP_AHCI32SLOT);
+    virBhyveCapsSet(driver.bhyvecaps, BHYVE_CAP_RTC_UTC);
 
     DO_TEST_DIFFERENT("acpiapic");
     DO_TEST_DIFFERENT("base");
@@ -109,11 +130,41 @@ mymain(void)
     DO_TEST_DIFFERENT("vnc-autoport");
     DO_TEST_DIFFERENT("vnc-resolution");
     DO_TEST_DIFFERENT("vnc-password");
+    DO_TEST_DIFFERENT("vnc-wait");
+    DO_TEST_DIFFERENT("vnc-wait-no");
     DO_TEST_DIFFERENT("commandline");
     DO_TEST_DIFFERENT("msrs");
     DO_TEST_DIFFERENT("sound");
     DO_TEST_DIFFERENT("isa-controller");
     DO_TEST_DIFFERENT("fs-9p");
+    DO_TEST_DIFFERENT("virtio-rnd");
+    DO_TEST_DIFFERENT("serial-tcp");
+    DO_TEST_DIFFERENT("4-consoles");
+    DO_TEST_DIFFERENT("nvme");
+    DO_TEST_DIFFERENT("2-nvme-2-controllers");
+    DO_TEST_DIFFERENT("nvme-explicit-controller");
+    DO_TEST_FAILURE("nvme-invalid-serial");
+    DO_TEST_DIFFERENT("passthru-multiple-devs");
+    DO_TEST_DIFFERENT("slirp");
+    DO_TEST_DIFFERENT("virtio-scsi");
+    DO_TEST_DIFFERENT("numa");
+    DO_TEST_DIFFERENT("blkiotune");
+    DO_TEST_FAILURE("blkiotune-invalid-device");
+    DO_TEST_FAILURE("blkiotune-weight");
+    DO_TEST_FAILURE("blkiotune-multiple-devices");
+    DO_TEST_DIFFERENT("virtio-console");
+    DO_TEST_DIFFERENT("virtio-console-addr");
+    DO_TEST_DIFFERENT("2-virtio-console-mixed-addr");
+    DO_TEST_DIFFERENT("virtio-console-multiple-controllers");
+    DO_TEST_DIFFERENT("virtio-console-controllers");
+    DO_TEST_FAILURE("virtio-console-too-many-ports");
+    DO_TEST_FAILURE("virtio-console-invalid-name");
+    DO_TEST_FAILURE("virtio-console-invalid-path");
+    DO_TEST_FAILURE("sata-disk-invalid-serial");
+    DO_TEST_DIFFERENT("tpm");
+    DO_TEST_FAILURE("tpm-comma-path");
+    DO_TEST_FAILURE("tpm-invalid-model");
+    DO_TEST_FAILURE("tpm-multiple-devices");
 
     /* Address allocation tests */
     DO_TEST_DIFFERENT("addr-single-sata-disk");
@@ -125,7 +176,7 @@ mymain(void)
     DO_TEST_DIFFERENT("addr-isa-controller-on-slot-31");
 
     /* The same without 32 devs per controller support */
-    driver.bhyvecaps ^= BHYVE_CAP_AHCI32SLOT;
+    virBhyveCapsClear(driver.bhyvecaps, BHYVE_CAP_AHCI32SLOT);
     DO_TEST_DIFFERENT("addr-no32devs-single-sata-disk");
     DO_TEST_DIFFERENT("addr-no32devs-multiple-sata-disks");
     DO_TEST_FAILURE("addr-no32devs-more-than-32-sata-disks");
@@ -134,7 +185,19 @@ mymain(void)
     DO_TEST_DIFFERENT("input-xhci-tablet");
 
     virObjectUnref(driver.caps);
+    virTestSetHostArch(VIR_ARCH_AARCH64);
+    driver.caps = virBhyveCapsBuild();
+    /* bhyve does not support UTC clock on ARM */
+    virBhyveCapsClear(driver.bhyvecaps, BHYVE_CAP_RTC_UTC);
+
+    DO_TEST_DIFFERENT("base");
+    DO_TEST_DIFFERENT("console");
+    DO_TEST_DIFFERENT("bootloader");
+
+    virObjectUnref(driver.caps);
     virObjectUnref(driver.xmlopt);
+    virBitmapFree(driver.bhyvecaps);
+    virObjectUnref(driver.config);
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

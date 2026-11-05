@@ -31,7 +31,6 @@
 #include <config.h>
 
 #include <parted/parted.h>
-#include <libdevmapper.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -96,8 +95,11 @@ int main(int argc, char **argv)
         if (virFileResolveLink(path, &canonical_path) != 0)
             return 2;
 
-        partsep = *canonical_path &&
-            g_ascii_isdigit(canonical_path[strlen(canonical_path)-1]) ? "p" : "";
+        if (*canonical_path &&
+            g_ascii_isdigit(canonical_path[strlen(canonical_path)-1]))
+            partsep = "p";
+        else
+            partsep = "";
     }
 
     if ((dev = ped_device_get(path)) == NULL) {

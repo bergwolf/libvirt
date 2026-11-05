@@ -43,6 +43,7 @@ xenParseXMOS(virConf *conf, virDomainDef *def)
         g_autofree char *boot = NULL;
 
         def->os.loader = virDomainLoaderDefNew();
+        def->os.loader->format = VIR_STORAGE_FILE_RAW;
 
         if (xenConfigCopyString(conf, "kernel", &def->os.loader->path) < 0)
             return -1;
@@ -153,9 +154,11 @@ xenParseXMDisk(char *entry, int hvm)
     src = virDomainDiskGetSource(disk);
     if (src) {
         size_t len;
+        const char *sep;
+
         /* The main type  phy:, file:, tap: ... */
-        if ((tmp = strchr(src, ':')) != NULL) {
-            len = tmp - src;
+        if ((sep = strchr(src, ':')) != NULL) {
+            len = sep - src;
             tmp = g_strndup(src, len);
 
             virDomainDiskSetDriver(disk, tmp);
@@ -172,9 +175,9 @@ xenParseXMDisk(char *entry, int hvm)
             STREQ_NULLABLE(virDomainDiskGetDriver(disk), "tap2")) {
             char *driverType;
 
-            if (!(tmp = strchr(src, ':')))
+            if (!(sep = strchr(src, ':')))
                 goto error;
-            len = tmp - src;
+            len = sep - src;
 
             driverType = g_strndup(src, len);
 
@@ -542,15 +545,14 @@ G_STATIC_ASSERT(MAX_VIRT_CPUS <= sizeof(1UL) * CHAR_BIT);
  * Convert a virDomainDef object into an XM config record.
  */
 virConf *
-xenFormatXM(virConnectPtr conn,
-            virDomainDef *def)
+xenFormatXM(virDomainDef *def)
 {
     g_autoptr(virConf) conf = NULL;
 
     if (!(conf = virConfNew()))
         return NULL;
 
-    if (xenFormatConfigCommon(conf, def, conn, XEN_CONFIG_FORMAT_XM) < 0)
+    if (xenFormatConfigCommon(conf, def, XEN_CONFIG_FORMAT_XM) < 0)
         return NULL;
 
     if (xenFormatXMOS(conf, def) < 0)

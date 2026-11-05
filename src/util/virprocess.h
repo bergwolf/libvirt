@@ -70,19 +70,20 @@ int virProcessGetPids(pid_t pid, size_t *npids, pid_t **pids);
 int virProcessGetStartTime(pid_t pid,
                            unsigned long long *timestamp);
 
-int virProcessGetNamespaces(pid_t pid,
-                            size_t *nfdlist,
-                            int **fdlist);
+void virProcessGetNamespaces(pid_t pid,
+                             size_t *nfdlist,
+                             int **fdlist);
 
 int virProcessSetNamespaces(size_t nfdlist,
                             int *fdlist);
 
-int virProcessSetMaxMemLock(pid_t pid, unsigned long long bytes) G_NO_INLINE;
+int virProcessSetMaxMemLock(pid_t pid, unsigned long long bytes) ATTRIBUTE_MOCKABLE;
 int virProcessSetMaxProcesses(pid_t pid, unsigned int procs);
 int virProcessSetMaxFiles(pid_t pid, unsigned int files);
 int virProcessSetMaxCoreSize(pid_t pid, unsigned long long bytes);
+void virProcessActivateMaxFiles(void);
 
-int virProcessGetMaxMemLock(pid_t pid, unsigned long long *bytes) G_NO_INLINE;
+int virProcessGetMaxMemLock(pid_t pid, unsigned long long *bytes) ATTRIBUTE_MOCKABLE;
 
 /* Callback to run code within the mount namespace tied to the given
  * pid.  This function must use only async-signal-safe functions, as
@@ -110,7 +111,7 @@ typedef int (*virProcessForkCallback)(pid_t ppid,
 
 int virProcessRunInFork(virProcessForkCallback cb,
                         void *opaque)
-    G_NO_INLINE;
+    ATTRIBUTE_MOCKABLE;
 
 int virProcessSetupPrivateMountNS(void);
 
@@ -198,7 +199,7 @@ int virProcessGetStatInfo(unsigned long long *cpuTime,
                           unsigned long long *userTime,
                           unsigned long long *sysTime,
                           int *lastCpu,
-                          long *vm_rss,
+                          unsigned long long *vm_rss,
                           pid_t pid,
                           pid_t tid);
 int virProcessGetSchedInfo(unsigned long long *cpuWait,

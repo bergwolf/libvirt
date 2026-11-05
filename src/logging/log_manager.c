@@ -88,8 +88,7 @@ virLogManagerConnect(bool privileged,
                                          NULL)))
         goto error;
 
-    if (virNetClientAddProgram(client, *prog) < 0)
-        goto error;
+    virNetClientAddProgram(client, *prog);
 
     VIR_FREE(daemonPath);
     VIR_FREE(logdpath);
@@ -149,14 +148,11 @@ virLogManagerDomainOpenLogFile(virLogManager *mgr,
                                ino_t *inode,
                                off_t *offset)
 {
-    struct virLogManagerProtocolDomainOpenLogFileArgs args;
-    struct virLogManagerProtocolDomainOpenLogFileRet ret;
+    struct virLogManagerProtocolDomainOpenLogFileArgs args = { 0 };
+    struct virLogManagerProtocolDomainOpenLogFileRet ret = { 0 };
     int *fdout = NULL;
     size_t fdoutlen = 0;
     int rv = -1;
-
-    memset(&args, 0, sizeof(args));
-    memset(&ret, 0, sizeof(ret));
 
     args.driver = (char *)driver;
     memcpy(args.dom.uuid, domuuid, VIR_UUID_BUFLEN);
@@ -208,11 +204,8 @@ virLogManagerDomainGetLogFilePosition(virLogManager *mgr,
                                       ino_t *inode,
                                       off_t *offset)
 {
-    struct virLogManagerProtocolDomainGetLogFilePositionArgs args;
-    struct virLogManagerProtocolDomainGetLogFilePositionRet ret;
-
-    memset(&args, 0, sizeof(args));
-    memset(&ret, 0, sizeof(ret));
+    struct virLogManagerProtocolDomainGetLogFilePositionArgs args = { 0 };
+    struct virLogManagerProtocolDomainGetLogFilePositionRet ret = { 0 };
 
     args.path = (char *)path;
     args.flags = flags;
@@ -241,11 +234,8 @@ virLogManagerDomainReadLogFile(virLogManager *mgr,
                                size_t maxlen,
                                unsigned int flags)
 {
-    struct virLogManagerProtocolDomainReadLogFileArgs args;
-    struct virLogManagerProtocolDomainReadLogFileRet ret;
-
-    memset(&args, 0, sizeof(args));
-    memset(&ret, 0, sizeof(ret));
+    struct virLogManagerProtocolDomainReadLogFileArgs args = { 0 };
+    struct virLogManagerProtocolDomainReadLogFileRet ret = { 0 };
 
     args.path = (char *)path;
     args.flags = flags;
@@ -275,10 +265,8 @@ virLogManagerDomainAppendMessage(virLogManager *mgr,
                                  const char *message,
                                  unsigned int flags)
 {
-    struct virLogManagerProtocolDomainAppendLogFileArgs args;
+    struct virLogManagerProtocolDomainAppendLogFileArgs args = { 0 };
     struct virLogManagerProtocolDomainAppendLogFileRet ret;
-
-    memset(&args, 0, sizeof(args));
 
     args.driver = (char *)driver;
     memcpy(args.dom.uuid, domuuid, VIR_UUID_BUFLEN);

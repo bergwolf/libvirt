@@ -219,15 +219,8 @@ vzDomainDefAddDefaultInputDevices(virDomainDef *def)
     if (def->ngraphics == 0)
         return 0;
 
-    if (virDomainDefMaybeAddInput(def,
-                                  VIR_DOMAIN_INPUT_TYPE_MOUSE,
-                                  bus) < 0)
-        return -1;
-
-    if (virDomainDefMaybeAddInput(def,
-                                  VIR_DOMAIN_INPUT_TYPE_KBD,
-                                  bus) < 0)
-        return -1;
+    virDomainDefMaybeAddInput(def, VIR_DOMAIN_INPUT_TYPE_MOUSE, bus);
+    virDomainDefMaybeAddInput(def, VIR_DOMAIN_INPUT_TYPE_KBD, bus);
 
     return 0;
 }
@@ -241,7 +234,8 @@ vzDomainDefPostParse(virDomainDef *def,
     struct _vzDriver *driver = opaque;
     if (!virCapabilitiesDomainSupported(driver->caps, def->os.type,
                                         def->os.arch,
-                                        def->virtType))
+                                        def->virtType,
+                                        true))
         return -1;
 
     if (vzDomainDefAddDefaultInputDevices(def) < 0)
@@ -795,14 +789,20 @@ vzDomainDefineXMLFlags(virConnectPtr conn, const char *xml, unsigned int flags)
     if (flags & VIR_DOMAIN_DEFINE_VALIDATE)
         parse_flags |= VIR_DOMAIN_DEF_PARSE_VALIDATE_SCHEMA;
 
+    /* Avoid parsing the whole domain definition for ACL checks */
+    if (!(def = virDomainDefIDsParseString(xml, driver->xmlopt, parse_flags)))
+        return NULL;
+
+    if (virDomainDefineXMLFlagsEnsureACL(conn, def) < 0)
+        return NULL;
+
+    g_clear_pointer(&def, virDomainDefFree);
+
     if ((def = virDomainDefParseString(xml, driver->xmlopt,
                                        NULL, parse_flags)) == NULL)
         goto cleanup;
 
     if (virXMLCheckIllegalChars("name", def->name, "\n") < 0)
-        goto cleanup;
-
-    if (virDomainDefineXMLFlagsEnsureACL(conn, def) < 0)
         goto cleanup;
 
     dom = virDomainObjListFindByUUID(driver->domains, def->uuid);
@@ -842,8 +842,7 @@ vzDomainDefineXMLFlags(virConnectPtr conn, const char *xml, unsigned int flags)
 
             if (!virDomainDefCheckABIStability(dom->def, def, driver->xmlopt)) {
                 virReportError(VIR_ERR_ARGUMENT_UNSUPPORTED, "%s",
-                               _("Can't change domain configuration "
-                                 "in managed save state"));
+                               _("Can't change domain configuration in managed save state"));
                 goto cleanup;
             }
         } else {
@@ -1001,10 +1000,12 @@ vzNodeGetCPUMap(virConnectPtr conn,
                 unsigned int *online,
                 unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeGetCPUMapEnsureACL(conn) < 0)
         return -1;
 
-    return virHostCPUGetMap(cpumap, online, flags);
+    return virHostCPUGetMap(cpumap, online);
 }
 
 static int
@@ -1461,15 +1462,13 @@ static int vzCheckConfigUpdateFlags(virDomainObj *dom, unsigned int *flags)
 
     if (!(*flags & VIR_DOMAIN_AFFECT_CONFIG)) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("domain config update needs VIR_DOMAIN_AFFECT_CONFIG "
-                         "flag to be set"));
+                       _("domain config update needs VIR_DOMAIN_AFFECT_CONFIG flag to be set"));
         return -1;
     }
 
     if (virDomainObjIsActive(dom) && !(*flags & VIR_DOMAIN_AFFECT_LIVE)) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("Updates on a running domain need "
-                         "VIR_DOMAIN_AFFECT_LIVE flag"));
+                       _("Updates on a running domain need VIR_DOMAIN_AFFECT_LIVE flag"));
         return -1;
     }
 
@@ -1967,10 +1966,12 @@ vzNodeGetCPUStats(virConnectPtr conn,
                   int *nparams,
                   unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeGetCPUStatsEnsureACL(conn) < 0)
         return -1;
 
-    return virHostCPUGetStats(cpuNum, params, nparams, flags);
+    return virHostCPUGetStats(cpuNum, params, nparams);
 }
 
 static int
@@ -1980,10 +1981,12 @@ vzNodeGetMemoryStats(virConnectPtr conn,
                      int *nparams,
                      unsigned int flags)
 {
+    virCheckFlags(0, -1);
+
     if (virNodeGetMemoryStatsEnsureACL(conn) < 0)
         return -1;
 
-    return virHostMemGetStats(cellNum, params, nparams, flags);
+    return virHostMemGetStats(cellNum, params, nparams);
 }
 
 static int
@@ -2793,8 +2796,7 @@ vzEatCookie(const char *cookiein, int cookieinlen, unsigned int flags)
         if ((!(tmp = virXPathString("string(./session-uuid[1])", ctx))
             || (virUUIDParse(tmp, mig->session_uuid) < 0))) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("missing or malformed session-uuid element "
-                             "in migration data"));
+                           _("missing or malformed session-uuid element in migration data"));
             goto error;
         }
     }
@@ -2921,8 +2923,7 @@ vzMigrationCreateURI(void)
 
     if (STRPREFIX(hostname, "localhost")) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("hostname on destination resolved to localhost,"
-                         " but migration requires an FQDN"));
+                       _("hostname on destination resolved to localhost, but migration requires an FQDN"));
         goto cleanup;
     }
 
@@ -2977,9 +2978,9 @@ vzDomainMigratePrepare3Params(virConnectPtr conn,
                      | VZ_MIGRATION_COOKIE_DOMAIN_NAME) < 0)
         return -1;
 
-    if (!(def = virDomainDefParseString(dom_xml, driver->xmlopt,
-                                        NULL,
-                                        VIR_DOMAIN_DEF_PARSE_INACTIVE)))
+    /* Avoid parsing the whole domain definition for ACL checks */
+    if (!(def = virDomainDefIDsParseString(dom_xml, driver->xmlopt,
+                                           VIR_DOMAIN_DEF_PARSE_INACTIVE)))
         return -1;
 
     if (dname) {
@@ -4072,7 +4073,7 @@ vzStateCleanup(void)
     return 0;
 }
 
-static int
+static virDrvStateInitResult
 vzStateInitialize(bool privileged,
                   const char *root,
                   bool monolithic G_GNUC_UNUSED,

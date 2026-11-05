@@ -1,12 +1,11 @@
 <cpu>
   <arch>x86_64</arch>
-  <model>Dhyana</model>
+  <model>Dhyana-v2</model>
   <vendor>Hygon</vendor>
   <signature family='24' model='0' stepping='1'/>
-  <feature name='ht'/>
   <feature name='monitor'/>
   <feature name='osxsave'/>
-  <feature name='xsaves'/>
+  <feature name='ht'/>
   <feature name='cmp_legacy'/>
   <feature name='extapic'/>
   <feature name='skinit'/>
@@ -15,13 +14,13 @@
   <feature name='topoext'/>
   <feature name='perfctr_core'/>
   <feature name='perfctr_nb'/>
+  <feature name='overflow-recov'/>
+  <feature name='succor'/>
   <feature name='invtsc'/>
   <feature name='clzero'/>
   <feature name='xsaveerptr'/>
-  <feature name='npt'/>
   <feature name='lbrv'/>
   <feature name='svm-lock'/>
-  <feature name='nrip-save'/>
   <feature name='tsc-scale'/>
   <feature name='vmcb-clean'/>
   <feature name='flushbyasid'/>

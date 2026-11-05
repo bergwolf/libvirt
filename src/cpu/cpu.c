@@ -27,6 +27,7 @@
 #include "cpu_ppc64.h"
 #include "cpu_s390.h"
 #include "cpu_arm.h"
+#include "cpu_loongarch.h"
 #include "cpu_riscv64.h"
 #include "capabilities.h"
 
@@ -41,6 +42,7 @@ static struct cpuArchDriver *drivers[] = {
     &cpuDriverS390,
     &cpuDriverArm,
     &cpuDriverRiscv64,
+    &cpuDriverLoongArch,
 };
 
 
@@ -162,6 +164,81 @@ virCPUCompare(virArch arch,
     }
 
     return driver->compare(host, cpu, failIncompatible);
+}
+
+
+/** virCPUCompareUnusable:
+ * @arch: CPU architecture
+ * @host: host CPU reported by the hypervisor
+ * @cpu: CPU to be compared with @host
+ * @blockers: NULL terminated list of features blocking usability of the CPU model from @cpu
+ * @failIncompatible: return an error instead of VIR_CPU_COMPARE_INCOMPATIBLE
+ *
+ * Check if @cpu can be run on @host when we know model used by @cpu is
+ * considered unusable by the hypervisor because it requires some features
+ * that cannot be provided on the host (the list of them is passed as
+ * @blockers) and/or @cpu requests additional features. The @cpu definition
+ * can still be compatible with @host if all @blockers are explicitly disabled
+ * and all explicitly requested features are supported by @host.
+ *
+ * Returns VIR_CPU_COMPARE_ERROR on error, VIR_CPU_COMPARE_INCOMPATIBLE when
+ * the @cpu cannot be created on @host, or VIR_CPU_COMPARE_SUPERSET when the
+ * @cpu is compatible with @host CPU. If @failIncompatible is true, the
+ * function will return VIR_CPU_COMPARE_ERROR (and set VIR_ERR_CPU_INCOMPATIBLE
+ * error) when the two CPUs are incompatible.
+ */
+int
+virCPUCompareUnusable(virArch arch,
+                      const virCPUDef *host,
+                      const virCPUDef *cpu,
+                      char **blockers,
+                      bool failIncompatible)
+{
+    g_autoptr(virCPUDef) expanded = NULL;
+    g_auto(virBuffer) features = VIR_BUFFER_INITIALIZER;
+    g_autofree char *str = NULL;
+    virCPUFeatureDef *feat;
+    char **blocker;
+    size_t i;
+
+    if (blockers) {
+        for (blocker = blockers; *blocker; blocker++) {
+            if (!(feat = virCPUDefFindFeature(cpu, *blocker)) ||
+                feat->policy != VIR_CPU_FEATURE_DISABLE) {
+                virBufferAddStr(&features, *blocker);
+                virBufferAddLit(&features, ", ");
+            }
+        }
+    }
+
+    expanded = virCPUDefCopy(host);
+    if (virCPUExpandFeatures(arch, expanded) < 0)
+        return VIR_CPU_COMPARE_ERROR;
+
+    for (i = 0; i < cpu->nfeatures; i++) {
+        if (cpu->features[i].policy != VIR_CPU_FEATURE_REQUIRE)
+            continue;
+
+        if (!(feat = virCPUDefFindFeature(expanded, cpu->features[i].name)) ||
+            feat->policy != VIR_CPU_FEATURE_REQUIRE) {
+            virBufferAddStr(&features, cpu->features[i].name);
+            virBufferAddLit(&features, ", ");
+        }
+    }
+    virBufferTrim(&features, ", ");
+
+    if ((str = virBufferContentAndReset(&features))) {
+        if (failIncompatible) {
+            virReportError(VIR_ERR_CPU_INCOMPATIBLE,
+                           _("Host CPU does not provide required features: %1$s"),
+                           str);
+            return VIR_CPU_COMPARE_ERROR;
+        }
+
+        return VIR_CPU_COMPARE_INCOMPATIBLE;
+    }
+
+    return VIR_CPU_COMPARE_SUPERSET;
 }
 
 
@@ -435,6 +512,7 @@ virCPUGetHost(virArch arch,
     if (nodeInfo) {
         cpu->sockets = nodeInfo->sockets;
         cpu->dies = 1;
+        cpu->clusters = 1;
         cpu->cores = nodeInfo->cores;
         cpu->threads = nodeInfo->threads;
     }
@@ -503,7 +581,7 @@ virCPUBaseline(virArch arch,
               virArchToString(arch), ncpus, models, features, migratable);
     if (cpus) {
         for (i = 0; i < ncpus; i++)
-            VIR_DEBUG("cpus[%zu]=%p", i, cpus[i]);
+            VIR_DEBUG("cpus[%zu]=%p (%s)", i, cpus[i], NULLSTR(cpus[i]->model));
     }
     if (models) {
         for (i = 0; i < models->nmodels; i++)
@@ -557,19 +635,23 @@ virCPUBaseline(virArch arch,
  * @arch: CPU architecture
  * @guest: guest CPU definition to be updated
  * @host: host CPU definition
+ * @removedPolicy: default policy for features removed from the CPU model
  *
  * Updates @guest CPU definition possibly taking @host CPU into account. This
  * is required for maintaining compatibility with older libvirt releases or to
  * support guest CPU definitions specified relatively to host CPU, such as CPUs
  * with VIR_CPU_MODE_CUSTOM and optional features or VIR_CPU_MATCH_MINIMUM, or
- * CPUs with VIR_CPU_MODE_HOST_MODEL.
+ * CPUs with VIR_CPU_MODE_HOST_MODEL. If @guest CPU uses a CPU model which
+ * specifies some features as removed, such features that were not already
+ * present in the @guest CPU definition will be added there with @removedPolicy.
  *
  * Returns 0 on success, -1 on error.
  */
 int
 virCPUUpdate(virArch arch,
              virCPUDef *guest,
-             const virCPUDef *host)
+             const virCPUDef *host,
+             virCPUFeaturePolicy removedPolicy)
 {
     struct cpuArchDriver *driver;
     bool relative;
@@ -619,7 +701,7 @@ virCPUUpdate(virArch arch,
         return -1;
     }
 
-    if (driver->update(guest, host, relative) < 0)
+    if (driver->update(guest, host, relative, removedPolicy) < 0)
         return -1;
 
     VIR_DEBUG("model=%s", NULLSTR(guest->model));
@@ -1043,17 +1125,6 @@ virCPUConvertLegacy(virArch arch,
 }
 
 
-static int
-virCPUFeatureCompare(const void *p1,
-                     const void *p2)
-{
-    const virCPUFeatureDef *f1 = p1;
-    const virCPUFeatureDef *f2 = p2;
-
-    return strcmp(f1->name, f2->name);
-}
-
-
 /**
  * virCPUExpandFeatures:
  *
@@ -1085,8 +1156,7 @@ virCPUExpandFeatures(virArch arch,
         driver->expandFeatures(cpu) < 0)
         return -1;
 
-    qsort(cpu->features, cpu->nfeatures, sizeof(*cpu->features),
-          virCPUFeatureCompare);
+    virCPUDefSortFeatures(cpu);
 
     VIR_DEBUG("nfeatures=%zu", cpu->nfeatures);
     return 0;
@@ -1230,6 +1300,96 @@ virCPUDataGetHost(void)
         return NULL;
 
     return driver->dataGetHost();
+}
+
+
+/**
+ * virCPUGetCheckMode:
+ * @arch: CPU architecture
+ * @cpu: CPU definition
+ * @compat: where to store compatible partial checking is required
+ *
+ * Gets the mode required for "partial" check of the CPU definition @cpu
+ * based on the CPU model used. On success @compat will be set to true if
+ * a compatible check needs to be done, false otherwise.
+ *
+ * Returns 0 on success, -1 otherwise.
+ */
+int
+virCPUGetCheckMode(virArch arch,
+                   const virCPUDef *cpu,
+                   bool *compat)
+{
+    struct cpuArchDriver *driver;
+
+    if (!(driver = cpuGetSubDriver(arch)))
+        return -1;
+
+    if (!driver->getCheckMode) {
+        *compat = true;
+        return 0;
+    }
+
+    return driver->getCheckMode(cpu->model, compat);
+}
+
+
+/** virCPUGetCanonicalModel:
+ *
+ * @arch: CPU architecture
+ * @model: CPU model to be checked
+ *
+ * Returns @model's canonical name if @model is an alias or NULL otherwise.
+ */
+const char *
+virCPUGetCanonicalModel(virArch arch,
+                        const char *model)
+{
+    struct cpuArchDriver *driver;
+
+    VIR_DEBUG("arch=%s model=%s", virArchToString(arch), model);
+
+    if (!(driver = cpuGetSubDriver(arch)))
+        return NULL;
+
+    if (!driver->getCanonicalModel)
+        return NULL;
+
+    return driver->getCanonicalModel(model);
+}
+
+
+/** virCPUUpdateFeatures:
+ *
+ * @arch: CPU architecture
+ * @cpu: CPU definition to update
+ * @cpuData: CPU data describing features
+ * @policy: to be used by the updated features
+ *
+ * Updates features described in @cpuData to use the specified @policy. Missing
+ * features will be automatically added to the CPU definition.
+ *
+ * Returns 0 on success, -1 otherwise.
+ */
+int
+virCPUUpdateFeatures(virArch arch,
+                     virCPUDef *cpu,
+                     virCPUData *cpuData,
+                     virCPUFeaturePolicy policy)
+{
+    struct cpuArchDriver *driver;
+
+    VIR_DEBUG("arch=%s, cpu=%p, model=%s, policy=%s",
+              virArchToString(arch), cpu, NULLSTR(cpu->model),
+              virCPUFeaturePolicyTypeToString(policy));
+
+    if (!(driver = cpuGetSubDriver(arch)))
+        return -1;
+
+    if (!driver->updateFeatures)
+        return 0;
+
+    return driver->updateFeatures(cpu, cpuData, policy);
 }
 
 

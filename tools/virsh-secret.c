@@ -41,11 +41,11 @@ virshCommandOptSecret(vshControl *ctl, const vshCmd *cmd, const char **name)
     const char *optname = "secret";
     virshControl *priv = ctl->privData;
 
-    if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
+    if (vshCommandOptString(ctl, cmd, optname, &n) < 0)
         return NULL;
 
     vshDebug(ctl, VSH_ERR_DEBUG,
-             "%s: found option <%s>: %s\n", cmd->def->name, optname, n);
+             "%s: found option <%s>: %s", cmd->def->name, optname, n);
 
     if (name != NULL)
         *name = n;
@@ -61,14 +61,9 @@ virshCommandOptSecret(vshControl *ctl, const vshCmd *cmd, const char **name)
 /*
  * "secret-define" command
  */
-static const vshCmdInfo info_secret_define[] = {
-    {.name = "help",
-     .data = N_("define or modify a secret from an XML file")
-    },
-    {.name = "desc",
-     .data = N_("Define or modify a secret.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_define = {
+    .help = N_("define or modify a secret from an XML file"),
+    .desc = N_("Define or modify a secret."),
 };
 
 static const vshCmdOptDef opts_secret_define[] = {
@@ -91,7 +86,7 @@ cmdSecretDefine(vshControl *ctl, const vshCmd *cmd)
     unsigned int flags = 0;
     virshControl *priv = ctl->privData;
 
-    if (vshCommandOptStringReq(ctl, cmd, "file", &from) < 0)
+    if (vshCommandOptString(ctl, cmd, "file", &from) < 0)
         return false;
 
     if (vshCommandOptBool(cmd, "validate"))
@@ -121,27 +116,22 @@ cmdSecretDefine(vshControl *ctl, const vshCmd *cmd)
 /*
  * "secret-dumpxml" command
  */
-static const vshCmdInfo info_secret_dumpxml[] = {
-    {.name = "help",
-     .data = N_("secret attributes in XML")
-    },
-    {.name = "desc",
-     .data = N_("Output attributes of a secret as an XML dump to stdout.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_dumpxml = {
+    .help = N_("secret attributes in XML"),
+    .desc = N_("Output attributes of a secret as an XML dump to stdout."),
 };
 
 static const vshCmdOptDef opts_secret_dumpxml[] = {
     {.name = "secret",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .help = N_("secret UUID"),
      .completer = virshSecretUUIDCompleter,
     },
     {.name = "xpath",
      .type = VSH_OT_STRING,
-     .flags = VSH_OFLAG_REQ_OPT,
-     .completer = virshCompleteEmpty,
+     .completer = vshCompleteEmpty,
      .help = N_("xpath expression to filter the XML document")
     },
     {.name = "wrap",
@@ -181,27 +171,22 @@ cmdSecretDumpXML(vshControl *ctl, const vshCmd *cmd)
 /*
  * "secret-set-value" command
  */
-static const vshCmdInfo info_secret_set_value[] = {
-    {.name = "help",
-     .data = N_("set a secret value")
-    },
-    {.name = "desc",
-     .data = N_("Set a secret value.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_set_value = {
+    .help = N_("set a secret value"),
+    .desc = N_("Set a secret value."),
 };
 
 static const vshCmdOptDef opts_secret_set_value[] = {
     {.name = "secret",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .help = N_("secret UUID"),
      .completer = virshSecretUUIDCompleter,
     },
     {.name = "file",
      .type = VSH_OT_STRING,
-     .flags = VSH_OFLAG_REQ_OPT,
-     .completer = virshCompletePathLocalExisting,
+     .completer = vshCompletePathLocalExisting,
      .help = N_("read secret from file"),
     },
     {.name = "plain",
@@ -214,7 +199,8 @@ static const vshCmdOptDef opts_secret_set_value[] = {
     },
     {.name = "base64",
      .type = VSH_OT_STRING,
-     .completer = virshCompleteEmpty,
+     .unwanted_positional = true,
+     .completer = vshCompleteEmpty,
      .help = N_("base64-encoded secret value")
     },
     {.name = NULL}
@@ -241,15 +227,15 @@ cmdSecretSetValue(vshControl *ctl, const vshCmd *cmd)
     if (!(secret = virshCommandOptSecret(ctl, cmd, NULL)))
         return false;
 
-    if (vshCommandOptStringReq(ctl, cmd, "base64", &base64) < 0)
+    if (vshCommandOptString(ctl, cmd, "base64", &base64) < 0)
         return false;
 
-    if (vshCommandOptStringReq(ctl, cmd, "file", &filename) < 0)
+    if (vshCommandOptString(ctl, cmd, "file", &filename) < 0)
         return false;
 
     if (base64) {
         /* warn users that the --base64 option passed from command line is wrong */
-        vshError(ctl, _("Passing secret value as command-line argument is insecure!"));
+        vshWarn(ctl, "%s", _("Passing secret value as command-line argument is insecure!"));
         secret_val = g_strdup(base64);
         secret_len = strlen(secret_val);
     } else if (filename) {
@@ -271,7 +257,7 @@ cmdSecretSetValue(vshControl *ctl, const vshCmd *cmd)
         secret_len = strlen(secret_val);
         plain = true;
     } else {
-        vshError(ctl, _("Input secret value is missing"));
+        vshError(ctl, "%s", _("Input secret value is missing"));
         return false;
     }
 
@@ -281,6 +267,11 @@ cmdSecretSetValue(vshControl *ctl, const vshCmd *cmd)
 
         secret_val = (char *) g_base64_decode(tmp, &secret_len);
         virSecureErase(tmp, tmp_len);
+
+        if (!secret_len) {
+            vshError(ctl, "%s", _("Secret value is not valid base64"));
+            return false;
+        }
     }
 
     res = virSecretSetValue(secret, (unsigned char *) secret_val, secret_len, 0);
@@ -297,20 +288,16 @@ cmdSecretSetValue(vshControl *ctl, const vshCmd *cmd)
 /*
  * "secret-get-value" command
  */
-static const vshCmdInfo info_secret_get_value[] = {
-    {.name = "help",
-     .data = N_("Output a secret value")
-    },
-    {.name = "desc",
-     .data = N_("Output a secret value to stdout.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_get_value = {
+    .help = N_("Output a secret value"),
+    .desc = N_("Output a secret value to stdout."),
 };
 
 static const vshCmdOptDef opts_secret_get_value[] = {
     {.name = "secret",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .help = N_("secret UUID"),
      .completer = virshSecretUUIDCompleter,
     },
@@ -338,7 +325,7 @@ cmdSecretGetValue(vshControl *ctl, const vshCmd *cmd)
     if (plain) {
         if (fwrite(value, 1, value_size, stdout) != value_size) {
             virSecureErase(value, value_size);
-            vshError(ctl, "failed to write secret");
+            vshError(ctl, "%s", _("failed to write secret"));
             return false;
         }
     } else {
@@ -355,20 +342,16 @@ cmdSecretGetValue(vshControl *ctl, const vshCmd *cmd)
 /*
  * "secret-undefine" command
  */
-static const vshCmdInfo info_secret_undefine[] = {
-    {.name = "help",
-     .data = N_("undefine a secret")
-    },
-    {.name = "desc",
-     .data = N_("Undefine a secret.")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_undefine = {
+    .help = N_("undefine a secret"),
+    .desc = N_("Undefine a secret."),
 };
 
 static const vshCmdOptDef opts_secret_undefine[] = {
     {.name = "secret",
-     .type = VSH_OT_DATA,
-     .flags = VSH_OFLAG_REQ,
+     .type = VSH_OT_STRING,
+     .positional = true,
+     .required = true,
      .help = N_("secret UUID"),
      .completer = virshSecretUUIDCompleter,
     },
@@ -399,7 +382,9 @@ cmdSecretUndefine(vshControl *ctl, const vshCmd *cmd)
 }
 
 static int
-virshSecretSorter(const void *a, const void *b)
+virshSecretSorter(const void *a,
+                  const void *b,
+                  void *opaque G_GNUC_UNUSED)
 {
     virSecretPtr *sa = (virSecretPtr *) a;
     virSecretPtr *sb = (virSecretPtr *) b;
@@ -509,9 +494,10 @@ virshSecretListCollect(vshControl *ctl,
 
  finished:
     /* sort the list */
-    if (list->secrets && list->nsecrets)
-        qsort(list->secrets, list->nsecrets,
-              sizeof(*list->secrets), virshSecretSorter);
+    if (list->secrets && list->nsecrets) {
+        g_qsort_with_data(list->secrets, list->nsecrets,
+                          sizeof(*list->secrets), virshSecretSorter, NULL);
+    }
 
     /* truncate the list for not found secret objects */
     if (deleted)
@@ -536,14 +522,9 @@ virshSecretListCollect(vshControl *ctl,
 /*
  * "secret-list" command
  */
-static const vshCmdInfo info_secret_list[] = {
-    {.name = "help",
-     .data = N_("list secrets")
-    },
-    {.name = "desc",
-     .data = N_("Returns a list of secrets")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_list = {
+    .help = N_("list secrets"),
+    .desc = N_("Returns a list of secrets"),
 };
 
 static const vshCmdOptDef opts_secret_list[] = {
@@ -729,24 +710,21 @@ virshSecretEventCallback virshSecretEventCallbacks[] = {
 };
 G_STATIC_ASSERT(VIR_SECRET_EVENT_ID_LAST == G_N_ELEMENTS(virshSecretEventCallbacks));
 
-static const vshCmdInfo info_secret_event[] = {
-    {.name = "help",
-     .data = N_("Secret Events")
-    },
-    {.name = "desc",
-     .data = N_("List event types, or wait for secret events to occur")
-    },
-    {.name = NULL}
+static const vshCmdInfo info_secret_event = {
+    .help = N_("Secret Events"),
+    .desc = N_("List event types, or wait for secret events to occur"),
 };
 
 static const vshCmdOptDef opts_secret_event[] = {
     {.name = "secret",
      .type = VSH_OT_STRING,
+     .unwanted_positional = true,
      .help = N_("filter by secret name or uuid"),
      .completer = virshSecretUUIDCompleter,
     },
     {.name = "event",
      .type = VSH_OT_STRING,
+     .unwanted_positional = true,
      .completer = virshSecretEventNameCompleter,
      .help = N_("which event type to wait for")
     },
@@ -756,6 +734,7 @@ static const vshCmdOptDef opts_secret_event[] = {
     },
     {.name = "timeout",
      .type = VSH_OT_INT,
+     .unwanted_positional = true,
      .help = N_("timeout seconds")
     },
     {.name = "list",
@@ -789,7 +768,7 @@ cmdSecretEvent(vshControl *ctl, const vshCmd *cmd)
         return true;
     }
 
-    if (vshCommandOptStringReq(ctl, cmd, "event", &eventName) < 0)
+    if (vshCommandOptString(ctl, cmd, "event", &eventName) < 0)
         return false;
     if (!eventName) {
         vshError(ctl, "%s", _("either --list or --event <type> is required"));
@@ -849,43 +828,43 @@ const vshCmdDef secretCmds[] = {
     {.name = "secret-define",
      .handler = cmdSecretDefine,
      .opts = opts_secret_define,
-     .info = info_secret_define,
+     .info = &info_secret_define,
      .flags = 0
     },
     {.name = "secret-dumpxml",
      .handler = cmdSecretDumpXML,
      .opts = opts_secret_dumpxml,
-     .info = info_secret_dumpxml,
+     .info = &info_secret_dumpxml,
      .flags = 0
     },
     {.name = "secret-event",
      .handler = cmdSecretEvent,
      .opts = opts_secret_event,
-     .info = info_secret_event,
+     .info = &info_secret_event,
      .flags = 0
     },
     {.name = "secret-get-value",
      .handler = cmdSecretGetValue,
      .opts = opts_secret_get_value,
-     .info = info_secret_get_value,
+     .info = &info_secret_get_value,
      .flags = 0
     },
     {.name = "secret-list",
      .handler = cmdSecretList,
      .opts = opts_secret_list,
-     .info = info_secret_list,
+     .info = &info_secret_list,
      .flags = 0
     },
     {.name = "secret-set-value",
      .handler = cmdSecretSetValue,
      .opts = opts_secret_set_value,
-     .info = info_secret_set_value,
+     .info = &info_secret_set_value,
      .flags = 0
     },
     {.name = "secret-undefine",
      .handler = cmdSecretUndefine,
      .opts = opts_secret_undefine,
-     .info = info_secret_undefine,
+     .info = &info_secret_undefine,
      .flags = 0
     },
     {.name = NULL}

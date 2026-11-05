@@ -25,6 +25,8 @@
 #include "virobject.h"
 #include "virjson.h"
 #include "domain_conf.h"
+#include "domain_logcontext.h"
+#include "ch_conf.h"
 
 #define URL_ROOT "http://localhost/api/v1"
 #define URL_VMM_SHUTDOWN "vmm.shutdown"
@@ -36,8 +38,14 @@
 #define URL_VM_Suspend "vm.pause"
 #define URL_VM_RESUME "vm.resume"
 #define URL_VM_INFO "vm.info"
+#define URL_VM_SAVE "vm.snapshot"
+#define URL_VM_RESTORE "vm.restore"
+#define URL_VM_ADD_DISK "vm.add-disk"
+#define URL_VM_REMOVE_DEVICE "vm.remove-device"
 
 #define VIRCH_THREAD_NAME_LEN   16
+
+#define CH_NET_ID_PREFIX "net"
 
 typedef enum {
     virCHThreadTypeEmulator,
@@ -90,7 +98,17 @@ struct _virCHMonitor {
 
     char *socketpath;
 
-    pid_t pid;
+    char *eventmonitorpath;
+    int eventmonitorfd;
+
+    virThread event_handler_thread;
+    int event_handler_stop;
+    struct {
+        /* Buffer to hold the data read from pipe */
+        char *buffer;
+        /* Size of the data read from pipe into buffer */
+        size_t buf_fill_sz;
+    } event_buffer;
 
     virDomainObj *vm;
 
@@ -98,26 +116,36 @@ struct _virCHMonitor {
     virCHMonitorThreadInfo *threads;
 };
 
-virCHMonitor *virCHMonitorNew(virDomainObj *vm, const char *socketdir);
+virCHMonitor *virCHMonitorNew(virDomainObj *vm, virCHDriverConfig *cfg,
+                              int logfile);
 void virCHMonitorClose(virCHMonitor *mon);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virCHMonitor, virCHMonitorClose);
 
 
-int virCHMonitorCreateVM(virCHMonitor *mon,
-                         size_t *nnicindexes,
-                         int **nicindexes);
-int virCHMonitorBootVM(virCHMonitor *mon);
+int virCHMonitorCreateVM(virCHDriver *driver, virCHMonitor *mon);
+int virCHMonitorBootVM(virCHMonitor *mon, domainLogContext *logCtxt);
 int virCHMonitorShutdownVM(virCHMonitor *mon);
 int virCHMonitorRebootVM(virCHMonitor *mon);
 int virCHMonitorSuspendVM(virCHMonitor *mon);
 int virCHMonitorResumeVM(virCHMonitor *mon);
+int virCHMonitorSaveVM(virCHMonitor *mon,
+                       const char *to);
 int virCHMonitorGetInfo(virCHMonitor *mon, virJSONValue **info);
 
-void virCHMonitorCPUInfoFree(virCHMonitorCPUInfo *cpus);
-int virCHMonitorGetCPUInfo(virCHMonitor *mon,
-                           virCHMonitorCPUInfo **vcpus,
-                           size_t maxvcpus);
 size_t virCHMonitorGetThreadInfo(virCHMonitor *mon, bool refresh,
                                  virCHMonitorThreadInfo **threads);
 int virCHMonitorGetIOThreads(virCHMonitor *mon,
                              virDomainIOThreadInfo ***iothreads);
+int
+virCHMonitorBuildNetJson(virDomainNetDef *netdef,
+                         char **jsonstr);
+int
+virCHMonitorAddDisk(virCHMonitor* mon,
+                    virDomainDiskDef *diskdef);
+
+int virCHMonitorRemoveDevice(virCHMonitor *mon,
+                             const char* device_id);
+
+int virCHMonitorBuildRestoreJson(virDomainDef *vmdef,
+                                 const char *from,
+                                 char **jsonstr);

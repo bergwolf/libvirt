@@ -106,6 +106,7 @@ xenParseXLOS(virConf *conf, virDomainDef *def, virCaps *caps)
         g_autofree char *bios = NULL;
         g_autofree char *bios_path = NULL;
         g_autofree char *boot = NULL;
+        g_autofree char *slic = NULL;
         int val = 0;
 
         if (xenConfigGetString(conf, "bios", &bios, NULL) < 0)
@@ -115,6 +116,7 @@ xenParseXLOS(virConf *conf, virDomainDef *def, virCaps *caps)
 
         if (bios && STREQ(bios, "ovmf")) {
             def->os.loader = virDomainLoaderDefNew();
+            def->os.loader->format = VIR_STORAGE_FILE_RAW;
             def->os.loader->type = VIR_DOMAIN_LOADER_TYPE_PFLASH;
             def->os.loader->readonly = VIR_TRISTATE_BOOL_YES;
             if (bios_path)
@@ -126,13 +128,21 @@ xenParseXLOS(virConf *conf, virDomainDef *def, virCaps *caps)
                 if (caps->guests[i]->ostype == VIR_DOMAIN_OSTYPE_HVM &&
                     caps->guests[i]->arch.id == def->os.arch) {
                     def->os.loader = virDomainLoaderDefNew();
+                    def->os.loader->format = VIR_STORAGE_FILE_RAW;
                     def->os.loader->path = g_strdup(caps->guests[i]->arch.defaultInfo.loader);
                 }
             }
         }
 
-        if (xenConfigCopyStringOpt(conf, "acpi_firmware", &def->os.slic_table) < 0)
+        if (xenConfigCopyStringOpt(conf, "acpi_firmware", &slic) < 0)
             return -1;
+        if (slic != NULL) {
+            def->os.nacpiTables = 1;
+            def->os.acpiTables = g_new0(virDomainOSACPITableDef *, 1);
+            def->os.acpiTables[0] = g_new0(virDomainOSACPITableDef, 1);
+            def->os.acpiTables[0]->type = VIR_DOMAIN_OS_ACPI_TABLE_TYPE_RAWSET;
+            def->os.acpiTables[0]->path = g_steal_pointer(&slic);
+        }
 
         if (xenConfigCopyStringOpt(conf, "kernel", &def->os.kernel) < 0)
             return -1;
@@ -859,9 +869,7 @@ xenParseXLUSBController(virConf *conf, virDomainDef *def)
             else
                 usbctrl_type = VIR_DOMAIN_CONTROLLER_MODEL_USB_QUSB2;
 
-            if (!(controller = virDomainControllerDefNew(VIR_DOMAIN_CONTROLLER_TYPE_USB)))
-                return -1;
-
+            controller = virDomainControllerDefNew(VIR_DOMAIN_CONTROLLER_TYPE_USB);
             controller->type = VIR_DOMAIN_CONTROLLER_TYPE_USB;
             controller->model = usbctrl_type;
             controller->opts.usbopts.ports = usbctrl_ports;
@@ -922,9 +930,7 @@ xenParseXLUSB(virConf *conf, virDomainDef *def)
                 key = nextkey;
             }
 
-            if (!(hostdev = virDomainHostdevDefNew()))
-               return -1;
-
+            hostdev = virDomainHostdevDefNew(NULL);
             hostdev->managed = false;
             hostdev->source.subsys.type = VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_USB;
             hostdev->source.subsys.u.usb.bus = busNum;
@@ -1132,8 +1138,9 @@ xenFormatXLOS(virConf *conf, virDomainDef *def)
                 return -1;
         }
 
-        if (def->os.slic_table &&
-            xenConfigSetString(conf, "acpi_firmware", def->os.slic_table) < 0)
+        if (def->os.nacpiTables &&
+            xenConfigSetString(conf, "acpi_firmware",
+                               def->os.acpiTables[0]->path) < 0)
             return -1;
 
         if (def->os.kernel &&
@@ -1248,8 +1255,8 @@ xenFormatXLCPUID(virConf *conf, virDomainDef *def)
         return 0;
 
     if (def->cpu->mode != VIR_CPU_MODE_HOST_PASSTHROUGH) {
-        VIR_WARN("ignoring CPU mode '%s', only host-passthrough mode "
-                 "is supported", virCPUModeTypeToString(def->cpu->mode));
+        VIR_WARN("ignoring CPU mode '%s', only host-passthrough mode is supported",
+                 virCPUModeTypeToString(def->cpu->mode));
         return 0;
     }
 
@@ -1441,7 +1448,7 @@ xenFormatXLDiskSrcNet(virStorageSource *src)
     g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
     size_t i;
 
-    switch ((virStorageNetProtocol) src->protocol) {
+    switch (src->protocol) {
     case VIR_STORAGE_NET_PROTOCOL_NBD:
     case VIR_STORAGE_NET_PROTOCOL_HTTP:
     case VIR_STORAGE_NET_PROTOCOL_HTTPS:
@@ -1469,9 +1476,9 @@ xenFormatXLDiskSrcNet(virStorageSource *src)
             return NULL;
         }
 
-        virBufferStrcat(&buf, "rbd:", src->volume, "/", src->path, NULL);
+        virBufferStrcat(&buf, "rbd:", src->path, NULL);
 
-        virBufferAddLit(&buf, ":auth_supported=none");
+        virBufferAddLit(&buf, ":auth_client_required=none");
 
         if (src->nhosts > 0) {
             virBufferAddLit(&buf, ":mon_host=");
@@ -1523,9 +1530,13 @@ xenFormatXLDiskSrc(virStorageSource *src, char **srcstr)
     case VIR_STORAGE_TYPE_VOLUME:
     case VIR_STORAGE_TYPE_NVME:
     case VIR_STORAGE_TYPE_VHOST_USER:
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
+    case VIR_STORAGE_TYPE_CTL:
     case VIR_STORAGE_TYPE_NONE:
     case VIR_STORAGE_TYPE_LAST:
-        break;
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("unsupported storage type for this code path"));
+        return -1;
     }
 
     return 0;
@@ -2036,14 +2047,14 @@ xenFormatXLDomainNamespaceData(virConf *conf, virDomainDef *def)
 }
 
 virConf *
-xenFormatXL(virDomainDef *def, virConnectPtr conn)
+xenFormatXL(virDomainDef *def)
 {
     g_autoptr(virConf) conf = NULL;
 
     if (!(conf = virConfNew()))
         return NULL;
 
-    if (xenFormatConfigCommon(conf, def, conn, XEN_CONFIG_FORMAT_XL) < 0)
+    if (xenFormatConfigCommon(conf, def, XEN_CONFIG_FORMAT_XL) < 0)
         return NULL;
 
     if (xenFormatXLOS(conf, def) < 0)

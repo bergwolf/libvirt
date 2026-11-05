@@ -66,7 +66,7 @@ virLogCleanerParseFilename(const char *path,
     g_autofree char *clear_path = NULL;
     char *chain_prefix = NULL;
 
-    clear_path = realpath(path, NULL);
+    clear_path = virFileCanonicalizePath(path);
     if (!clear_path) {
         VIR_WARN("Failed to resolve path %s: %s", path, g_strerror(errno));
         return NULL;
@@ -82,10 +82,8 @@ virLogCleanerParseFilename(const char *path,
     *rotated_index = 0;
     rotated_index_str = g_match_info_fetch(matchInfo, 3);
 
-    if (!rotated_index_str)
-        return chain_prefix;
-
-    if (virStrToLong_i(rotated_index_str, NULL, 10, rotated_index) < 0) {
+    if (rotated_index_str && STRNEQ(rotated_index_str, "") &&
+        virStrToLong_i(rotated_index_str, NULL, 10, rotated_index) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Failed to parse rotated index from '%1$s'"),
                        rotated_index_str);
@@ -253,6 +251,10 @@ virLogCleanerInit(virLogHandler *handler)
     handler->cleanup_log_timer = virEventAddTimeout(CLEANER_LOG_TIMEOUT_MS,
                                                     virLogCleanerTimer,
                                                     handler, NULL);
+    if (handler->cleanup_log_timer < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to add log cleanup timer"));
+    }
     return handler->cleanup_log_timer;
 }
 

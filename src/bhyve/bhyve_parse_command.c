@@ -5,6 +5,8 @@
  * Copyright (C) 2006 Daniel P. Berrange
  * Copyright (c) 2011 NetApp, Inc.
  * Copyright (C) 2020 Fabian Freyer
+ * Copyright (C) 2025 The FreeBSD Foundation
+ * Copyright (C) 2024-2025 Future Crew, LLC
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -251,7 +253,7 @@ bhyveCommandLineToArgv(const char *nativeConfig,
 
 static int
 bhyveParseBhyveLPCArg(virDomainDef *def,
-                      unsigned caps G_GNUC_UNUSED,
+                      virBitmap *caps G_GNUC_UNUSED,
                       const char *arg)
 {
     /* -l emulation[,config] */
@@ -389,7 +391,7 @@ bhyveParsePCISlot(const char *slotdef,
 
 static int
 bhyveParsePCIDisk(virDomainDef *def,
-                  unsigned caps G_GNUC_UNUSED,
+                  virBitmap *caps G_GNUC_UNUSED,
                   unsigned pcibus,
                   unsigned pcislot,
                   unsigned function,
@@ -459,7 +461,7 @@ bhyveParsePCIDisk(virDomainDef *def,
 static int
 bhyveParsePCINet(virDomainDef *def,
                  virDomainXMLOption *xmlopt,
-                 unsigned caps G_GNUC_UNUSED,
+                 virBitmap *caps G_GNUC_UNUSED,
                  unsigned bus,
                  unsigned slot,
                  unsigned function,
@@ -534,7 +536,7 @@ bhyveParsePCINet(virDomainDef *def,
 static int
 bhyveParsePCIFbuf(virDomainDef *def,
                   virDomainXMLOption *xmlopt,
-                  unsigned caps G_GNUC_UNUSED,
+                  virBitmap *caps G_GNUC_UNUSED,
                   unsigned bus,
                   unsigned slot,
                   unsigned function,
@@ -640,9 +642,98 @@ bhyveParsePCIFbuf(virDomainDef *def,
 }
 
 static int
+bhyveParsePCIRND(virDomainDef *def,
+                 virDomainXMLOption *xmlopt G_GNUC_UNUSED,
+                 virBitmap *caps G_GNUC_UNUSED,
+                 unsigned bus,
+                 unsigned slot,
+                 unsigned function,
+                 const char *config G_GNUC_UNUSED)
+{
+    /* -s slot,virtio-rnd */
+    virDomainRNGDef *rng = g_new0(virDomainRNGDef, 1);
+
+    rng->model = VIR_DOMAIN_RNG_MODEL_VIRTIO;
+    rng->backend = VIR_DOMAIN_RNG_BACKEND_RANDOM;
+
+    rng->info.type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI;
+    rng->info.addr.pci.bus = bus;
+    rng->info.addr.pci.slot = slot;
+    rng->info.addr.pci.function = function;
+    rng->source.file = g_strdup("/dev/random");
+
+    VIR_APPEND_ELEMENT(def->rngs, def->nrngs, rng);
+
+    return 0;
+}
+
+static int
+bhyveParsePassthru(virDomainDef *def G_GNUC_UNUSED,
+                   unsigned pcibus,
+                   unsigned pcislot,
+                   unsigned pcifunction,
+                   char *addr)
+{
+    /* -s slot,bus/slot/function */
+    /* -s slot,pcibus:slot:function */
+    virDomainHostdevDef *hostdev = NULL;
+    g_auto(GStrv) params = NULL;
+    GStrv param;
+    char *p = NULL;
+
+    if (!addr) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("No PCI address provided"));
+        return -1;
+    }
+
+    hostdev = virDomainHostdevDefNew(NULL);
+    hostdev->mode = VIR_DOMAIN_HOSTDEV_MODE_SUBSYS;
+    hostdev->source.subsys.type = VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI;
+
+    hostdev->info->type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI;
+    hostdev->info->addr.pci.bus = pcibus;
+    hostdev->info->addr.pci.slot = pcislot;
+    hostdev->info->addr.pci.function = pcifunction;
+
+    if (!(params = g_strsplit(addr, ":", -1))) {
+        virReportError(VIR_ERR_OPERATION_FAILED, _("Failed to parse PCI address %1$s"), addr);
+        goto error;
+    }
+    if (g_str_equal(addr, *params)) {
+        g_strfreev(params);
+        if (!(params = g_strsplit(addr, "/", -1))) {
+            virReportError(VIR_ERR_OPERATION_FAILED, _("Failed to parse PCI address %1$s"), addr);
+            goto error;
+        }
+    }
+    if (g_strv_length(params) != 3) {
+        virReportError(VIR_ERR_OPERATION_FAILED, _("Failed to parse PCI address %1$s"), addr);
+        goto error;
+    }
+    param = params;
+    if (virStrToLong_uip(*param++, &p, 10, &hostdev->source.subsys.u.pci.addr.bus) < 0 ||
+        virStrToLong_uip(*param++, &p, 10, &hostdev->source.subsys.u.pci.addr.slot) < 0 ||
+        virStrToLong_uip(*param++, &p, 10, &hostdev->source.subsys.u.pci.addr.function) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, _("Failed to parse PCI address %1$s"), addr);
+        goto error;
+    }
+
+    hostdev->source.subsys.u.pci.addr.domain = 0;
+    hostdev->managed = false;
+
+    VIR_APPEND_ELEMENT(def->hostdevs, def->nhostdevs, hostdev);
+    return 0;
+
+ error:
+    virDomainHostdevDefFree(hostdev);
+    return -1;
+}
+
+static int
 bhyveParseBhyvePCIArg(virDomainDef *def,
                       virDomainXMLOption *xmlopt,
-                      unsigned caps,
+                      virBitmap *caps,
                       unsigned *nvirtiodisk,
                       unsigned *nahcidisk,
                       const char *arg)
@@ -703,6 +794,10 @@ bhyveParseBhyvePCIArg(virDomainDef *def,
                          VIR_DOMAIN_NET_MODEL_E1000, conf);
     else if (STREQ(emulation, "fbuf"))
         bhyveParsePCIFbuf(def, xmlopt, caps, bus, slot, function, conf);
+    else if (STREQ(emulation, "virtio-rnd"))
+        bhyveParsePCIRND(def, xmlopt, caps, bus, slot, function, conf);
+    else if (STREQ(emulation, "passthru"))
+        bhyveParsePassthru(def, bus, slot, function, conf);
 
     VIR_FREE(emulation);
     VIR_FREE(slotdef);
@@ -727,7 +822,7 @@ bhyveParseBhyvePCIArg(virDomainDef *def,
 static int
 bhyveParseBhyveCommandLine(virDomainDef *def,
                            virDomainXMLOption *xmlopt,
-                           unsigned caps,
+                           virBitmap *caps,
                            int argc, char **argv)
 {
     int vcpus = 1;
@@ -930,7 +1025,7 @@ bhyveParseCustomLoaderCommandLine(virDomainDef *def,
 
 virDomainDef *
 bhyveParseCommandLineString(const char* nativeConfig,
-                            unsigned caps,
+                            virBitmap *caps,
                             virDomainXMLOption *xmlopt)
 {
     g_autoptr(virDomainDef) def = NULL;

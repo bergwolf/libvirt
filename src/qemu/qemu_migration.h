@@ -65,33 +65,8 @@
      0)
 
 /* All supported migration parameters and their types. */
-#define QEMU_MIGRATION_PARAMETERS \
-    VIR_MIGRATE_PARAM_URI,              VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_DEST_NAME,        VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_DEST_XML,         VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_BANDWIDTH,        VIR_TYPED_PARAM_ULLONG, \
-    VIR_MIGRATE_PARAM_GRAPHICS_URI,     VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_LISTEN_ADDRESS,   VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_MIGRATE_DISKS,    VIR_TYPED_PARAM_STRING | \
-                                        VIR_TYPED_PARAM_MULTIPLE, \
-    VIR_MIGRATE_PARAM_DISKS_PORT,       VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_COMPRESSION,      VIR_TYPED_PARAM_STRING | \
-                                        VIR_TYPED_PARAM_MULTIPLE, \
-    VIR_MIGRATE_PARAM_COMPRESSION_MT_LEVEL,         VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_COMPRESSION_MT_THREADS,       VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_COMPRESSION_MT_DTHREADS,      VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_COMPRESSION_XBZRLE_CACHE,     VIR_TYPED_PARAM_ULLONG, \
-    VIR_MIGRATE_PARAM_PERSIST_XML,      VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_AUTO_CONVERGE_INITIAL,        VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_AUTO_CONVERGE_INCREMENT,      VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_BANDWIDTH_POSTCOPY, VIR_TYPED_PARAM_ULLONG, \
-    VIR_MIGRATE_PARAM_PARALLEL_CONNECTIONS, VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_COMPRESSION_ZLIB_LEVEL, VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_COMPRESSION_ZSTD_LEVEL, VIR_TYPED_PARAM_INT, \
-    VIR_MIGRATE_PARAM_TLS_DESTINATION, VIR_TYPED_PARAM_STRING, \
-    VIR_MIGRATE_PARAM_DISKS_URI,     VIR_TYPED_PARAM_STRING, \
-    NULL
 
+extern const virTypedParamValidationTemplate qemuMigrationParametersValidation[];
 
 typedef enum {
     QEMU_MIGRATION_PHASE_NONE = 0,
@@ -122,8 +97,9 @@ qemuMigrationSrcBegin(virConnectPtr conn,
                       const char *dname,
                       char **cookieout,
                       int *cookieoutlen,
-                      size_t nmigrate_disks,
                       const char **migrate_disks,
+                      const char **migrate_disks_detect_zeroes,
+                      const char **migrate_disks_target_zero,
                       unsigned int flags);
 
 virDomainDef *
@@ -131,7 +107,9 @@ qemuMigrationAnyPrepareDef(virQEMUDriver *driver,
                            virQEMUCaps *qemuCaps,
                            const char *dom_xml,
                            const char *dname,
-                           char **origname);
+                           char **origname,
+                           virConnectPtr sconn,
+                           int (*ensureACL)(virConnectPtr, virDomainDef *));
 
 int
 qemuMigrationDstPrepareTunnel(virQEMUDriver *driver,
@@ -158,7 +136,6 @@ qemuMigrationDstPrepareDirect(virQEMUDriver *driver,
                               virDomainDef **def,
                               const char *origname,
                               const char *listenAddress,
-                              size_t nmigrate_disks,
                               const char **migrate_disks,
                               int nbdPort,
                               const char *nbdURI,
@@ -175,8 +152,9 @@ qemuMigrationSrcPerform(virQEMUDriver *driver,
                         const char *uri,
                         const char *graphicsuri,
                         const char *listenAddress,
-                        size_t nmigrate_disks,
                         const char **migrate_disks,
+                        const char **migrate_disks_detect_zeroes,
+                        const char **migrate_disks_target_zero,
                         int nbdPort,
                         const char *nbdURI,
                         qemuMigrationParams *migParams,
@@ -234,16 +212,19 @@ qemuMigrationSrcIsAllowed(virDomainObj *vm,
                           unsigned int flags);
 
 int
-qemuMigrationSrcToFile(virQEMUDriver *driver,
-                       virDomainObj *vm,
-                       int fd,
+qemuMigrationSrcToFile(virDomainObj *vm,
+                       const char *path,
+                       int *fd,
                        virCommand *compressor,
+                       qemuMigrationParams *migParams,
+                       bool bypassCache,
                        virDomainAsyncJob asyncJob)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) G_GNUC_WARN_UNUSED_RESULT;
+    ATTRIBUTE_NONNULL(1) G_GNUC_WARN_UNUSED_RESULT;
 
 int
 qemuMigrationSrcCancelUnattended(virDomainObj *vm,
-                                 virDomainJobObj *oldJob);
+                                 virDomainJobObj *oldJob,
+                                 virDomainJobStatus migStatus);
 
 int
 qemuMigrationSrcCancel(virDomainObj *vm,
@@ -269,8 +250,7 @@ qemuMigrationDstErrorReport(virQEMUDriver *driver,
                             const char *name);
 
 int
-qemuMigrationDstCheckProtocol(virQEMUCaps *qemuCaps,
-                              const char *migrateFrom);
+qemuMigrationDstCheckProtocol(const char *migrateFrom);
 
 char *
 qemuMigrationDstGetURI(const char *migrateFrom,
@@ -279,7 +259,10 @@ qemuMigrationDstGetURI(const char *migrateFrom,
 int
 qemuMigrationDstRun(virDomainObj *vm,
                     const char *uri,
-                    virDomainAsyncJob asyncJob);
+                    virDomainAsyncJob asyncJob,
+                    qemuMigrationParams *migParams,
+                    unsigned int flags);
+
 
 void
 qemuMigrationSrcPostcopyFailed(virDomainObj *vm);

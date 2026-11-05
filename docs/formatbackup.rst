@@ -1,3 +1,5 @@
+ .. role:: since
+
 Backup XML format
 =================
 
@@ -40,7 +42,31 @@ were supplied). The following child elements and attributes are supported:
    ```protocol`` element of a disk <formatdomain.html#hard-drives-floppy-disks-cdroms>`__ attached
    via NBD in the domain (such as transport, socket, name, port, or tls),
    necessary to set up an NBD server that exposes the content of each disk at
-   the time the backup is started.
+   the time the backup is started. For TCP transport, if ``port`` is omitted, a
+   port is allocated automatically from the range configured in ``/etc/libvirt/qemu.conf``.
+
+   In addition to the above the NBD server used for backups allows using
+   ``transport='fd' fdgroup='NAME'`` where ``NAME`` is the name used with
+   ``virDomainFDAssociate()`` to pass a pre-opened server socket file descriptor
+   to qemu. :since:`Since 11.3.0`
+
+   Example code to pass a socket with libvirt-python bindings::
+
+     import socket
+     import libvirt
+     import selinux
+
+     # Optionally setup selinux context for the socket if the distro uses it
+     # selinux.setsockcreatecon_raw("system_u:object_r:svirt_t:s0")
+
+     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+     s.bind("/path/to/socket")
+
+     fdlist = [ s.fileno() ]
+
+     conn = libvirt.open()
+     dom = conn.lookupByName("VMNAME")
+     dom.FDAssociate("NAME", fdlist)
 
    Note that for the QEMU hypervisor the TLS environment in controlled using
    ``backup_tls_x509_cert_dir``, ``backup_tls_x509_verify``, and
@@ -88,6 +114,11 @@ were supplied). The following child elements and attributes are supported:
          Allows modification of the name of the bitmap describing dirty blocks
          for an incremental backup exported via NBD export name for the given
          disk. Valid only for pull mode backups.
+
+      ``sparsify``
+         Valid only for ``full`` push mode backups.
+         Requests that any zero blocks are un-allocated in the backup file even
+         when they were allocated in the source. :since:`Since 12.9.0`
 
       ``type``
          A mandatory attribute to describe the type of the disk, except when

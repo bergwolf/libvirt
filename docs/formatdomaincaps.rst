@@ -66,16 +66,17 @@ The root element that emulator capability XML document starts with has name
    </domainCapabilities>
 
 ``path``
-   The full path to the emulator binary.
+   The full path to the emulator binary. Since not every hypervisor has a
+   notion of emulator binary this element might be omitted in such drivers.
 ``domain``
    Describes the `virtualization type <formatdomain.html#element-and-attribute-overview>`__ (or so
    called domain type).
 ``machine``
-   The domain's `machine type <formatdomain.html#bios-bootloader>`__. Since not
+   The domain's `machine type <formatdomain.html#guest-firmware>`__. Since not
    every hypervisor has a sense of machine types this element might be omitted
    in such drivers.
 ``arch``
-   The domain's `architecture <formatdomain.html#bios-bootloader>`__.
+   The domain's `architecture <formatdomain.html#guest-firmware>`__.
 
 CPU Allocation
 ~~~~~~~~~~~~~~
@@ -94,12 +95,17 @@ capabilities, e.g. virtual CPUs:
 ``vcpu``
    The maximum number of supported virtual CPUs
 
-BIOS bootloader
-~~~~~~~~~~~~~~~
+Guest firmware
+~~~~~~~~~~~~~~
 
-Sometimes users might want to tweak some BIOS knobs or use UEFI. For cases like
-that, `os <formatdomain.html#bios-bootloader>`__ element exposes what values can
-be passed to its children.
+.. container::
+   :name: bios-bootloader
+
+   .. this container only exists to keep old links working
+
+Exposes information about supported
+`guest firmware <formatdomain.html#guest-firmware>`__ configurations for
+domains.
 
 ::
 
@@ -110,6 +116,16 @@ be passed to its children.
          <value>bios</value>
          <value>efi</value>
        </enum>
+       <firmwareFeatures supported='yes'>
+         <enum name='secureBoot'>
+           <value>yes</value>
+           <value>no</value>
+         </enum>
+         <enum name='enrolledKeys'>
+           <value>yes</value>
+           <value>no</value>
+         </enum>
+       </firmwareFeatures>
        <loader supported='yes'>
          <value>/usr/share/OVMF/OVMF_CODE.fd</value>
          <enum name='type'>
@@ -125,41 +141,98 @@ be passed to its children.
            <value>no</value>
          </enum>
        </loader>
+       <varstore supported='yes'/>
      </os>
      ...
    <domainCapabilities>
 
-The ``firmware`` enum corresponds to the ``firmware`` attribute of the ``os``
-element in the domain XML. The presence of this enum means libvirt is capable of
-the so-called firmware auto-selection feature. And the listed firmware values
-represent the accepted input in the domain XML. Note that the ``firmware`` enum
-reports only those values for which a firmware "descriptor file" exists on the
-host. Firmware descriptor file is a small JSON document that describes details
-about a given BIOS or UEFI binary on the host, e.g. the firmware binary path,
-its architecture, supported machine types, NVRAM template, etc. This ensures
-that the reported values won't cause a failure on guest boot.
+The presence of the ``firmware`` enum means that libvirt can perform firmware
+autoselection, and each of the values is guaranteed to be usable. In the
+domain XML, firmware autoselection is enabled as follows:
 
-For the ``loader`` element, the following can occur:
+::
+
+    <os firmware='efi'>
+      ...
+
+Autoselection is the recommended mechanism for configuring the guest firmware.
+Providing paths and other information manually is discouraged.
+
+The ``<firmwareFeatures/>`` element :since:`(since 12.1.0)` contains one
+enum for each of the features that can be used to fine-tune the firmware
+autoselection process. For example:
+
+::
+
+    <firmwareFeatures supported='yes'>
+      <enum name='secureBoot'>
+        <value>yes</value>
+      </enum>
+      <enum name='enrolledKeys'>
+        <value>yes</value>
+        <value>no</value>
+      </enum>
+    </firmwareFeatures>
+
+indicates that a domain XML such as:
+
+::
+
+    <os firmware='efi'>
+      <firmware>
+        <feature name='secure-boot' enabled='yes'/>
+        <feature name='enrolled-keys' enabled='no'/>
+      </firmware>
+    </os>
+
+can be used to allow unsigned operating system to run, whereas a domain XML
+such as:
+
+::
+
+    <os firmware='efi'>
+      <firmware>
+        <feature name='secure-boot' enabled='no'/>
+      </firmware>
+    </os>
+
+would not work, since ``no`` is not one of the valid values advertised by
+the ``secureBoot`` enum.
+
+The information contained in the ``<loader/>`` element is not relevant when
+using firmware autoselection, which is the recommended approach to guest
+firmware configuration, and as such can largely be ignored. Its subelements
+are the following:
 
 ``value``
-   List of known firmware binary paths. Currently this is used only to advertise
-   the known location of OVMF binaries for QEMU. OVMF binaries will only be
-   listed if they actually exist on host.
+   One element for each known firmware binary present on the system.
+
+   Note that a binary being present here indicates that the file exists and it
+   is compatible with the architecture/machine type, but does not provide any
+   insight into which mechanism (see ``type`` below) should be used to load it.
 ``type``
-   Whether the boot loader is a typical BIOS (``rom``) or a UEFI firmware
-   (``pflash``). Each ``value`` sub-element under the ``type`` enum represents a
-   possible value for the ``type`` attribute for the <loader/> element in the
-   domain XML. E.g. the presence of ``pfalsh`` under the ``type`` enum means
-   that a domain XML can use UEFI firmware via: <loader/> type="pflash"
-   ...>/path/to/the/firmware/binary/</loader>.
+   Whether firmware can be loaded using a ``pflash`` device (UEFI only) or as
+   a ``rom`` (either UEFI or BIOS).
 ``readonly``
-   Options for the ``readonly`` attribute of the <loader/> element in the domain
-   XML.
+   Supported values for the ``readonly`` attribute of the ``<loader/>`` element
+   in the domain XML.
 ``secure``
-   Options for the ``secure`` attribute of the <loader/> element in the domain
-   XML. Note that the value ``yes`` is listed only if libvirt detects a firmware
-   descriptor file that has path to an OVMF binary that supports Secure boot,
-   and lists its architecture and supported machine type.
+   Supported values for the ``secure`` attribute of the ``<loader/>`` element
+   in the domain XML.
+
+   Note that the value ``yes`` is listed if libvirt detects a firmware
+   descriptor file that points to a firmware binary that implements Secure
+   Boot and is compatible with the architecture/machine type, but the UEFI
+   variable store template associated with it might not have the usual set of
+   Secure Boot certificates enrolled. To figure out whether it's actually
+   possible to enforce Secure Boot, look at the ``enrolledKeys`` enum inside
+   the ``<firmwareFeatures/>`` element instead.
+
+The ``<varstore/>`` element :since:`(since 12.1.0)` indicates whether UEFI
+variable storage backed by the ``uefi-vars`` QEMU device can be used as an
+alternative to pflash-based NVRAM storage. This is the only type of variable
+storage compatible with Secure Boot on non-x86 architectures, but it can be
+used on x86 too.
 
 CPU configuration
 ~~~~~~~~~~~~~~~~~
@@ -187,14 +260,35 @@ CPUs <formatdomain.html#cpu-model-and-topology>`__.
        <mode name='host-model' supported='yes'>
          <model fallback='allow'>Broadwell</model>
          <vendor>Intel</vendor>
+         <maxphysaddr mode="passthrough" limit="39"/>
          <feature policy='disable' name='aes'/>
          <feature policy='require' name='vmx'/>
        </mode>
        <mode name='custom' supported='yes'>
-         <model usable='no' deprecated='no' vendor='Intel'>Broadwell</model>
-         <model usable='yes' deprecated='no' vendor='Intel'>Broadwell-noTSX</model>
-         <model usable='no' deprecated='yes' vendor='Intel'>Haswell</model>
+         <model usable='no' deprecated='no' vendor='Intel' canonical='Broadwell-v1'>Broadwell</model>
+         <blockers model='Broadwell'>
+           <feature name='hle'/>
+           <feature name='rtm'/>
+         </blockers>
+         <model usable='yes' deprecated='no' vendor='Intel' canonical='Broadwell-v2'>Broadwell-noTSX</model>
          <model usable='no' deprecated='no' vendor='AMD'>EPYC-Milan</model>
+         <blockers model='EPYC-Milan'>
+           <feature name='clzero'/>
+           <feature name='cr8legacy'/>
+           <feature name='fxsr_opt'/>
+           <feature name='misalignsse'/>
+           <feature name='mmxext'/>
+           <feature name='osvw'/>
+           <feature name='perfctr_core'/>
+           <feature name='sse4a'/>
+           <feature name='wbnoinvd'/>
+           <feature name='xsaveerptr'/>
+         </blockers>
+         <model usable='no' deprecated='yes' vendor='Intel'>Haswell</model>
+         <blockers model='Haswell'>
+           <feature name='hle'/>
+           <feature name='rtm'/>
+         </blockers>
          ...
        </mode>
      </cpu>
@@ -218,29 +312,38 @@ more details about it:
    indicated by the ``fallback`` attribute of the ``model`` sub element:
    ``allow`` means not all specifics were accounted for and thus the CPU a guest
    will see may be different; ``forbid`` indicates that the CPU a guest will see
-   should match this CPU definition.
+   should match this CPU definition. The optional ``maxphysaddr`` element
+   reports physical address size of the host CPU if this value is available and
+   applicable for the requested domain type. This is useful for computing
+   baseline CPU definition which should be compatible with several hosts.
+   Consistently with all other CPU definitions used by libvirt, features
+   implicitly enabled by the selected CPU model (in ``model`` sub element) are
+   not listed. Use ``--expand-cpu-features`` virsh option or the equivalent API
+   flag to request all supported features to be listed in the CPU definition.
 ``custom``
    The ``mode`` element contains a list of supported CPU models, each described
    by a dedicated ``model`` element. The ``usable`` attribute specifies whether
    the model can be used directly on the host. A special value ``unknown``
    indicates libvirt does not have enough information to provide the usability
    data. When ``usable='no'`` the corresponding model cannot be used without
-   disabling some features that the CPU of such model is expected to have. The
-   list of features blocking usability of a particular CPU model is returned
-   as disabled features in the result of ``virConnectBaselineHypervisorCPU``
-   API (or ``virsh hypervisor-cpu-baseline``) when called on a CPU definition
-   using the CPU model and no additional feature elements. Models marked as
-   usable (``usable='yes'``) can be safely used in domain XMLs with
-   ``check='none'`` as the hypervisor guarantees the model can be used on the
-   current host and additional checks done by libvirt are redundant. In fact,
-   disabling libvirt checks via ``check='none'`` for such models is recommended
-   to avoid needless issues with starting domains when libvirt's definition of
-   a particular model differs from hypervisor's definition. The
-   ``deprecated`` attribute reflects the hypervisor's policy on usage of this
-   model :since:`(since 7.1.0)`. The ``vendor`` attribute :since:`(since 8.9.0)`
-   contains the vendor of the CPU model for users who want to use CPU models
-   with specific vendors only. CPU models with undefined vendor will be listed
-   with ``vendor='unkwnown'``.
+   disabling some features that the CPU of such model is expected to have.
+   :since:`Since 10.9.0` each CPU model with ``usable='no'`` is followed by
+   a corresponding ``blockers`` element containing a list of features blocking
+   usability of the CPU model. Models marked as usable (``usable='yes'``) can
+   be safely used in domain XMLs with ``check='none'`` as the hypervisor
+   guarantees the model can be used on the current host and additional checks
+   done by libvirt are redundant. :since:`Since 10.2.0` libvirt automatically
+   detects this situation and avoids the redundant checks even when
+   ``check='partial'`` is used, with older releases disabling libvirt checks
+   via ``check='none'`` for such models is recommended to avoid needless issues
+   with starting domains when libvirt's definition of a particular model
+   differs from hypervisor's definition. The ``deprecated`` attribute reflects
+   the hypervisor's policy on usage of this model :since:`(since 7.1.0)`. The
+   ``vendor`` attribute :since:`(since 8.9.0)` contains the vendor of the CPU
+   model for users who want to use CPU models with specific vendors only. CPU
+   models with undefined vendor will be listed with ``vendor='unkwnown'``. The
+   ``canonical`` attribute :since:`(since 10.10.0)` contains a canonical name of
+   the CPU model if the model is actually an alias to another one.
 
 I/O Threads
 ~~~~~~~~~~~
@@ -434,6 +537,10 @@ Well, only if the following is enabled:
            <value>vfio</value>
            <value>xen</value>
          </enum>
+         <enum name='iommufd'>
+           <value>yes</value>
+           <value>no</value>
+         </enum>
        </hostdev>
      </devices>
    </domainCapabilities>
@@ -450,6 +557,9 @@ Well, only if the following is enabled:
    ``mode="capabilities"``.
 ``pciBackend``
    Options for the ``name`` attribute of the <driver/> element.
+``iommufd``
+   Options for the ``iommufd`` attribute of the <driver/> element.
+   :since:`Since 12.1.0`
 
 RNG device
 ^^^^^^^^^^
@@ -622,6 +732,55 @@ Crypto device capabilities are exposed under the ``crypto`` element. For instanc
 ``backendModel``
    Options for the ``backendModel`` attribute of the ``<crypto><backend/>`` element.
 
+Interface device
+^^^^^^^^^^^^^^^^
+
+Interface device corresponds to `network interface
+<formatdomain.html#network-interfaces>`__ (``<interface/>``) in domain XML.
+
+::
+
+  <domainCapabilities>
+    ...
+    <devices>
+      <interface supported='yes'>
+        <enum name='backendType'>
+          <value>default</value>
+          <value>passt</value>
+        </enum>
+      </interface>
+      ...
+    </devices>
+  </domainCapabilities>
+
+``backendType``
+   Options for the ``type`` attribute of the ``<backend/>`` element
+
+Panic device
+^^^^^^^^^^^^
+
+Interface device corresponds to `panic device
+<formatdomain.html#panic-device>`__ (``<panic/>``) in domain XML.
+
+::
+
+  <domainCapabilities>
+    ...
+    <devices>
+      <panic supported='yes'>
+        <enum name='model'>
+          <value>isa</value>
+          <value>hyperv</value>
+        </enum>
+      </panic>
+      ...
+    </devices>
+  </domainCapabilities>
+
+``model``
+   Options for the ``model`` attribute of the ``<panic/>`` element
+
+
 Features
 ~~~~~~~~
 
@@ -643,6 +802,8 @@ capabilities. All features occur as children of the main ``features`` element.
        <genid supported='yes'/>
        <backingStoreInput supported='yes'/>
        <backup supported='yes'/>
+       <async-teardown supported='yes'/>
+       <tdx supported='yes'/>
        <sev>
          <cbitpos>47</cbitpos>
          <reduced-phys-bits>1</reduced-phys-bits>
@@ -707,6 +868,11 @@ presence of the ``backup`` element even if ``supported='no'`` implies that the
 ``VIR_DOMAIN_UNDEFINE_CHECKPOINTS_METADATA`` flag for ``virDomainUndefine`` is
 supported.
 
+async-teardown
+^^^^^^^^^^^^^^
+
+Reports whether the asynchronous teardown feature can be enabled.
+
 s390-pv capability
 ^^^^^^^^^^^^^^^^^^
 
@@ -715,6 +881,12 @@ to use Protected Virtualization with libvirt have a look at the `launchSecurity
 element in the domain XML <formatdomain.html#launch-security>`__. For more
 details on the Protected Virtualization feature please see `Protected
 Virtualization on s390 <kbase/s390_protected_virt.html>`__.
+
+ps2 capability
+^^^^^^^^^^^^^^
+
+Reports whether it is possible to disable the machine's built-in PS/2
+controller.
 
 SEV capabilities
 ^^^^^^^^^^^^^^^^
@@ -780,8 +952,17 @@ Hyper-V Enlightenments
 Report which features improving behavior of guests running Microsoft Windows
 are supported. The ``features`` enum corresponds to the ``<hyperv/>`` element
 (well, its children) as documented in `Hypervisor features
-<formatdomain.html#hypervisor-features>`__.
+<formatdomain.html#hypervisor-features>`__. The ``defaults`` element then
+contains child elements describing default values as reported by hypervisor,
+e.g. whether direct or extended TLB flushes are available. :since:`(since
+11.9.0)`
 
-Please note that depending on the QEMU version some capabilities might be
-missing even though QEMU does support them. This is because prior to QEMU-6.1.0
-not all features were reported by QEMU.
+Launch security
+^^^^^^^^^^^^^^^
+
+The ``launchSecurity`` element exposes supported aspects of encrypted guests.
+The ``sectype`` enum corresponds to ``type`` attribute of ``<launchSecurity/>``
+element as documented in `Launch Security
+<formatdomain.html#launch-security>`__.  :since:`(Since 10.5.0)` For additional
+information on individual types, see sections above: `s390-pv capability`_ for
+S390 PV, `SEV capabilities`_ for AMD SEV and/or AMD SEV-SNP.

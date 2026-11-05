@@ -13,6 +13,7 @@ function install_buildenv() {
         audit-dev \
         augeas \
         bash-completion \
+        black \
         ca-certificates \
         ccache \
         ceph-dev \
@@ -21,16 +22,15 @@ function install_buildenv() {
         cyrus-sasl-dev \
         diffutils \
         eudev-dev \
-        fuse-dev \
+        fuse3-dev \
         gcc \
         gettext \
         git \
         glib-dev \
         gnutls-dev \
         grep \
-        iproute2 \
         iptables \
-        kmod \
+        json-c-dev \
         libcap-ng-dev \
         libnl3-dev \
         libpcap-dev \
@@ -42,32 +42,28 @@ function install_buildenv() {
         libxml2-dev \
         libxml2-utils \
         libxslt \
-        lvm2 \
         lvm2-dev \
         make \
         meson \
         musl-dev \
         netcf-dev \
-        nfs-utils \
         numactl-dev \
-        open-iscsi \
         parted-dev \
         perl \
         pkgconf \
-        polkit \
         py3-docutils \
         py3-flake8 \
+        py3-pytest \
         python3 \
         qemu-img \
         readline-dev \
-        rpcgen \
         samurai \
         sed \
         util-linux-dev \
         wireshark-dev \
-        xen-dev \
-        yajl-dev
-    apk list | sort > /packages.txt
+        xen-dev
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
+    apk list --installed | sort > /packages.txt
     mkdir -p /usr/libexec/ccache-wrappers
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/cc
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/clang

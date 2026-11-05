@@ -33,6 +33,10 @@ struct testSchemaEntry {
     /* if dirRegex is non-NULL the provided regular expression is used to match
      * the file names in a directory (without path prefixed) and only matching
      * files are validated */
+    const char **exceptions; /* optional NULL terminated list of filenames inside
+                                directory where the expected validation result is
+                                inverted */
+    const char **skip; /* optional NULL terminated list of files to skip altogether */
     const char *dirRegex;
     const char *file;
 };
@@ -40,6 +44,7 @@ struct testSchemaEntry {
 
 struct testSchemaData {
     virXMLValidator *validator;
+    bool exception;
     const char *xml_path;
 };
 
@@ -48,8 +53,13 @@ static int
 testSchemaValidateXML(const void *args)
 {
     const struct testSchemaData *data = args;
-    bool shouldFail = virStringHasSuffix(data->xml_path, "-invalid.xml");
+    /* invalid XMLs have a '-invalid.' suffix, but not necessarily at the end
+     * of the file name e.g. in case of qemuxmlconftest with real capabilities */
+    bool shouldFail = !!strstr(data->xml_path, "-invalid.");
     g_autoptr(xmlDoc) xml = NULL;
+
+    if (data->exception)
+        shouldFail = !shouldFail;
 
     if (!(xml = virXMLParseFileCtxt(data->xml_path, NULL)))
         return -1;
@@ -64,12 +74,14 @@ testSchemaValidateXML(const void *args)
 static int
 testSchemaFile(const char *schema,
                virXMLValidator *validator,
-               const char *path)
+               const char *path,
+               bool exception)
 {
     g_autofree char *test_name = NULL;
     struct testSchemaData data = {
         .validator = validator,
         .xml_path = path,
+        .exception = exception,
     };
 
     test_name = g_strdup_printf("Checking %s against %s", path, schema);
@@ -82,7 +94,7 @@ static int
 testSchemaDir(const char *schema,
               virXMLValidator *validator,
               const char *dir_path,
-              const char *filterstr)
+              const struct testSchemaEntry *entry)
 {
     g_autoptr(DIR) dir = NULL;
     struct dirent *ent;
@@ -95,17 +107,18 @@ testSchemaDir(const char *schema,
         return -1;
     }
 
-    if (filterstr) {
+    if (entry->dirRegex) {
         g_autoptr(GError) err = NULL;
 
-        if (!(filter = g_regex_new(filterstr, 0, 0, &err))) {
-            VIR_TEST_VERBOSE("\nfailed to compile regex '%s': %s", filterstr, err->message);
+        if (!(filter = g_regex_new(entry->dirRegex, 0, 0, &err))) {
+            VIR_TEST_VERBOSE("\nfailed to compile regex '%s': %s", entry->dirRegex, err->message);
             return -1;
         }
     }
 
     while ((rc = virDirRead(dir, &ent, dir_path)) > 0) {
         g_autofree char *xml_path = NULL;
+        bool exception = false;
 
         if (!virStringHasSuffix(ent->d_name, ".xml"))
             continue;
@@ -115,9 +128,19 @@ testSchemaDir(const char *schema,
             !g_regex_match(filter, ent->d_name, 0, NULL))
             continue;
 
+        if (entry->skip &&
+            g_strv_contains(entry->skip, ent->d_name))
+            continue;
+
         xml_path = g_strdup_printf("%s/%s", dir_path, ent->d_name);
 
-        if (testSchemaFile(schema, validator, xml_path) < 0)
+        if (virFileIsLink(xml_path) == 1)
+            continue;
+
+        if (entry->exceptions)
+            exception = g_strv_contains(entry->exceptions, ent->d_name);
+
+        if (testSchemaFile(schema, validator, xml_path, exception) < 0)
             ret = -1;
     }
 
@@ -188,14 +211,14 @@ testSchemaEntries(const char *schema,
         if (entry->dir) {
             g_autofree char *path = g_strdup_printf("%s/%s", abs_top_srcdir, entry->dir);
 
-            if (testSchemaDir(schema, validator, path, entry->dirRegex) < 0)
+            if (testSchemaDir(schema, validator, path, entry) < 0)
                 ret = -1;
         }
 
         if (entry->file) {
             g_autofree char *path = g_strdup_printf("%s/%s", abs_top_srcdir, entry->file);
 
-            if (testSchemaFile(schema, validator, path) < 0)
+            if (testSchemaFile(schema, validator, path, false) < 0)
                 ret = -1;
         }
     }
@@ -210,11 +233,27 @@ static const struct testSchemaEntry schemaCapability[] = {
     { .dir = "tests/qemucaps2xmloutdata" },
 };
 
+
+/* give exceptions for output files of invalid input XMLs */
+static const char *exceptions_qemuxmlconfdata[] = {
+    "disk-cdrom-empty-network-invalid.x86_64-latest.xml",
+    "numatune-auto-nodeset-invalid.x86_64-latest.xml",
+    NULL
+};
+
+/* skip tests with completely broken XML */
+static const char *skip_qemuxmlconfdata[] = {
+    "broken-xml-invalid.xml",
+    NULL
+};
+
 static const struct testSchemaEntry schemaDomain[] = {
     { .dir = "tests/domainschemadata" },
-    { .dir = "tests/qemuxml2argvdata" },
+    { .dir = "tests/qemuxmlconfdata",
+      .exceptions = exceptions_qemuxmlconfdata,
+      .skip = skip_qemuxmlconfdata,
+    },
     { .dir = "tests/xmconfigdata" },
-    { .dir = "tests/qemuxml2xmloutdata" },
     { .dir = "tests/lxcxml2xmldata" },
     { .dir = "tests/lxcxml2xmloutdata" },
     { .dir = "tests/bhyvexml2argvdata" },
@@ -235,6 +274,8 @@ static const struct testSchemaEntry schemaDomain[] = {
     { .dir = "tests/xml2vmxdata" },
     { .dir = "tests/bhyveargv2xmldata" },
     { .dir = "tests/qemuagentdata" },
+    { .dir = "tests/chxml2xmlin" },
+    { .dir = "tests/chxml2xmlout" },
 };
 
 static const struct testSchemaEntry schemaDomainCaps[] = {
@@ -260,11 +301,18 @@ static const struct testSchemaEntry schemaInterface[] = {
     { .dir = "tests/interfaceschemadata" },
 };
 
+/* skip tests with completely broken XML */
+static const char *skip_networkxmlconfdata[] = {
+    "nat-network-dns-srv-record-domain-newline.xml",
+    "nat-network-dns-srv-record-target-newline.xml",
+    "nat-network-dns-txt-recor-record-newline.xml",
+    NULL,
+};
+
 static const struct testSchemaEntry schemaNetwork[] = {
     { .dir = "src/network" },
-    { .dir = "tests/networkxml2xmlin" },
-    { .dir = "tests/networkxml2xmlout" },
-    { .dir = "tests/networkxml2confdata" },
+    { .dir = "tests/networkxmlconfdata",
+      .skip = skip_networkxmlconfdata },
     { .dir = "examples/xml/test/",
       .dirRegex = "testnet.*" },
     { .dir = "tests/networkxml2xmlupdateout" },
@@ -328,6 +376,10 @@ static const struct testSchemaEntry testDevice[] = {
     { .dir = "tests/qemublocktestdata/xml2json" },
 };
 
+static const struct testSchemaEntry schemaSysinfo[] = {
+    { .dir = "tests/sysinfodata" },
+};
+
 static int
 mymain(void)
 {
@@ -356,6 +408,7 @@ mymain(void)
     DO_TEST(SCHEMAS_PATH "storagepoolcaps.rng", schemaStoragepoolcaps);
     DO_TEST(SCHEMAS_PATH "storagepool.rng", schemaStoragePool);
     DO_TEST(SCHEMAS_PATH "storagevol.rng", schemaStorageVol);
+    DO_TEST(SCHEMAS_PATH "sysinfo.rng", schemaSysinfo);
 
     DO_TEST(INTERNAL_SCHEMAS_PATH "cpu-baseline.rng", testsCpuBaseline);
     DO_TEST(INTERNAL_SCHEMAS_PATH "device.rng", testDevice);

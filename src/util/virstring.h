@@ -38,11 +38,6 @@ int virStrToLong_uip(char const *s,
                      int base,
                      unsigned int *result)
     G_GNUC_WARN_UNUSED_RESULT;
-int virStrToLong_l(char const *s,
-                   char **end_ptr,
-                   int base,
-                   long *result)
-    G_GNUC_WARN_UNUSED_RESULT;
 int virStrToLong_ul(char const *s,
                     char **end_ptr,
                     int base,
@@ -80,7 +75,7 @@ void virSkipSpaces(const char **str) ATTRIBUTE_NONNULL(1);
 void virSkipSpacesAndBackslash(const char **str) ATTRIBUTE_NONNULL(1);
 void virSkipToDigit(const char **str) ATTRIBUTE_NONNULL(1);
 void virTrimSpaces(char *str, char **endp) ATTRIBUTE_NONNULL(1);
-void virSkipSpacesBackwards(const char *str, char **endp)
+void virSkipSpacesBackwards(const char *str, const char **endp)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 bool virStringIsEmpty(const char *str);
@@ -88,8 +83,12 @@ bool virStringIsEmpty(const char *str);
 int virStrcpy(char *dest, const char *src, size_t destbytes);
 #define virStrcpyStatic(dest, src) virStrcpy((dest), (src), sizeof(dest))
 
-int virStringSortCompare(const void *a, const void *b);
-int virStringSortRevCompare(const void *a, const void *b);
+int virStringSortCompare(const void *a,
+                         const void *b,
+                         void *opaque);
+int virStringSortRevCompare(const void *a,
+                            const void *b,
+                            void *opaque);
 int virStringToUpper(char **dst, const char *src);
 
 ssize_t virStringSearch(const char *str,
@@ -139,3 +138,6 @@ int virStringParseYesNo(const char *str,
 int virStringParseVersion(unsigned long long *version,
                           const char *str,
                           bool allowMissing);
+
+void virStringListRemoveDuplicates(char ***list);
+char *virStringFormatHex(const unsigned char *buf, size_t len);

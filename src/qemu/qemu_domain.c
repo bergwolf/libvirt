@@ -27,7 +27,6 @@
 #include "qemu_cgroup.h"
 #include "qemu_command.h"
 #include "qemu_capabilities.h"
-#include "qemu_firmware.h"
 #include "qemu_hostdev.h"
 #include "qemu_migration_params.h"
 #include "qemu_security.h"
@@ -38,6 +37,7 @@
 #include "qemu_checkpoint.h"
 #include "qemu_validate.h"
 #include "qemu_namespace.h"
+#include "qemu_postparse.h"
 #include "viralloc.h"
 #include "virlog.h"
 #include "virerror.h"
@@ -66,11 +66,10 @@
 #include "backup_conf.h"
 #include "virutil.h"
 #include "virsecureerase.h"
+#include "cpu/cpu_x86.h"
 
 #include <sys/time.h>
 #include <fcntl.h>
-
-#define QEMU_QXL_VGAMEM_DEFAULT 16 * 1024
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
@@ -292,8 +291,7 @@ qemuDomainObjPrivateXMLParseJobNBD(virDomainObj *vm,
 
     if (n > 0) {
         if (vm->job->asyncJob != VIR_ASYNC_JOB_MIGRATION_OUT) {
-            VIR_WARN("Found disks marked for migration but we were not "
-                     "migrating");
+            VIR_WARN("Found disks marked for migration but we were not migrating");
             n = 0;
         }
         for (i = 0; i < n; i++) {
@@ -455,21 +453,8 @@ qemuDomainObjFromDomain(virDomainPtr domain)
 }
 
 
-struct _qemuDomainLogContext {
-    GObject parent;
-
-    int writefd;
-    int readfd; /* Only used if manager == NULL */
-    off_t pos;
-    ino_t inode; /* Only used if manager != NULL */
-    char *path;
-    virLogManager *manager;
-};
-
-G_DEFINE_TYPE(qemuDomainLogContext, qemu_domain_log_context, G_TYPE_OBJECT);
 static virClass *qemuDomainSaveCookieClass;
 
-static void qemuDomainLogContextFinalize(GObject *obj);
 static void qemuDomainSaveCookieDispose(void *obj);
 
 
@@ -482,31 +467,7 @@ qemuDomainOnceInit(void)
     return 0;
 }
 
-static void qemu_domain_log_context_init(qemuDomainLogContext *logctxt G_GNUC_UNUSED)
-{
-}
-
-static void qemu_domain_log_context_class_init(qemuDomainLogContextClass *klass)
-{
-    GObjectClass *obj = G_OBJECT_CLASS(klass);
-
-    obj->finalize = qemuDomainLogContextFinalize;
-}
-
 VIR_ONCE_GLOBAL_INIT(qemuDomain);
-
-static void
-qemuDomainLogContextFinalize(GObject *object)
-{
-    qemuDomainLogContext *ctxt = QEMU_DOMAIN_LOG_CONTEXT(object);
-    VIR_DEBUG("ctxt=%p", ctxt);
-
-    virLogManagerFree(ctxt->manager);
-    VIR_FREE(ctxt->path);
-    VIR_FORCE_CLOSE(ctxt->writefd);
-    VIR_FORCE_CLOSE(ctxt->readfd);
-    G_OBJECT_CLASS(qemu_domain_log_context_parent_class)->finalize(object);
-}
 
 /* qemuDomainGetMasterKeyFilePath:
  * @libDir: Directory path to domain lib files
@@ -553,8 +514,8 @@ qemuDomainWriteMasterKeyFile(virQEMUDriver *driver,
         return -1;
 
     if ((fd = open(path, O_WRONLY|O_TRUNC|O_CREAT, 0600)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("failed to open domain master key file for write"));
+        virReportSystemError(errno, "%s",
+                             _("failed to open domain master key file for write"));
         return -1;
     }
 
@@ -618,8 +579,8 @@ qemuDomainMasterKeyReadFile(qemuDomainObjPrivate *priv)
     }
 
     if ((fd = open(path, O_RDONLY)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("failed to open domain master key file for read"));
+        virReportSystemError(errno, "%s",
+                             _("failed to open domain master key file for read"));
         goto error;
     }
 
@@ -834,7 +795,13 @@ qemuDomainDiskPrivateDispose(void *obj)
     virObjectUnref(priv->migrSource);
     g_free(priv->qomName);
     g_free(priv->nodeCopyOnRead);
-    virObjectUnref(priv->blockjob);
+    if (priv->blockjob) {
+        /* Prevent dangling 'disk' pointer, as the disk object will be freed
+         * right after this function returns if any of the blockjob instance
+         * outlives this for any reason. */
+        priv->blockjob->disk = NULL;
+        virObjectUnref(priv->blockjob);
+    }
 }
 
 static virClass *qemuDomainStorageSourcePrivateClass;
@@ -882,6 +849,7 @@ qemuDomainStorageSourcePrivateDispose(void *obj)
     g_clear_pointer(&priv->httpcookie, qemuDomainSecretInfoFree);
     g_clear_pointer(&priv->tlsKeySecret, qemuDomainSecretInfoFree);
     g_clear_pointer(&priv->fdpass, qemuFDPassFree);
+    g_clear_pointer(&priv->nbdkitProcess, qemuNbdkitProcessFree);
 }
 
 
@@ -986,6 +954,7 @@ qemuDomainChrSourcePrivateDispose(void *obj)
     qemuDomainChrSourcePrivateClearFDPass(priv);
 
     g_free(priv->tlsCertPath);
+    g_free(priv->tlsPriority);
 
     g_free(priv->tlsCredsAlias);
 
@@ -1069,6 +1038,8 @@ qemuDomainGraphicsPrivateDispose(void *obj)
 
     g_free(priv->tlsAlias);
     g_clear_pointer(&priv->secinfo, qemuDomainSecretInfoFree);
+    g_clear_pointer(&priv->rdp, qemuRdpFree);
+    g_clear_pointer(&priv->vnc, qemuVncFree);
 }
 
 
@@ -1267,6 +1238,45 @@ qemuDomainNetworkPrivateFormat(const virDomainNetDef *net,
 }
 
 
+static virClass *qemuDomainHostdevPrivateClass;
+
+static void
+qemuDomainHostdevPrivateDispose(void *obj)
+{
+    qemuDomainHostdevPrivate *priv = obj;
+
+    g_clear_pointer(&priv->vfioDeviceFd, qemuFDPassDirectFree);
+}
+
+
+static int
+qemuDomainHostdevPrivateOnceInit(void)
+{
+    if (!VIR_CLASS_NEW(qemuDomainHostdevPrivate, virClassForObject()))
+        return -1;
+
+    return 0;
+}
+
+VIR_ONCE_GLOBAL_INIT(qemuDomainHostdevPrivate);
+
+virObject *
+qemuDomainHostdevPrivateNew(void)
+{
+    qemuDomainHostdevPrivate *priv;
+
+    if (qemuDomainHostdevPrivateInitialize() < 0)
+        return NULL;
+
+    if (!(priv = virObjectNew(qemuDomainHostdevPrivateClass)))
+        return NULL;
+
+    priv->vfioDeviceFd = NULL;
+
+    return (virObject *) priv;
+}
+
+
 /* qemuDomainSecretInfoSetup:
  * @priv: pointer to domain private object
  * @alias: alias of the secret
@@ -1434,38 +1444,70 @@ qemuDomainSecretStorageSourcePrepareCookies(qemuDomainObjPrivate *priv,
 
 
 /**
- * qemuDomainSecretStorageSourcePrepare:
+ * qemuDomainSecretStorageSourcePrepareEncryption:
  * @priv: domain private object
  * @src: storage source struct to setup
- * @authalias: prefix of the alias for secret holding authentication data
- * @encalias: prefix of the alias for secret holding encryption password
+ * @alias: prefix of the alias for secret holding encryption password
  *
- * Prepares data necessary for encryption and authentication of @src. The two
- * alias prefixes are provided since in the backing chain authentication belongs
- * to the storage protocol data whereas encryption is relevant to the format
- * driver in qemu. The two will have different node names.
+ * Prepares data necessary for encryption of @src.
  *
  * Returns 0 on success; -1 on error while reporting an libvirt error.
  */
 static int
-qemuDomainSecretStorageSourcePrepare(qemuDomainObjPrivate *priv,
-                                     virStorageSource *src,
-                                     const char *aliasprotocol,
-                                     const char *aliasformat)
+qemuDomainSecretStorageSourcePrepareEncryption(qemuDomainObjPrivate *priv,
+                                               virStorageSource *src,
+                                               const char *alias)
 {
     qemuDomainStorageSourcePrivate *srcPriv;
-    bool hasEnc = src->encryption && src->encryption->nsecrets > 0;
+    size_t nsecrets = 0;
+    size_t i;
+
+    if (!(src->encryption && src->encryption->nsecrets > 0))
+        return 0;
 
     if (virStorageSourceIsEmpty(src))
         return 0;
 
-    if (!src->auth && !hasEnc && src->ncookies == 0)
+    nsecrets = src->encryption->nsecrets;
+
+    srcPriv = qemuDomainStorageSourcePrivateFetch(src);
+
+    srcPriv->enccount = nsecrets;
+    srcPriv->encinfo = g_new0(qemuDomainSecretInfo *, nsecrets);
+    for (i = 0; i < nsecrets; ++i) {
+        if (!(srcPriv->encinfo[i] = qemuDomainSecretInfoSetupFromSecret(priv, alias,
+                                                                        "encryption", i,
+                                                                        VIR_SECRET_USAGE_TYPE_VOLUME,
+                                                                        NULL,
+                                                                        &src->encryption->secrets[i]->seclookupdef)))
+            return -1;
+    }
+
+    return 0;
+}
+
+
+/**
+ * qemuDomainSecretStorageSourcePrepareAuth:
+ * @priv: domain private object
+ * @src: storage source struct to setup
+ * @alias: prefix of the alias for secret holding authentication data
+ *
+ * Prepares data necessary for authentication of @src.
+ *
+ * Returns 0 on success; -1 on error while reporting an libvirt error.
+ */
+static int
+qemuDomainSecretStorageSourcePrepareAuth(qemuDomainObjPrivate *priv,
+                                         virStorageSource *src,
+                                         const char *alias)
+{
+    qemuDomainStorageSourcePrivate *srcPriv;
+
+    if (virStorageSourceIsEmpty(src))
         return 0;
 
-    if (!(src->privateData = qemuDomainStorageSourcePrivateNew()))
-        return -1;
-
-    srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(src);
+    srcPriv = qemuDomainStorageSourcePrivateFetch(src);
 
     if (src->auth) {
         virSecretUsageType usageType = VIR_SECRET_USAGE_TYPE_ISCSI;
@@ -1473,7 +1515,7 @@ qemuDomainSecretStorageSourcePrepare(qemuDomainObjPrivate *priv,
         if (src->protocol == VIR_STORAGE_NET_PROTOCOL_RBD)
             usageType = VIR_SECRET_USAGE_TYPE_CEPH;
 
-        if (!(srcPriv->secinfo = qemuDomainSecretInfoSetupFromSecret(priv, aliasprotocol,
+        if (!(srcPriv->secinfo = qemuDomainSecretInfoSetupFromSecret(priv, alias,
                                                                      "auth", 0,
                                                                      usageType,
                                                                      src->auth->username,
@@ -1481,26 +1523,10 @@ qemuDomainSecretStorageSourcePrepare(qemuDomainObjPrivate *priv,
             return -1;
     }
 
-    if (hasEnc) {
-        size_t nsecrets = src->encryption->nsecrets;
-        size_t i;
-
-        srcPriv->enccount = nsecrets;
-        srcPriv->encinfo = g_new0(qemuDomainSecretInfo *, nsecrets);
-        for (i = 0; i < nsecrets; ++i) {
-            if (!(srcPriv->encinfo[i] = qemuDomainSecretInfoSetupFromSecret(priv, aliasformat,
-                                                                            "encryption", i,
-                                                                            VIR_SECRET_USAGE_TYPE_VOLUME,
-                                                                            NULL,
-                                                                            &src->encryption->secrets[i]->seclookupdef)))
-                return -1;
-        }
-    }
-
     if (src->ncookies &&
         !(srcPriv->httpcookie = qemuDomainSecretStorageSourcePrepareCookies(priv,
                                                                             src,
-                                                                            aliasprotocol)))
+                                                                            alias)))
         return -1;
 
     return 0;
@@ -1748,8 +1774,67 @@ qemuDomainSecretPrepare(virQEMUDriver *driver,
 }
 
 
+static int
+qemuDomainGenerateMemoryBackingPath(qemuDomainObjPrivate *priv,
+                                    const virDomainDef *def)
+{
+    virQEMUDriver *driver = priv->driver;
+    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
+    const char *root = driver->embeddedRoot;
+    g_autofree char *shortName = NULL;
+
+    if (priv->memoryBackingDir)
+        return 0;
+
+    if (!(shortName = virDomainDefGetShortName(def)))
+        return -1;
+
+    if (root && !STRPREFIX(cfg->memoryBackingDir, root)) {
+        g_autofree char * hash = virDomainDriverGenerateRootHash("qemu", root);
+        priv->memoryBackingDir = g_strdup_printf("%s/%s-%s",
+                                                 cfg->memoryBackingDir,
+                                                 hash, shortName);
+    } else {
+        priv->memoryBackingDir = g_strdup_printf("%s/%s",
+                                                 cfg->memoryBackingDir,
+                                                 shortName);
+    }
+
+    return 0;
+}
+
+
+/**
+ * qemuDomainGetMemoryBackingPath:
+ * @priv: domain private data
+ * @alias: memory object alias
+ * @memPath: constructed path
+ *
+ * Constructs path to memory backing dir and stores it at @memPath.
+ *
+ * Returns: 0 on success,
+ *          -1 otherwise (with error reported).
+ */
+int
+qemuDomainGetMemoryBackingPath(qemuDomainObjPrivate *priv,
+                               const char *alias,
+                               char **memPath)
+{
+    if (!alias) {
+        /* This should never happen (TM) */
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("memory device alias is not assigned"));
+        return -1;
+    }
+
+    *memPath = g_strdup_printf("%s/%s", priv->memoryBackingDir, alias);
+
+    return 0;
+}
+
+
 /* This is the old way of setting up per-domain directories */
-static void
+static int
 qemuDomainSetPrivatePathsOld(virQEMUDriver *driver,
                              virDomainObj *vm)
 {
@@ -1762,6 +1847,8 @@ qemuDomainSetPrivatePathsOld(virQEMUDriver *driver,
     if (!priv->channelTargetDir)
         priv->channelTargetDir = g_strdup_printf("%s/domain-%s",
                                                  cfg->channelTargetDir, vm->def->name);
+
+    return qemuDomainGenerateMemoryBackingPath(priv, vm->def);
 }
 
 
@@ -1780,10 +1867,10 @@ qemuDomainSetPrivatePaths(virQEMUDriver *driver,
         priv->libDir = g_strdup_printf("%s/domain-%s", cfg->libDir, domname);
 
     if (!priv->channelTargetDir)
-        priv->channelTargetDir = g_strdup_printf("%s/domain-%s",
+        priv->channelTargetDir = g_strdup_printf("%s/%s",
                                                  cfg->channelTargetDir, domname);
 
-    return 0;
+    return qemuDomainGenerateMemoryBackingPath(priv, vm->def);
 }
 
 
@@ -1859,9 +1946,6 @@ qemuDomainObjPrivateDataClear(qemuDomainObjPrivate *priv)
 
     priv->rememberOwner = false;
 
-    priv->reconnectBlockjobs = VIR_TRISTATE_BOOL_ABSENT;
-    priv->allowReboot = VIR_TRISTATE_BOOL_ABSENT;
-
     g_clear_pointer(&priv->migrationCaps, virBitmapFree);
 
     virHashRemoveAll(priv->blockjobs);
@@ -1886,6 +1970,13 @@ qemuDomainObjPrivateDataClear(qemuDomainObjPrivate *priv)
     virHashRemoveAll(priv->statsSchema);
 
     g_slist_free_full(g_steal_pointer(&priv->threadContextAliases), g_free);
+
+    priv->migrationRecoverSetup = false;
+
+    g_clear_pointer(&priv->iommufd, qemuFDPassDirectFree);
+    priv->iommufdState = false;
+
+    g_clear_pointer(&priv->memoryBackingDir, g_free);
 }
 
 
@@ -1901,6 +1992,11 @@ qemuDomainObjPrivateFree(void *data)
     g_free(priv->origname);
 
     virChrdevFree(priv->devs);
+
+    if (priv->pidMonitored >= 0) {
+        virEventRemoveHandle(priv->pidMonitored);
+        priv->pidMonitored = -1;
+    }
 
     /* This should never be non-NULL if we get here, but just in case... */
     if (priv->mon) {
@@ -1947,6 +2043,9 @@ qemuDomainObjPrivateAlloc(void *opaque)
     priv->blockjobs = virHashNew(virObjectUnref);
     priv->fds = virHashNew(g_object_unref);
 
+    priv->iommufd = NULL;
+    priv->pidMonitored = -1;
+
     /* agent commands block by default, user can choose different behavior */
     priv->agentTimeout = VIR_DOMAIN_AGENT_RESPONSE_TIMEOUT_BLOCK;
     priv->migMaxBandwidth = QEMU_DOMAIN_MIG_BANDWIDTH_MAX;
@@ -1961,7 +2060,7 @@ qemuDomainObjPrivateAlloc(void *opaque)
 }
 
 
-static int
+int
 qemuStorageSourcePrivateDataAssignSecinfo(qemuDomainSecretInfo **secinfo,
                                           char **alias)
 {
@@ -1979,6 +2078,33 @@ qemuStorageSourcePrivateDataAssignSecinfo(qemuDomainSecretInfo **secinfo,
 
 
 static int
+qemuStorageSourcePrivateDataParseNbdkit(xmlNodePtr node,
+                                        xmlXPathContextPtr ctxt,
+                                        virStorageSource *src)
+{
+    g_autofree char *pidfile = NULL;
+    g_autofree char *socketfile = NULL;
+    VIR_XPATH_NODE_AUTORESTORE(ctxt);
+
+    ctxt->node = node;
+
+    if (!(pidfile = virXPathString("string(./pidfile)", ctxt))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("missing nbdkit pidfile"));
+        return -1;
+    }
+
+    if (!(socketfile = virXPathString("string(./socketfile)", ctxt))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("missing nbdkit socketfile"));
+        return -1;
+    }
+
+    qemuNbdkitReconnectStorageSource(src, pidfile, socketfile);
+
+    return 0;
+}
+
+
+static int
 qemuStorageSourcePrivateDataParse(xmlXPathContextPtr ctxt,
                                   virStorageSource *src)
 {
@@ -1987,13 +2113,14 @@ qemuStorageSourcePrivateDataParse(xmlXPathContextPtr ctxt,
     g_autofree char *authalias = NULL;
     g_autofree char *httpcookiealias = NULL;
     g_autofree char *tlskeyalias = NULL;
-    g_autofree char *thresholdEventWithIndex = NULL;
+    virTristateBool thresholdEventWithIndex;
     bool fdsetPresent = false;
     unsigned int fdSetID;
     int enccount;
+    xmlNodePtr nbdkitnode = NULL;
 
-    src->nodestorage = virXPathString("string(./nodenames/nodename[@type='storage']/@name)", ctxt);
-    src->nodeformat = virXPathString("string(./nodenames/nodename[@type='format']/@name)", ctxt);
+    qemuBlockStorageSourceSetStorageNodename(src, virXPathString("string(./nodenames/nodename[@type='storage']/@name)", ctxt));
+    qemuBlockStorageSourceSetFormatNodename(src, virXPathString("string(./nodenames/nodename[@type='format']/@name)", ctxt));
     src->tlsAlias = virXPathString("string(./objects/TLSx509/@alias)", ctxt);
 
     if (src->sliceStorage)
@@ -2052,10 +2179,15 @@ qemuStorageSourcePrivateDataParse(xmlXPathContextPtr ctxt,
     if (virStorageSourcePrivateDataParseRelPath(ctxt, src) < 0)
         return -1;
 
-    if ((thresholdEventWithIndex = virXPathString("string(./thresholdEvent/@indexUsed)", ctxt)) &&
-        virTristateBoolTypeFromString(thresholdEventWithIndex) == VIR_TRISTATE_BOOL_YES)
-        src->thresholdEventWithIndex = true;
+    if (virXPathTristateBool("string(./thresholdEvent/@indexUsed)",
+                             ctxt, &thresholdEventWithIndex) >= 0) {
+        virTristateBoolToBool(thresholdEventWithIndex, &src->thresholdEventWithIndex);
+    }
 
+    if ((nbdkitnode = virXPathNode("nbdkit", ctxt))) {
+        if (qemuStorageSourcePrivateDataParseNbdkit(nbdkitnode, ctxt, src) < 0)
+            return -1;
+    }
     return 0;
 }
 
@@ -2073,6 +2205,23 @@ qemuStorageSourcePrivateDataFormatSecinfo(virBuffer *buf,
 }
 
 
+static void
+qemuStorageSourcePrivateDataFormatNbdkit(qemuNbdkitProcess *nbdkit,
+                                         virBuffer *buf)
+{
+    g_auto(virBuffer) childBuf = VIR_BUFFER_INIT_CHILD(buf);
+
+    if (!nbdkit)
+        return;
+
+    virBufferEscapeString(&childBuf, "<pidfile>%s</pidfile>\n",
+                          nbdkit->pidfile);
+    virBufferEscapeString(&childBuf, "<socketfile>%s</socketfile>\n",
+                          nbdkit->socketfile);
+    virXMLFormatElement(buf, "nbdkit", NULL, &childBuf);
+}
+
+
 static int
 qemuStorageSourcePrivateDataFormat(virStorageSource *src,
                                    virBuffer *buf)
@@ -2082,8 +2231,8 @@ qemuStorageSourcePrivateDataFormat(virStorageSource *src,
     g_auto(virBuffer) objectsChildBuf = VIR_BUFFER_INIT_CHILD(buf);
     g_auto(virBuffer) fdsetsChildBuf = VIR_BUFFER_INIT_CHILD(buf);
 
-    virBufferEscapeString(&nodenamesChildBuf, "<nodename type='storage' name='%s'/>\n", src->nodestorage);
-    virBufferEscapeString(&nodenamesChildBuf, "<nodename type='format' name='%s'/>\n", src->nodeformat);
+    virBufferEscapeString(&nodenamesChildBuf, "<nodename type='storage' name='%s'/>\n", qemuBlockStorageSourceGetStorageNodename(src));
+    virBufferEscapeString(&nodenamesChildBuf, "<nodename type='format' name='%s'/>\n", qemuBlockStorageSourceGetFormatNodename(src));
 
     if (src->sliceStorage)
         virBufferEscapeString(&nodenamesChildBuf, "<nodename type='slice-storage' name='%s'/>\n",
@@ -2122,6 +2271,36 @@ qemuStorageSourcePrivateDataFormat(virStorageSource *src,
     if (src->thresholdEventWithIndex)
         virBufferAddLit(buf, "<thresholdEvent indexUsed='yes'/>\n");
 
+    if (srcPriv)
+        qemuStorageSourcePrivateDataFormatNbdkit(srcPriv->nbdkitProcess, buf);
+
+    return 0;
+}
+
+
+static int
+virDomainDiskThrottleFilterNodeNamesParse(xmlXPathContextPtr ctxt,
+                                          virDomainDiskDef *def)
+{
+    size_t i;
+    int n = 0;
+    g_autofree xmlNodePtr *nodes = NULL;
+    g_autoptr(GHashTable) throttleFiltersMap = virHashNew(g_free);
+
+    if ((n = virXPathNodeSet("./nodenames/nodename[@type='throttle-filter']", ctxt, &nodes)) < 0)
+        return -1;
+
+    for (i = 0; i < n; i++) {
+        g_hash_table_insert(throttleFiltersMap, virXMLPropString(nodes[i], "group"), virXMLPropString(nodes[i], "name"));
+    }
+
+    for (i = 0; i < def->nthrottlefilters; i++) {
+        char *nodename = g_hash_table_lookup(throttleFiltersMap, def->throttlefilters[i]->group_name);
+        if (nodename) {
+            qemuBlockThrottleFilterSetNodename(def->throttlefilters[i], g_strdup(nodename));
+        }
+    }
+
     return 0;
 }
 
@@ -2135,6 +2314,9 @@ qemuDomainDiskPrivateParse(xmlXPathContextPtr ctxt,
     priv->qomName = virXPathString("string(./qom/@name)", ctxt);
     priv->nodeCopyOnRead = virXPathString("string(./nodenames/nodename[@type='copyOnRead']/@name)", ctxt);
 
+    if (virDomainDiskThrottleFilterNodeNamesParse(ctxt, disk) < 0)
+        return -1;
+
     return 0;
 }
 
@@ -2144,14 +2326,27 @@ qemuDomainDiskPrivateFormat(virDomainDiskDef *disk,
                             virBuffer *buf)
 {
     qemuDomainDiskPrivate *priv = QEMU_DOMAIN_DISK_PRIVATE(disk);
+    size_t i;
 
     virBufferEscapeString(buf, "<qom name='%s'/>\n", priv->qomName);
 
-    if (priv->nodeCopyOnRead) {
+    if (priv->nodeCopyOnRead || disk->nthrottlefilters > 0) {
         virBufferAddLit(buf, "<nodenames>\n");
         virBufferAdjustIndent(buf, 2);
-        virBufferEscapeString(buf, "<nodename type='copyOnRead' name='%s'/>\n",
+        virBufferEscapeString(buf,
+                              "<nodename type='copyOnRead' name='%s'/>\n",
                               priv->nodeCopyOnRead);
+        if (disk->nthrottlefilters > 0) {
+            for (i = 0; i < disk->nthrottlefilters; i++) {
+
+                virBufferEscapeString(buf,
+                                      "<nodename type='throttle-filter' name='%s' ",
+                                      disk->throttlefilters[i]->nodename);
+
+                virBufferEscapeString(buf, "group='%s'/>\n",
+                                      disk->throttlefilters[i]->group_name);
+            }
+        }
         virBufferAdjustIndent(buf, -2);
         virBufferAddLit(buf, "</nodenames>\n");
     }
@@ -2197,13 +2392,11 @@ qemuDomainObjPrivateXMLFormatAutomaticPlacement(virBuffer *buf,
     if (!priv->autoNodeset && !priv->autoCpuset)
         return 0;
 
-    if (priv->autoNodeset &&
-        !((nodeset = virBitmapFormat(priv->autoNodeset))))
-        return -1;
+    if (priv->autoNodeset)
+        nodeset = virBitmapFormat(priv->autoNodeset);
 
-    if (priv->autoCpuset &&
-        !((cpuset = virBitmapFormat(priv->autoCpuset))))
-        return -1;
+    if (priv->autoCpuset)
+        cpuset = virBitmapFormat(priv->autoCpuset);
 
     virBufferAddLit(buf, "<numad");
     virBufferEscapeString(buf, " nodeset='%s'", nodeset);
@@ -2256,13 +2449,16 @@ qemuDomainPrivateBlockJobFormatCommit(qemuBlockJobData *job,
     g_auto(virBuffer) disabledBitmapsBuf = VIR_BUFFER_INIT_CHILD(buf);
 
     if (job->data.commit.base)
-        virBufferAsprintf(buf, "<base node='%s'/>\n", job->data.commit.base->nodeformat);
+        virBufferAsprintf(buf, "<base node='%s'/>\n",
+                          qemuBlockStorageSourceGetStorageNodename(job->data.commit.base));
 
     if (job->data.commit.top)
-        virBufferAsprintf(buf, "<top node='%s'/>\n", job->data.commit.top->nodeformat);
+        virBufferAsprintf(buf, "<top node='%s'/>\n",
+                          qemuBlockStorageSourceGetStorageNodename(job->data.commit.top));
 
     if (job->data.commit.topparent)
-        virBufferAsprintf(buf, "<topparent node='%s'/>\n", job->data.commit.topparent->nodeformat);
+        virBufferAsprintf(buf, "<topparent node='%s'/>\n",
+                          qemuBlockStorageSourceGetStorageNodename(job->data.commit.topparent));
 
     if (job->data.commit.deleteCommittedImages)
         virBufferAddLit(buf, "<deleteCommittedImages/>\n");
@@ -2325,7 +2521,8 @@ qemuDomainObjPrivateXMLFormatBlockjobIterator(void *payload,
     switch ((qemuBlockJobType) job->type) {
         case QEMU_BLOCKJOB_TYPE_PULL:
             if (job->data.pull.base)
-                virBufferAsprintf(&childBuf, "<base node='%s'/>\n", job->data.pull.base->nodeformat);
+                virBufferAsprintf(&childBuf, "<base node='%s'/>\n",
+                                  qemuBlockStorageSourceGetStorageNodename(job->data.pull.base));
             break;
 
         case QEMU_BLOCKJOB_TYPE_COMMIT:
@@ -2361,6 +2558,12 @@ qemuDomainObjPrivateXMLFormatBlockjobIterator(void *payload,
                                                                       false) < 0)
                     return -1;
             }
+            break;
+
+        case QEMU_BLOCKJOB_TYPE_SNAPSHOT_SAVE:
+        case QEMU_BLOCKJOB_TYPE_SNAPSHOT_DELETE:
+        case QEMU_BLOCKJOB_TYPE_SNAPSHOT_LOAD:
+            /* No private data for internal snapshot jobs */
             break;
 
         case QEMU_BLOCKJOB_TYPE_BROKEN:
@@ -2413,17 +2616,6 @@ qemuDomainObjPrivateXMLFormatBackups(virBuffer *buf,
 
     virXMLFormatElement(buf, "backups", &attrBuf, &childBuf);
     return 0;
-}
-
-
-void
-qemuDomainObjPrivateXMLFormatAllowReboot(virBuffer *buf,
-                                         virTristateBool allowReboot)
-{
-    if (allowReboot) {
-        virBufferAsprintf(buf, "<allowReboot value='%s'/>\n",
-                          virTristateBoolTypeToString(allowReboot));
-    }
 }
 
 
@@ -2597,6 +2789,7 @@ qemuDomainObjPrivateXMLFormat(virBuffer *buf,
     virBufferEscapeString(buf, "<libDir path='%s'/>\n", priv->libDir);
     virBufferEscapeString(buf, "<channelTargetDir path='%s'/>\n",
                           priv->channelTargetDir);
+    virBufferEscapeString(buf, "<memoryBackingDir path='%s'/>\n", priv->memoryBackingDir);
 
     virCPUDefFormatBufFull(buf, priv->origCPU, NULL);
 
@@ -2605,8 +2798,6 @@ qemuDomainObjPrivateXMLFormat(virBuffer *buf,
 
     if (priv->rememberOwner)
         virBufferAddLit(buf, "<rememberOwner/>\n");
-
-    qemuDomainObjPrivateXMLFormatAllowReboot(buf, priv->allowReboot);
 
     qemuDomainObjPrivateXMLFormatPR(buf, priv);
 
@@ -2639,6 +2830,9 @@ qemuDomainObjPrivateXMLFormat(virBuffer *buf,
                           priv->preMigrationMemlock);
     }
 
+    if (priv->iommufdState)
+        virBufferAddLit(buf, "<iommufd/>\n");
+
     return 0;
 }
 
@@ -2649,28 +2843,18 @@ qemuDomainObjPrivateXMLParseVcpu(xmlNodePtr node,
                                  virDomainDef *def)
 {
     virDomainVcpuDef *vcpu;
-    g_autofree char *idstr = NULL;
-    g_autofree char *pidstr = NULL;
     unsigned int tmp;
 
-    idstr = virXMLPropString(node, "id");
-
-    if (idstr &&
-        (virStrToLong_uip(idstr, NULL, 10, &idx) < 0)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("cannot parse vcpu index '%1$s'"), idstr);
+    if (virXMLPropUInt(node, "id", 10, VIR_XML_PROP_NONE, &idx) < 0)
         return -1;
-    }
+
     if (!(vcpu = virDomainDefGetVcpu(def, idx))) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("invalid vcpu index '%1$u'"), idx);
         return -1;
     }
 
-    if (!(pidstr = virXMLPropString(node, "pid")))
-        return -1;
-
-    if (virStrToLong_uip(pidstr, NULL, 10, &tmp) < 0)
+    if (virXMLPropUInt(node, "pid", 10, VIR_XML_PROP_REQUIRED, &tmp) < 0)
         return -1;
 
     QEMU_DOMAIN_VCPU_PRIVATE(vcpu)->tid = tmp;
@@ -2765,6 +2949,25 @@ qemuDomainObjPrivateXMLParseBlockjobChain(xmlNodePtr node,
 
 
 /**
+ * qemuDomainVirStorageSourceMatchNodename:
+ * @src: storage source to match
+ * @nodeName to match
+ *
+ * Returns true if any of the nodenames of @src matches @nodeName.
+ */
+static bool
+qemuDomainVirStorageSourceMatchNodename(virStorageSource *src,
+                                        const char *nodeName)
+{
+    const char *nodestorage = qemuBlockStorageSourceGetStorageNodename(src);
+    const char *nodeformat = qemuBlockStorageSourceGetFormatNodename(src);
+
+    return (nodeformat && STREQ(nodeformat, nodeName)) ||
+           (nodestorage && STREQ(nodestorage, nodeName));
+}
+
+
+/**
  * qemuDomainVirStorageSourceFindByNodeName:
  * @top: backing chain top
  * @nodeName: node name to find in backing chain
@@ -2780,9 +2983,12 @@ qemuDomainVirStorageSourceFindByNodeName(virStorageSource *top,
     virStorageSource *tmp;
 
     for (tmp = top; virStorageSourceIsBacking(tmp); tmp = tmp->backingStore) {
-        if ((tmp->nodeformat && STREQ(tmp->nodeformat, nodeName)) ||
-            (tmp->nodestorage && STREQ(tmp->nodestorage, nodeName)))
+        if (qemuDomainVirStorageSourceMatchNodename(tmp, nodeName))
             return tmp;
+
+        if (tmp->dataFileStore &&
+            qemuDomainVirStorageSourceMatchNodename(tmp->dataFileStore, nodeName))
+            return tmp->dataFileStore;
     }
 
     return NULL;
@@ -2911,6 +3117,12 @@ qemuDomainObjPrivateXMLParseBlockjobDataSpecific(qemuBlockJobData *job,
                 goto broken;
             break;
 
+        case QEMU_BLOCKJOB_TYPE_SNAPSHOT_SAVE:
+        case QEMU_BLOCKJOB_TYPE_SNAPSHOT_DELETE:
+        case QEMU_BLOCKJOB_TYPE_SNAPSHOT_LOAD:
+            /* No extra data for internal snapshot jobs. */
+            break;
+
         case QEMU_BLOCKJOB_TYPE_BROKEN:
         case QEMU_BLOCKJOB_TYPE_NONE:
         case QEMU_BLOCKJOB_TYPE_INTERNAL:
@@ -3029,13 +3241,7 @@ qemuDomainObjPrivateXMLParseBlockjobs(virDomainObj *vm,
 {
     g_autofree xmlNodePtr *nodes = NULL;
     ssize_t nnodes = 0;
-    g_autofree char *active = NULL;
-    int tmp;
     size_t i;
-
-    if ((active = virXPathString("string(./blockjobs/@active)", ctxt)) &&
-        (tmp = virTristateBoolTypeFromString(active)) > 0)
-        priv->reconnectBlockjobs = tmp;
 
     if ((nnodes = virXPathNodeSet("./blockjobs/blockjob", ctxt, &nodes)) < 0)
         return -1;
@@ -3081,21 +3287,6 @@ qemuDomainObjPrivateXMLParseBackups(qemuDomainObjPrivate *priv,
 }
 
 
-int
-qemuDomainObjPrivateXMLParseAllowReboot(xmlXPathContextPtr ctxt,
-                                        virTristateBool *allowReboot)
-{
-    xmlNodePtr node = virXPathNode("./allowReboot", ctxt);
-
-    /* Allow value='default' as the input here, because old versions
-     * of libvirt produced that output and we need to be able to read
-     * it back to correctly handle running guests on daemon upgrade */
-    return virXMLPropTristateBoolAllowDefault(node, "value",
-                                              VIR_XML_PROP_NONE,
-                                              allowReboot);
-}
-
-
 static void
 qemuDomainObjPrivateXMLParsePR(xmlXPathContextPtr ctxt,
                                bool *prDaemonRunning)
@@ -3116,11 +3307,8 @@ qemuDomainObjPrivateXMLParseSlirpFeatures(xmlNodePtr featuresNode,
 
     ctxt->node = featuresNode;
 
-    if ((n = virXPathNodeSet("./feature", ctxt, &nodes)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("failed to parse slirp-helper features"));
+    if ((n = virXPathNodeSet("./feature", ctxt, &nodes)) < 0)
         return -1;
-    }
 
     for (i = 0; i < n; i++) {
         g_autofree char *str = virXMLPropString(nodes[i], "name");
@@ -3234,11 +3422,9 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
     }
     VIR_FREE(nodes);
 
-    if ((n = virXPathNodeSet("./qemuCaps/flag", ctxt, &nodes)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("failed to parse qemu capabilities flags"));
+    if ((n = virXPathNodeSet("./qemuCaps/flag", ctxt, &nodes)) < 0)
         return -1;
-    }
+
     if (n > 0) {
         qemuCaps = virQEMUCapsNew();
 
@@ -3266,11 +3452,9 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
 
     priv->fakeReboot = virXPathBoolean("boolean(./fakereboot)", ctxt) == 1;
 
-    if ((n = virXPathNodeSet("./devices/device", ctxt, &nodes)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("failed to parse qemu device list"));
+    if ((n = virXPathNodeSet("./devices/device", ctxt, &nodes)) < 0)
         return -1;
-    }
+
     if (n > 0) {
         /* NULL-terminated list */
         priv->qemuDevices = g_new0(char *, n + 1);
@@ -3286,11 +3470,9 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
     }
     VIR_FREE(nodes);
 
-    if ((n = virXPathNodeSet("./slirp/helper", ctxt, &nodes)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("failed to parse slirp helper list"));
+    if ((n = virXPathNodeSet("./slirp/helper", ctxt, &nodes)) < 0)
         return -1;
-    }
+
     for (i = 0; i < n; i++) {
         g_autofree char *alias = virXMLPropString(nodes[i], "alias");
         g_autofree char *pid = virXMLPropString(nodes[i], "pid");
@@ -3324,7 +3506,10 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
         priv->channelTargetDir = tmp;
     tmp = NULL;
 
-    qemuDomainSetPrivatePathsOld(driver, vm);
+    priv->memoryBackingDir = virXPathString("string(./memoryBackingDir/@path)", ctxt);
+
+    if (qemuDomainSetPrivatePathsOld(driver, vm) < 0)
+        return -1;
 
     if (virCPUDefParseXML(ctxt, "./cpu", VIR_CPU_TYPE_GUEST, &priv->origCPU,
                           false) < 0)
@@ -3332,9 +3517,6 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
 
     priv->chardevStdioLogd = virXPathBoolean("boolean(./chardevStdioLogd)",
                                              ctxt) == 1;
-
-    if (qemuDomainObjPrivateXMLParseAllowReboot(ctxt, &priv->allowReboot) < 0)
-        return -1;
 
     qemuDomainObjPrivateXMLParsePR(ctxt, &priv->prDaemonRunning);
 
@@ -3371,6 +3553,8 @@ qemuDomainObjPrivateXMLParse(xmlXPathContextPtr ctxt,
         return -1;
     }
 
+    priv->iommufdState = virXPathBoolean("boolean(./iommufd)", ctxt) == 1;
+
     return 0;
 }
 
@@ -3394,6 +3578,7 @@ virDomainXMLPrivateDataCallbacks virQEMUDriverPrivateDataCallbacks = {
     .chrSourceNew = qemuDomainChrSourcePrivateNew,
     .vsockNew = qemuDomainVsockPrivateNew,
     .graphicsNew = qemuDomainGraphicsPrivateNew,
+    .hostdevNew = qemuDomainHostdevPrivateNew,
     .networkNew = qemuDomainNetworkPrivateNew,
     .networkParse = qemuDomainNetworkPrivateParse,
     .networkFormat = qemuDomainNetworkPrivateFormat,
@@ -3879,24 +4064,6 @@ virXMLNamespace virQEMUDriverDomainXMLNamespace = {
 
 
 static int
-qemuDomainDefAddImplicitInputDevice(virDomainDef *def)
-{
-    if (ARCH_IS_X86(def->os.arch)) {
-        if (virDomainDefMaybeAddInput(def,
-                                      VIR_DOMAIN_INPUT_TYPE_MOUSE,
-                                      VIR_DOMAIN_INPUT_BUS_PS2) < 0)
-            return -1;
-
-        if (virDomainDefMaybeAddInput(def,
-                                      VIR_DOMAIN_INPUT_TYPE_KBD,
-                                      VIR_DOMAIN_INPUT_BUS_PS2) < 0)
-            return -1;
-    }
-
-    return 0;
-}
-
-static int
 qemuDomainDefSuggestDefaultAudioBackend(virQEMUDriver *driver,
                                         virDomainDef *def,
                                         bool *addAudio,
@@ -4043,7 +4210,7 @@ qemuDomainDefClearDefaultAudioBackend(virQEMUDriver *driver,
     return 0;
 }
 
-static int
+int
 qemuDomainDefAddDefaultAudioBackend(virQEMUDriver *driver,
                                     virDomainDef *def)
 {
@@ -4065,745 +4232,240 @@ qemuDomainDefAddDefaultAudioBackend(virQEMUDriver *driver,
     return 0;
 }
 
-static int
-qemuDomainDefAddDefaultDevices(virQEMUDriver *driver,
-                               virDomainDef *def,
-                               virQEMUCaps *qemuCaps)
+
+/**
+ * qemuDomainDefaultSCSIControllerModel:
+ * @def: domain definition
+ * @qemuCaps: QEMU capabilities, or NULL
+ *
+ * Choose a reasonable model to use for a SCSI controller where a
+ * specific one hasn't been provided by the user.
+ *
+ * The choice is based on a number of factors, including the guest's
+ * architecture and machine type. @qemuCaps, if provided, might be
+ * taken into consideration too.
+ *
+ * If no sensible choice can be made for the controller model,
+ * VIR_DOMAIN_CONTROLLER_MODEL_SCSI_DEFAULT will be returned. It's
+ * likely that a failure will need to be reported in this scenario,
+ * but the handling is entirely up to the caller.
+ *
+ * Returns: a valid virDomainControllerModelSCSI value if one could
+ *          be determined, or VIR_DOMAIN_CONTROLLER_MODEL_SCSI_DEFAULT
+ */
+virDomainControllerModelSCSI
+qemuDomainDefaultSCSIControllerModel(const virDomainDef *def,
+                                     virQEMUCaps *qemuCaps)
 {
-    bool addDefaultUSB = true;
-    int usbModel = -1; /* "default for machinetype" */
-    int pciRoot;       /* index within def->controllers */
-    bool addImplicitSATA = false;
-    bool addPCIRoot = false;
-    bool addPCIeRoot = false;
-    bool addDefaultMemballoon = true;
-    bool addDefaultUSBKBD = false;
-    bool addDefaultUSBMouse = false;
-    bool addPanicDevice = false;
-    bool addITCOWatchdog = false;
+    size_t i;
 
-    /* add implicit input devices */
-    if (qemuDomainDefAddImplicitInputDevice(def) < 0)
-        return -1;
+    /* For machine types with built-in SCSI controllers, the choice
+     * of model is obvious */
+    if (qemuDomainHasBuiltinESP(def))
+        return VIR_DOMAIN_CONTROLLER_MODEL_SCSI_NCR53C90;
 
-    /* Add implicit PCI root controller if the machine has one */
-    switch (def->os.arch) {
-    case VIR_ARCH_I686:
-    case VIR_ARCH_X86_64:
-        if (STREQ(def->os.machine, "isapc")) {
-            addDefaultUSB = false;
-            break;
-        }
-        if (qemuDomainIsQ35(def)) {
-            addPCIeRoot = true;
-            addImplicitSATA = true;
-            addITCOWatchdog = true;
+    /* Most new architectures should ideally use virtio */
+    if (ARCH_IS_S390(def->os.arch) ||
+        qemuDomainIsARMVirt(def) ||
+        qemuDomainIsRISCVVirt(def) ||
+        qemuDomainIsLoongArchVirt(def))
+        return VIR_DOMAIN_CONTROLLER_MODEL_SCSI_VIRTIO_SCSI;
 
-            /* Prefer adding a USB3 controller if supported, fall back
-             * to USB2 if there is no USB3 available, and if that's
-             * unavailable don't add anything.
-             */
-            if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
-                usbModel = VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
-            else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI))
-                usbModel = VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
-            else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_ICH9_USB_EHCI1))
-                usbModel = VIR_DOMAIN_CONTROLLER_MODEL_USB_ICH9_EHCI1;
-            else
-                addDefaultUSB = false;
-            break;
-        }
-        if (qemuDomainIsI440FX(def))
-            addPCIRoot = true;
-        break;
+    /* pSeries has its own special default */
+    if (qemuDomainIsPSeries(def))
+        return VIR_DOMAIN_CONTROLLER_MODEL_SCSI_IBMVSCSI;
 
-    case VIR_ARCH_ARMV6L:
-        addDefaultUSB = false;
-        addDefaultMemballoon = false;
-        if (STREQ(def->os.machine, "versatilepb"))
-            addPCIRoot = true;
-        break;
+    /* Inherit the model from any peer SCSI controller already
+     * resolved on this domain. */
+    for (i = 0; i < def->ncontrollers; i++) {
+        const virDomainControllerDef *peer = def->controllers[i];
 
-    case VIR_ARCH_ARMV7L:
-    case VIR_ARCH_AARCH64:
-        addDefaultUSB = false;
-        addDefaultMemballoon = false;
-        if (qemuDomainIsARMVirt(def))
-            addPCIeRoot = virQEMUCapsGet(qemuCaps, QEMU_CAPS_OBJECT_GPEX);
-        break;
-
-    case VIR_ARCH_PPC64:
-    case VIR_ARCH_PPC64LE:
-        addPCIRoot = true;
-        addDefaultUSBKBD = true;
-        addDefaultUSBMouse = true;
-        /* For pSeries guests, the firmware provides the same
-         * functionality as the pvpanic device, so automatically
-         * add the definition if not already present */
-        if (qemuDomainIsPSeries(def))
-            addPanicDevice = true;
-        break;
-
-    case VIR_ARCH_ALPHA:
-    case VIR_ARCH_PPC:
-    case VIR_ARCH_PPCEMB:
-    case VIR_ARCH_SH4:
-    case VIR_ARCH_SH4EB:
-        addPCIRoot = true;
-        break;
-
-    case VIR_ARCH_RISCV32:
-    case VIR_ARCH_RISCV64:
-        addDefaultUSB = false;
-        if (qemuDomainIsRISCVVirt(def))
-            addPCIeRoot = virQEMUCapsGet(qemuCaps, QEMU_CAPS_OBJECT_GPEX);
-        break;
-
-    case VIR_ARCH_S390:
-    case VIR_ARCH_S390X:
-        addDefaultUSB = false;
-        addPanicDevice = true;
-        addPCIRoot = virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_ZPCI);
-        break;
-
-    case VIR_ARCH_SPARC:
-        addDefaultUSB = false;
-        addDefaultMemballoon = false;
-        break;
-
-    case VIR_ARCH_SPARC64:
-        addPCIRoot = true;
-        break;
-
-    case VIR_ARCH_MIPS:
-    case VIR_ARCH_MIPSEL:
-    case VIR_ARCH_MIPS64:
-    case VIR_ARCH_MIPS64EL:
-        if (qemuDomainIsMipsMalta(def))
-            addPCIRoot = true;
-        break;
-
-    case VIR_ARCH_ARMV7B:
-    case VIR_ARCH_CRIS:
-    case VIR_ARCH_ITANIUM:
-    case VIR_ARCH_LM32:
-    case VIR_ARCH_M68K:
-    case VIR_ARCH_MICROBLAZE:
-    case VIR_ARCH_MICROBLAZEEL:
-    case VIR_ARCH_OR32:
-    case VIR_ARCH_PARISC:
-    case VIR_ARCH_PARISC64:
-    case VIR_ARCH_PPCLE:
-    case VIR_ARCH_UNICORE32:
-    case VIR_ARCH_XTENSA:
-    case VIR_ARCH_XTENSAEB:
-    case VIR_ARCH_NONE:
-    case VIR_ARCH_LAST:
-    default:
-        break;
+        if (peer->type != VIR_DOMAIN_CONTROLLER_TYPE_SCSI)
+            continue;
+        if (peer->model == VIR_DOMAIN_CONTROLLER_MODEL_SCSI_DEFAULT ||
+            peer->model == VIR_DOMAIN_CONTROLLER_MODEL_SCSI_AUTO)
+            continue;
+        return peer->model;
     }
 
-    if (addDefaultUSB &&
-        virDomainControllerFind(def, VIR_DOMAIN_CONTROLLER_TYPE_USB, 0) < 0 &&
-        virDomainDefAddUSBController(def, 0, usbModel) < 0)
-        return -1;
+    /* If there is no preference, base the choice on device
+     * availability. In this case, lsilogic is favored over
+     * virtio-scsi for backwards compatibility reasons */
+    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_SCSI_LSI))
+        return VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSILOGIC;
+    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_VIRTIO_SCSI))
+        return VIR_DOMAIN_CONTROLLER_MODEL_SCSI_VIRTIO_SCSI;
 
-    if (addImplicitSATA &&
-        virDomainDefMaybeAddController(
-            def, VIR_DOMAIN_CONTROLLER_TYPE_SATA, 0, -1) < 0)
-        return -1;
+    return VIR_DOMAIN_CONTROLLER_MODEL_SCSI_DEFAULT;
+}
 
-    pciRoot = virDomainControllerFind(def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0);
 
-    /* NB: any machine that sets addPCIRoot to true must also return
-     * true from the function qemuDomainSupportsPCI().
-     */
-    if (addPCIRoot) {
-        if (pciRoot >= 0) {
-            if (def->controllers[pciRoot]->model != VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) {
-                virReportError(VIR_ERR_XML_ERROR,
-                               _("The PCI controller with index='0' must be model='pci-root' for this machine type, but model='%1$s' was found instead"),
-                               virDomainControllerModelPCITypeToString(def->controllers[pciRoot]->model));
-                return -1;
-            }
-        } else if (!virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0,
-                                              VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT)) {
-            return -1;
-        }
-    }
+virDomainPanicModel
+qemuDomainDefaultPanicModel(const virDomainDef *def)
+{
+    if (qemuDomainIsPSeries(def))
+        return VIR_DOMAIN_PANIC_MODEL_PSERIES;
 
-    /* When a machine has a pcie-root, make sure that there is always
-     * a dmi-to-pci-bridge controller added as bus 1, and a pci-bridge
-     * as bus 2, so that standard PCI devices can be connected
-     *
-     * NB: any machine that sets addPCIeRoot to true must also return
-     * true from the function qemuDomainSupportsPCI().
-     */
-    if (addPCIeRoot) {
-        if (pciRoot >= 0) {
-            if (def->controllers[pciRoot]->model != VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT) {
-                virReportError(VIR_ERR_XML_ERROR,
-                               _("The PCI controller with index='0' must be model='pcie-root' for this machine type, but model='%1$s' was found instead"),
-                               virDomainControllerModelPCITypeToString(def->controllers[pciRoot]->model));
-                return -1;
-            }
-        } else if (!virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0,
-                                             VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT)) {
-            return -1;
-        }
-    }
+    if (ARCH_IS_S390(def->os.arch))
+        return VIR_DOMAIN_PANIC_MODEL_S390;
 
-    if (addDefaultMemballoon && !def->memballoon) {
-        virDomainMemballoonDef *memballoon;
-        memballoon = g_new0(virDomainMemballoonDef, 1);
+    if (ARCH_IS_X86(def->os.arch))
+        return VIR_DOMAIN_PANIC_MODEL_ISA;
 
-        memballoon->model = VIR_DOMAIN_MEMBALLOON_MODEL_VIRTIO;
-        def->memballoon = memballoon;
-    }
+    if (qemuDomainIsARMVirt(def))
+        return VIR_DOMAIN_PANIC_MODEL_PVPANIC;
 
-    if (addDefaultUSBMouse) {
-        bool hasUSBTablet = false;
-        size_t j;
-
-        for (j = 0; j < def->ninputs; j++) {
-            if (def->inputs[j]->type == VIR_DOMAIN_INPUT_TYPE_TABLET &&
-                def->inputs[j]->bus == VIR_DOMAIN_INPUT_BUS_USB) {
-                hasUSBTablet = true;
-                break;
-            }
-        }
-
-        /* Historically, we have automatically added USB keyboard and
-         * mouse to some guests. While the former device is generally
-         * safe to have, adding the latter is undesiderable if a USB
-         * tablet is already present in the guest */
-        if (hasUSBTablet)
-            addDefaultUSBMouse = false;
-    }
-
-    if (addDefaultUSBKBD &&
-        def->ngraphics > 0 &&
-        virDomainDefMaybeAddInput(def,
-                                  VIR_DOMAIN_INPUT_TYPE_KBD,
-                                  VIR_DOMAIN_INPUT_BUS_USB) < 0)
-        return -1;
-
-    if (addDefaultUSBMouse &&
-        def->ngraphics > 0 &&
-        virDomainDefMaybeAddInput(def,
-                                  VIR_DOMAIN_INPUT_TYPE_MOUSE,
-                                  VIR_DOMAIN_INPUT_BUS_USB) < 0)
-        return -1;
-
-    if (addPanicDevice) {
-        size_t j;
-        for (j = 0; j < def->npanics; j++) {
-            if (def->panics[j]->model == VIR_DOMAIN_PANIC_MODEL_DEFAULT ||
-                (ARCH_IS_PPC64(def->os.arch) &&
-                     def->panics[j]->model == VIR_DOMAIN_PANIC_MODEL_PSERIES) ||
-                (ARCH_IS_S390(def->os.arch) &&
-                     def->panics[j]->model == VIR_DOMAIN_PANIC_MODEL_S390))
-                break;
-        }
-
-        if (j == def->npanics) {
-            virDomainPanicDef *panic = g_new0(virDomainPanicDef, 1);
-
-            VIR_APPEND_ELEMENT_COPY(def->panics, def->npanics, panic);
-        }
-    }
-
-    if (addITCOWatchdog) {
-        size_t i = 0;
-
-        for (i = 0; i < def->nwatchdogs; i++) {
-            if (def->watchdogs[i]->model == VIR_DOMAIN_WATCHDOG_MODEL_ITCO)
-                break;
-        }
-
-        if (i == def->nwatchdogs) {
-            virDomainWatchdogDef *watchdog = g_new0(virDomainWatchdogDef, 1);
-
-            watchdog->model = VIR_DOMAIN_WATCHDOG_MODEL_ITCO;
-            if (def->nwatchdogs)
-                watchdog->action = def->watchdogs[0]->action;
-            else
-                watchdog->action = VIR_DOMAIN_WATCHDOG_ACTION_RESET;
-
-            VIR_APPEND_ELEMENT(def->watchdogs, def->nwatchdogs, watchdog);
-        }
-    }
-
-    if (qemuDomainDefAddDefaultAudioBackend(driver, def) < 0)
-        return -1;
-
-    return 0;
+    return VIR_DOMAIN_PANIC_MODEL_DEFAULT;
 }
 
 
 /**
- * qemuDomainDefEnableDefaultFeatures:
+ * qemuDomainDefaultUSBControllerModel:
  * @def: domain definition
- * @qemuCaps: QEMU capabilities
+ * @qemuCaps: QEMU capabilities, or NULL
+ * @parseFlags: parse flags
  *
- * Make sure that features that should be enabled by default are actually
- * enabled and configure default values related to those features.
+ * Choose a reasonable model to use for a USB controller where a
+ * specific one hasn't been provided by the user.
+ *
+ * The choice is based on a number of factors, including the guest's
+ * architecture and machine type. @qemuCaps might be NULL, in which
+ * case the function must not make any decision based on device
+ * availability; it will be re-run later with a non-NULL qemuCaps.
+ *
+ * The return value can be a specific controller model, or
+ * VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT; the latter indicates that
+ * no suitable model could be identified. How to behave in that
+ * scenario is entirely up to the caller.
+ *
+ * Returns: the model
  */
-static void
-qemuDomainDefEnableDefaultFeatures(virDomainDef *def,
-                                   virQEMUCaps *qemuCaps)
-{
-    /* The virt machine type always uses GIC: if the relevant information
-     * was not included in the domain XML, we need to choose a suitable
-     * GIC version ourselves */
-    if ((def->features[VIR_DOMAIN_FEATURE_GIC] == VIR_TRISTATE_SWITCH_ABSENT &&
-         qemuDomainIsARMVirt(def)) ||
-        (def->features[VIR_DOMAIN_FEATURE_GIC] == VIR_TRISTATE_SWITCH_ON &&
-         def->gic_version == VIR_GIC_VERSION_NONE)) {
-        virGICVersion version;
-
-        VIR_DEBUG("Looking for usable GIC version in domain capabilities");
-        for (version = VIR_GIC_VERSION_LAST - 1;
-             version > VIR_GIC_VERSION_NONE;
-             version--) {
-
-            /* We want to use the highest available GIC version for guests;
-             * however, the emulated GICv3 is currently lacking a MSI controller,
-             * making it unsuitable for the pure PCIe topology we aim for.
-             *
-             * For that reason, we skip this step entirely for TCG guests,
-             * and rely on the code below to pick the default version, GICv2,
-             * which supports all the features we need.
-             *
-             * See https://bugzilla.redhat.com/show_bug.cgi?id=1414081 */
-            if (version == VIR_GIC_VERSION_3 &&
-                def->virtType == VIR_DOMAIN_VIRT_QEMU) {
-                continue;
-            }
-
-            if (virQEMUCapsSupportsGICVersion(qemuCaps,
-                                              def->virtType,
-                                              version)) {
-                VIR_DEBUG("Using GIC version %s",
-                          virGICVersionTypeToString(version));
-                def->gic_version = version;
-                break;
-            }
-        }
-
-        /* Use the default GIC version (GICv2) as a last-ditch attempt
-         * if no match could be found above */
-        if (def->gic_version == VIR_GIC_VERSION_NONE) {
-            VIR_DEBUG("Using GIC version 2 (default)");
-            def->gic_version = VIR_GIC_VERSION_2;
-        }
-
-        /* Even if we haven't found a usable GIC version in the domain
-         * capabilities, we still want to enable this */
-        def->features[VIR_DOMAIN_FEATURE_GIC] = VIR_TRISTATE_SWITCH_ON;
-    }
-}
-
-
-static int
-qemuCanonicalizeMachine(virDomainDef *def, virQEMUCaps *qemuCaps)
-{
-    const char *canon;
-
-    if (!(canon = virQEMUCapsGetCanonicalMachine(qemuCaps, def->virtType,
-                                                 def->os.machine)))
-        return 0;
-
-    if (STRNEQ(canon, def->os.machine)) {
-        char *tmp;
-        tmp = g_strdup(canon);
-        VIR_FREE(def->os.machine);
-        def->os.machine = tmp;
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainRecheckInternalPaths(virDomainDef *def,
-                               virQEMUDriverConfig *cfg,
-                               unsigned int flags)
-{
-    size_t i = 0;
-    size_t j = 0;
-
-    for (i = 0; i < def->ngraphics; ++i) {
-        virDomainGraphicsDef *graphics = def->graphics[i];
-
-        for (j = 0; j < graphics->nListens; ++j) {
-            virDomainGraphicsListenDef *glisten =  &graphics->listens[j];
-
-            /* This will happen only if we parse XML from old libvirts where
-             * unix socket was available only for VNC graphics.  In this
-             * particular case we should follow the behavior and if we remove
-             * the auto-generated socket based on config option from qemu.conf
-             * we need to change the listen type to address. */
-            if (graphics->type == VIR_DOMAIN_GRAPHICS_TYPE_VNC &&
-                glisten->type == VIR_DOMAIN_GRAPHICS_LISTEN_TYPE_SOCKET &&
-                glisten->socket &&
-                !glisten->autoGenerated &&
-                STRPREFIX(glisten->socket, cfg->libDir)) {
-                if (flags & VIR_DOMAIN_DEF_PARSE_INACTIVE) {
-                    VIR_FREE(glisten->socket);
-                    glisten->type = VIR_DOMAIN_GRAPHICS_LISTEN_TYPE_ADDRESS;
-                } else {
-                    glisten->fromConfig = true;
-                }
-            }
-        }
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefBootPostParse(virDomainDef *def,
-                           virQEMUDriver *driver,
-                           unsigned int parseFlags)
+virDomainControllerModelUSB
+qemuDomainDefaultUSBControllerModel(const virDomainDef *def,
+                                    virQEMUCaps *qemuCaps,
+                                    unsigned int parseFlags)
 {
     bool abiUpdate = !!(parseFlags & VIR_DOMAIN_DEF_PARSE_ABI_UPDATE);
 
-    /* If we're loading an existing configuration from disk, we
-     * should try as hard as possible to preserve historical
-     * behavior. In particular, firmware autoselection being enabled
-     * could never have resulted, before libvirt 9.2.0, in anything
-     * but a raw firmware image being selected.
-     *
-     * In order to ensure that existing domains keep working even if
-     * a firmware descriptor for a build with a different format is
-     * given higher priority, explicitly add this requirement to the
-     * definition before performing firmware selection */
-    if (!abiUpdate && def->os.firmware) {
-        if (!def->os.loader)
-            def->os.loader = virDomainLoaderDefNew();
-        if (!def->os.loader->format)
-            def->os.loader->format = VIR_STORAGE_FILE_RAW;
+    if (ARCH_IS_LOONGARCH(def->os.arch) ||
+        qemuDomainIsRISCVVirt(def)) {
+        /* Use qemu-xhci (USB3) with no fallback */
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
+
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
     }
 
-    /* Firmware selection can fail for a number of reasons, but the
-     * most likely one is that the requested configuration contains
-     * mistakes or includes constraints that are impossible to
-     * satisfy on the current system.
-     *
-     * If that happens, we have to react differently based on the
-     * situation: if we're defining a new domain or updating its ABI,
-     * we should let the user know immediately so that they can
-     * change the requested configuration, hopefully into one that we
-     * can work with; if we're loading the configuration of an
-     * existing domain from disk, however, we absolutely cannot error
-     * out here, or the domain will disappear.
-     *
-     * To handle the second case gracefully, we clear any reported
-     * errors and continue as if nothing had happened. When it's time
-     * to start the domain, qemuFirmwareFillDomain() will be run
-     * again, fail in the same way, and at that point we'll have a
-     * chance to inform the user of any issues */
-    if (qemuFirmwareFillDomain(driver, def) < 0) {
-        if (abiUpdate) {
-            return -1;
-        } else {
-            virResetLastError();
-            return 0;
-        }
+    if (qemuDomainIsARMVirt(def)) {
+        /* Use qemu-xhci or nec-xhci (USB3) with no fallback */
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
+
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
     }
 
-    return 0;
+    if (ARCH_IS_ARM(def->os.arch)) {
+        /* Prefer qemu-xhci or nec-xhci (USB3) */
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
+
+        /* Allow pci-ohci (USB1) as fallback */
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_PCI_OHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_PCI_OHCI;
+
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
+    }
+
+    if (ARCH_IS_S390(def->os.arch)) {
+        /* No default model on s390x, one has to be provided
+         * explicitly by the user */
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_NONE;
+    }
+
+    if (ARCH_IS_PPC64(def->os.arch)) {
+        /* Use qemu-xhci or nec-xhci (USB3) for newly-defined guests */
+        if (abiUpdate && virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
+        if (abiUpdate && virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
+
+        /* To preserve backwards compatibility, existing guests need to
+         * use pci-ohci (USB1) instead */
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_PCI_OHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_PCI_OHCI;
+
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
+    }
+
+    if (ARCH_IS_X86(def->os.arch)) {
+        /* Use piix3-uhci (USB1) for backwards compatibility */
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_PIIX3_USB_UHCI))
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_PIIX3_UHCI;
+
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
+    }
+
+    /* Most common architectures and machine types have been already
+     * handled above; for the remaining cases, use pci-ohci (USB1)
+     * as the most reasonable fallback */
+    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_PCI_OHCI))
+        return VIR_DOMAIN_CONTROLLER_MODEL_USB_PCI_OHCI;
+
+    return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
 }
 
 
-static int
-qemuDomainDefMachinePostParse(virDomainDef *def,
-                              virQEMUCaps *qemuCaps)
+/**
+ * qemuDomainDefaultUSBControllerModelAutoAdded:
+ * @def: domain definition
+ * @qemuCaps: QEMU capabilities, or NULL
+ *
+ * Choose a reasonable model to use for a USB controller that is
+ * being automatically added to a domain.
+ *
+ * The choice is based on a number of factors, including the guest's
+ * architecture and machine type. @qemuCaps might be NULL, in which
+ * case the function must not make any decision based on device
+ * availability; it will be re-run later with a non-NULL qemuCaps.
+ *
+ * The return value can be a specific controller model, or
+ * VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT; the latter indicates that
+ * no suitable model could be identified. How to behave in that
+ * scenario is entirely up to the caller.
+ *
+ * Additionally, VIR_DOMAIN_CONTROLLER_MODEL_USB_NONE can be returned
+ * to indicate that the caller should not auto-add the USB controller
+ * after all.
+ *
+ * Returns: the model
+ */
+virDomainControllerModelUSB
+qemuDomainDefaultUSBControllerModelAutoAdded(const virDomainDef *def,
+                                             virQEMUCaps *qemuCaps)
 {
-    if (!def->os.machine) {
-        const char *machine = virQEMUCapsGetPreferredMachine(qemuCaps,
-                                                             def->virtType);
-        if (!machine) {
-            virReportError(VIR_ERR_INVALID_ARG,
-                           _("could not get preferred machine for %1$s type=%2$s"),
-                           def->emulator,
-                           virDomainVirtTypeToString(def->virtType));
-            return -1;
-        }
+    if (ARCH_IS_X86(def->os.arch)) {
+        if (qemuDomainIsQ35(def)) {
+            /* Prefer qemu-xhci or nec-xhci (USB3) */
+            if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
+                return VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
+            if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI))
+                return VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
 
-        def->os.machine = g_strdup(machine);
-    }
+            /* Fall back to ich9-ehci1 (USB2) */
+            if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_ICH9_USB_EHCI1))
+                return VIR_DOMAIN_CONTROLLER_MODEL_USB_ICH9_EHCI1;
 
-    if (qemuCanonicalizeMachine(def, qemuCaps) < 0)
-        return -1;
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefVcpusPostParse(virDomainDef *def)
-{
-    unsigned int maxvcpus = virDomainDefGetVcpusMax(def);
-    virDomainVcpuDef *vcpu;
-    virDomainVcpuDef *prevvcpu;
-    size_t i;
-    bool has_order = false;
-
-    /* vcpu 0 needs to be present, first, and non-hotpluggable */
-    vcpu = virDomainDefGetVcpu(def, 0);
-    if (!vcpu->online) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vcpu 0 can't be offline"));
-        return -1;
-    }
-    if (vcpu->hotpluggable == VIR_TRISTATE_BOOL_YES) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vcpu0 can't be hotpluggable"));
-        return -1;
-    }
-    if (vcpu->order != 0 && vcpu->order != 1) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vcpu0 must be enabled first"));
-        return -1;
-    }
-
-    if (vcpu->order != 0)
-        has_order = true;
-
-    prevvcpu = vcpu;
-
-    /* all online vcpus or non online vcpu need to have order set */
-    for (i = 1; i < maxvcpus; i++) {
-        vcpu = virDomainDefGetVcpu(def, i);
-
-        if (vcpu->online &&
-            (vcpu->order != 0) != has_order) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("all vcpus must have either set or unset order"));
-            return -1;
-        }
-
-        /* few conditions for non-hotpluggable (thus online) vcpus */
-        if (vcpu->hotpluggable == VIR_TRISTATE_BOOL_NO) {
-            /* they can be ordered only at the beginning */
-            if (prevvcpu->hotpluggable == VIR_TRISTATE_BOOL_YES) {
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("online non-hotpluggable vcpus need to be "
-                                 "ordered prior to hotplugable vcpus"));
-                return -1;
-            }
-
-            /* they need to be in order (qemu doesn't support any order yet).
-             * Also note that multiple vcpus may share order on some platforms */
-            if (prevvcpu->order > vcpu->order) {
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("online non-hotpluggable vcpus must be ordered "
-                                 "in ascending order"));
-                return -1;
-            }
-        }
-
-        prevvcpu = vcpu;
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefSetDefaultCPU(virDomainDef *def,
-                           virArch hostarch,
-                           virQEMUCaps *qemuCaps)
-{
-    const char *model;
-
-    if (def->cpu &&
-        (def->cpu->mode != VIR_CPU_MODE_CUSTOM ||
-         def->cpu->model))
-        return 0;
-
-    if (!virCPUArchIsSupported(def->os.arch))
-        return 0;
-
-    /* Default CPU model info from QEMU is usable for TCG only except for
-     * x86, s390, and ppc64. */
-    if (!ARCH_IS_X86(def->os.arch) &&
-        !ARCH_IS_S390(def->os.arch) &&
-        !ARCH_IS_PPC64(def->os.arch) &&
-        def->virtType != VIR_DOMAIN_VIRT_QEMU)
-        return 0;
-
-    model = virQEMUCapsGetMachineDefaultCPU(qemuCaps, def->os.machine, def->virtType);
-    if (!model) {
-        VIR_DEBUG("Unknown default CPU model for domain '%s'", def->name);
-        return 0;
-    }
-
-    if (STREQ(model, "host") && def->virtType != VIR_DOMAIN_VIRT_KVM) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("QEMU reports invalid default CPU model \"host\" "
-                         "for non-kvm domain virt type"));
-        return -1;
-    }
-
-    if (!def->cpu)
-        def->cpu = virCPUDefNew();
-
-    def->cpu->type = VIR_CPU_TYPE_GUEST;
-
-    if (STREQ(model, "host")) {
-        if (ARCH_IS_S390(def->os.arch) &&
-            virQEMUCapsIsCPUModeSupported(qemuCaps, hostarch, def->virtType,
-                                          VIR_CPU_MODE_HOST_MODEL,
-                                          def->os.machine)) {
-            def->cpu->mode = VIR_CPU_MODE_HOST_MODEL;
-        } else {
-            def->cpu->mode = VIR_CPU_MODE_HOST_PASSTHROUGH;
-        }
-
-        VIR_DEBUG("Setting default CPU mode for domain '%s' to %s",
-                  def->name, virCPUModeTypeToString(def->cpu->mode));
-    } else {
-        /* We need to turn off all CPU checks when the domain is started
-         * because the default CPU (e.g., qemu64) may not be runnable on any
-         * host. QEMU will just disable the unavailable features and we will
-         * update the CPU definition accordingly and set check to FULL when
-         * starting the domain. */
-        def->cpu->check = VIR_CPU_CHECK_NONE;
-        def->cpu->mode = VIR_CPU_MODE_CUSTOM;
-        def->cpu->match = VIR_CPU_MATCH_EXACT;
-        def->cpu->fallback = VIR_CPU_FALLBACK_FORBID;
-        def->cpu->model = g_strdup(model);
-
-        VIR_DEBUG("Setting default CPU model for domain '%s' to %s",
-                  def->name, model);
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefCPUPostParse(virDomainDef *def,
-                          virQEMUCaps *qemuCaps)
-{
-    virCPUFeatureDef *sveFeature = NULL;
-    bool sveVectorLengthsProvided = false;
-    size_t i;
-
-    if (!def->cpu)
-        return 0;
-
-    for (i = 0; i < def->cpu->nfeatures; i++) {
-        virCPUFeatureDef *feature = &def->cpu->features[i];
-
-        if (STREQ(feature->name, "sve")) {
-            sveFeature = feature;
-        } else if (STRPREFIX(feature->name, "sve")) {
-            sveVectorLengthsProvided = true;
+            /* If neither USB3 nor USB2 are available, do not add
+             * the controller at all */
+            return VIR_DOMAIN_CONTROLLER_MODEL_USB_NONE;
         }
     }
 
-    if (sveVectorLengthsProvided) {
-        if (sveFeature) {
-            if (sveFeature->policy == VIR_CPU_FEATURE_DISABLE ||
-                sveFeature->policy == VIR_CPU_FEATURE_FORBID) {
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("SVE disabled, but SVE vector lengths provided"));
-                return -1;
-            } else {
-                sveFeature->policy = VIR_CPU_FEATURE_REQUIRE;
-            }
-        } else {
-            VIR_RESIZE_N(def->cpu->features, def->cpu->nfeatures_max,
-                         def->cpu->nfeatures, 1);
-
-            def->cpu->features[def->cpu->nfeatures].name = g_strdup("sve");
-            def->cpu->features[def->cpu->nfeatures].policy = VIR_CPU_FEATURE_REQUIRE;
-
-            def->cpu->nfeatures++;
-        }
-    }
-
-    /* Running domains were either started before QEMU_CAPS_CPU_MIGRATABLE was
-     * introduced and thus we can't rely on it or they already have the
-     * migratable default set. */
-    if (def->id == -1 &&
-        qemuCaps &&
-        def->cpu->mode == VIR_CPU_MODE_HOST_PASSTHROUGH &&
-        def->cpu->migratable == VIR_TRISTATE_SWITCH_ABSENT) {
-        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_CPU_MIGRATABLE))
-            def->cpu->migratable = VIR_TRISTATE_SWITCH_ON;
-        else if (ARCH_IS_X86(def->os.arch))
-            def->cpu->migratable = VIR_TRISTATE_SWITCH_OFF;
-    }
-
-    /* Nothing to be done if only CPU topology is specified. */
-    if (def->cpu->mode == VIR_CPU_MODE_CUSTOM &&
-        !def->cpu->model)
-        return 0;
-
-    if (def->cpu->check != VIR_CPU_CHECK_DEFAULT)
-        return 0;
-
-    switch ((virCPUMode) def->cpu->mode) {
-    case VIR_CPU_MODE_HOST_PASSTHROUGH:
-    case VIR_CPU_MODE_MAXIMUM:
-        def->cpu->check = VIR_CPU_CHECK_NONE;
-        break;
-
-    case VIR_CPU_MODE_HOST_MODEL:
-        def->cpu->check = VIR_CPU_CHECK_PARTIAL;
-        break;
-
-    case VIR_CPU_MODE_CUSTOM:
-        /* Custom CPUs in TCG mode are not compared to host CPU by default. */
-        if (def->virtType == VIR_DOMAIN_VIRT_QEMU)
-            def->cpu->check = VIR_CPU_CHECK_NONE;
-        else
-            def->cpu->check = VIR_CPU_CHECK_PARTIAL;
-        break;
-
-    case VIR_CPU_MODE_LAST:
-        break;
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefTsegPostParse(virDomainDef *def,
-                           virQEMUCaps *qemuCaps)
-{
-    if (def->features[VIR_DOMAIN_FEATURE_SMM] != VIR_TRISTATE_SWITCH_ON)
-        return 0;
-
-    if (!def->tseg_specified)
-        return 0;
-
-    if (!qemuDomainIsQ35(def)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("SMM TSEG is only supported with q35 machine type"));
-        return -1;
-    }
-
-    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_MCH_EXTENDED_TSEG_MBYTES)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting TSEG size is not supported with this QEMU binary"));
-        return -1;
-    }
-
-    if (def->tseg_size & ((1 << 20) - 1)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("SMM TSEG size must be divisible by 1 MiB"));
-        return -1;
-    }
-
-    return 0;
+    return VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT;
 }
 
 
@@ -4834,88 +4496,6 @@ qemuDomainDefNumaCPUsRectify(virDomainDef *def,
         if (virDomainNumaFillCPUsInNode(def->numa, 0, vcpusMax) < 0)
             return -1;
     }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefNumaCPUsPostParse(virDomainDef *def,
-                               virQEMUCaps *qemuCaps)
-{
-    return qemuDomainDefNumaCPUsRectify(def, qemuCaps);
-}
-
-
-static int
-qemuDomainDefPostParseBasic(virDomainDef *def,
-                            void *opaque G_GNUC_UNUSED)
-{
-    virQEMUDriver *driver = opaque;
-
-    /* check for emulator and create a default one if needed */
-    if (!def->emulator) {
-        if (!(def->emulator = virQEMUCapsGetDefaultEmulator(
-                  driver->hostarch, def->os.arch))) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("No emulator found for arch '%1$s'"),
-                           virArchToString(def->os.arch));
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefPostParse(virDomainDef *def,
-                       unsigned int parseFlags,
-                       void *opaque,
-                       void *parseOpaque)
-{
-    virQEMUDriver *driver = opaque;
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
-    virQEMUCaps *qemuCaps = parseOpaque;
-
-    /* Note that qemuCaps may be NULL when this function is called. This
-     * function shall not fail in that case. It will be re-run on VM startup
-     * with the capabilities populated.
-     */
-    if (!qemuCaps)
-        return 1;
-
-    if (qemuDomainDefMachinePostParse(def, qemuCaps) < 0)
-        return -1;
-
-    if (qemuDomainDefBootPostParse(def, driver, parseFlags) < 0)
-        return -1;
-
-    if (qemuDomainDefAddDefaultDevices(driver, def, qemuCaps) < 0)
-        return -1;
-
-    if (qemuDomainDefSetDefaultCPU(def, driver->hostarch, qemuCaps) < 0)
-        return -1;
-
-    qemuDomainDefEnableDefaultFeatures(def, qemuCaps);
-
-    if (qemuDomainRecheckInternalPaths(def, cfg, parseFlags) < 0)
-        return -1;
-
-    if (qemuSecurityVerify(driver->securityManager, def) < 0)
-        return -1;
-
-    if (qemuDomainDefVcpusPostParse(def) < 0)
-        return -1;
-
-    if (qemuDomainDefCPUPostParse(def, qemuCaps) < 0)
-        return -1;
-
-    if (qemuDomainDefTsegPostParse(def, qemuCaps) < 0)
-        return -1;
-
-    if (qemuDomainDefNumaCPUsPostParse(def, qemuCaps) < 0)
-        return -1;
 
     return 0;
 }
@@ -5022,15 +4602,13 @@ qemuDomainValidateStorageSource(virStorageSource *src,
 
     if (src->format == VIR_STORAGE_FILE_DIR) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("'directory' storage format is not directly supported by QEMU, "
-                         "use 'dir' disk type instead"));
+                       _("'directory' storage format is not directly supported by QEMU, use 'dir' disk type instead"));
         return -1;
     }
 
     if (src->format == VIR_STORAGE_FILE_ISO) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("storage format 'iso' is not directly supported by QEMU, "
-                         "use 'raw' instead"));
+                       _("storage format 'iso' is not directly supported by QEMU, use 'raw' instead"));
         return -1;
     }
 
@@ -5038,8 +4616,7 @@ qemuDomainValidateStorageSource(virStorageSource *src,
         actualType != VIR_STORAGE_TYPE_VOLUME &&
         actualType != VIR_STORAGE_TYPE_DIR) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("storage format 'fat' is supported only with 'dir' "
-                         "storage type"));
+                       _("storage format 'fat' is supported only with 'dir' storage type"));
         return -1;
     }
 
@@ -5056,6 +4633,13 @@ qemuDomainValidateStorageSource(virStorageSource *src,
                            _("virtual FAT storage can't be accessed in read-write mode"));
             return -1;
         }
+    }
+
+    if (actualType == VIR_STORAGE_TYPE_NVME &&
+        !virQEMUCapsGet(qemuCaps, QEMU_CAPS_DRIVE_NVME)) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("NVMe disks are not supported with this QEMU binary"));
+        return -1;
     }
 
     if (src->pr &&
@@ -5130,34 +4714,54 @@ qemuDomainValidateStorageSource(virStorageSource *src,
         return -1;
     }
 
-    /* TFTP protocol is not supported since QEMU 2.8.0 */
-    if (actualType == VIR_STORAGE_TYPE_NETWORK &&
-        src->protocol == VIR_STORAGE_NET_PROTOCOL_TFTP) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("'tftp' protocol is not supported with this QEMU binary"));
-        return -1;
-    }
+    if (actualType == VIR_STORAGE_TYPE_NETWORK) {
+        switch ((virStorageNetProtocol) src->protocol) {
+        case VIR_STORAGE_NET_PROTOCOL_GLUSTER:
+        case VIR_STORAGE_NET_PROTOCOL_HTTP:
+        case VIR_STORAGE_NET_PROTOCOL_HTTPS:
+        case VIR_STORAGE_NET_PROTOCOL_FTP:
+        case VIR_STORAGE_NET_PROTOCOL_FTPS:
+        case VIR_STORAGE_NET_PROTOCOL_ISCSI:
+        case VIR_STORAGE_NET_PROTOCOL_NBD:
+        case VIR_STORAGE_NET_PROTOCOL_RBD:
+        case VIR_STORAGE_NET_PROTOCOL_SSH:
+        case VIR_STORAGE_NET_PROTOCOL_SHEEPDOG:
+            break;
 
-    if (actualType == VIR_STORAGE_TYPE_NETWORK &&
-        src->protocol == VIR_STORAGE_NET_PROTOCOL_NFS) {
-        /* NFS protocol must have exactly one host */
-        if (src->nhosts != 1) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("'nfs' protocol requires the usage of exactly one host"));
+        case VIR_STORAGE_NET_PROTOCOL_NFS:
+            /* NFS protocol must have exactly one host */
+            if (src->nhosts != 1) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("'nfs' protocol requires the usage of exactly one host"));
+                return -1;
+            }
+
+            /* NFS can only use a TCP protocol */
+            if (src->hosts[0].transport != VIR_STORAGE_NET_HOST_TRANS_TCP) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("'nfs' host must use TCP protocol"));
+                return -1;
+            }
+
+            /* NFS host cannot have a port */
+            if (src->hosts[0].port != 0) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("port cannot be specified in 'nfs' protocol host"));
+                return -1;
+            }
+            break;
+
+        /* TFTP protocol is not supported since QEMU 2.8.0 */
+        case VIR_STORAGE_NET_PROTOCOL_VXHS:
+        case VIR_STORAGE_NET_PROTOCOL_TFTP:
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("storage protocol '%1$s' is not supported by this QEMU"),
+                           virStorageNetProtocolTypeToString(src->protocol));
             return -1;
-        }
 
-        /* NFS can only use a TCP protocol */
-        if (src->hosts[0].transport != VIR_STORAGE_NET_HOST_TRANS_TCP) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("'nfs' host must use TCP protocol"));
-            return -1;
-        }
-
-        /* NFS host cannot have a port */
-        if (src->hosts[0].port != 0) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("port cannot be specified in 'nfs' protocol host"));
+        case VIR_STORAGE_NET_PROTOCOL_NONE:
+        case VIR_STORAGE_NET_PROTOCOL_LAST:
+            virReportEnumRangeError(virStorageNetProtocol, src->protocol);
             return -1;
         }
     }
@@ -5288,58 +4892,24 @@ qemuDomainValidateStorageSource(virStorageSource *src,
 }
 
 
-/**
- * qemuDomainDefaultNetModel:
- * @def: domain definition
- * @qemuCaps: qemu capabilities
- *
- * Returns the default network model for a given domain. Note that if @qemuCaps
- * is NULL this function may return NULL if the default model depends on the
- * capabilities.
- */
-static int
-qemuDomainDefaultNetModel(const virDomainDef *def,
-                          virQEMUCaps *qemuCaps)
+static bool
+qemuDomainChrMatchDefaultPath(const char *prefix,
+                              const char *infix,
+                              const char *target,
+                              const char *path)
 {
-    if (ARCH_IS_S390(def->os.arch))
-        return VIR_DOMAIN_NET_MODEL_VIRTIO;
+    g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
+    g_autofree char *regexp = NULL;
 
-    if (def->os.arch == VIR_ARCH_ARMV6L ||
-        def->os.arch == VIR_ARCH_ARMV7L ||
-        def->os.arch == VIR_ARCH_AARCH64) {
-        if (STREQ(def->os.machine, "versatilepb"))
-            return VIR_DOMAIN_NET_MODEL_SMC91C111;
+    virBufferEscapeRegex(&buf, "^%s", prefix);
+    if (infix)
+        virBufferEscapeRegex(&buf, "%s", infix);
+    virBufferAddLit(&buf, "/(target/)?(([^/]+\\.)|(domain-[^/]+/)|([0-9]+-[^/]+/))");
+    virBufferEscapeRegex(&buf, "%s$", target);
 
-        if (qemuDomainIsARMVirt(def))
-            return VIR_DOMAIN_NET_MODEL_VIRTIO;
+    regexp = virBufferContentAndReset(&buf);
 
-        /* Incomplete. vexpress (and a few others) use this, but not all
-         * arm boards */
-        return VIR_DOMAIN_NET_MODEL_LAN9118;
-    }
-
-    /* virtio is a sensible default for RISC-V virt guests */
-    if (qemuDomainIsRISCVVirt(def))
-        return VIR_DOMAIN_NET_MODEL_VIRTIO;
-
-    /* In all other cases the model depends on the capabilities. If they were
-     * not provided don't report any default. */
-    if (!qemuCaps)
-        return VIR_DOMAIN_NET_MODEL_UNKNOWN;
-
-    /* Try several network devices in turn; each of these devices is
-     * less likely be supported out-of-the-box by the guest operating
-     * system than the previous one */
-    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_RTL8139))
-        return VIR_DOMAIN_NET_MODEL_RTL8139;
-    else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_E1000))
-        return VIR_DOMAIN_NET_MODEL_E1000;
-    else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VIRTIO_NET))
-        return VIR_DOMAIN_NET_MODEL_VIRTIO;
-
-    /* We've had no luck detecting support for any network device,
-     * but we have to return something: might as well be rtl8139 */
-    return VIR_DOMAIN_NET_MODEL_RTL8139;
+    return virStringMatch(path, regexp);
 }
 
 
@@ -5347,27 +4917,31 @@ qemuDomainDefaultNetModel(const virDomainDef *def,
  * Clear auto generated unix socket paths:
  *
  * libvirt 1.2.18 and older:
- *     {cfg->channelTargetDir}/{dom-name}.{target-name}
+ *     {cfg->channelTargetDir}/target/{dom-name}.{target-name}
  *
  * libvirt 1.2.19 - 1.3.2:
- *     {cfg->channelTargetDir}/domain-{dom-name}/{target-name}
+ *     {cfg->channelTargetDir}/target/domain-{dom-name}/{target-name}
  *
- * libvirt 1.3.3 and newer:
- *     {cfg->channelTargetDir}/domain-{dom-id}-{short-dom-name}/{target-name}
+ * libvirt 1.3.3 - 9.7.0:
+ *     {cfg->channelTargetDir}/target/domain-{dom-id}-{short-dom-name}/{target-name}
+ *
+ * libvirt 9.7.0 and newer:
+ *     {cfg->channelTargetDir}/{dom-id}-{short-dom-name}/{target-name}
  *
  * The unix socket path was stored in config XML until libvirt 1.3.0.
  * If someone specifies the same path as we generate, they shouldn't do it.
  *
  * This function clears the path for migration as well, so we need to clear
  * the path even if we are not storing it in the XML.
+ *
+ * Please note, as of libvirt 9.7.0 the channelTargetDir is no longer derived
+ * from cfg->libDir but rather cfg->stateDir.
  */
-static void
+void
 qemuDomainChrDefDropDefaultPath(virDomainChrDef *chr,
                                 virQEMUDriver *driver)
 {
     g_autoptr(virQEMUDriverConfig) cfg = NULL;
-    g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
-    g_autofree char *regexp = NULL;
 
     if (chr->deviceType != VIR_DOMAIN_CHR_DEVICE_TYPE_CHANNEL ||
         chr->targetType != VIR_DOMAIN_CHR_CHANNEL_TARGET_TYPE_VIRTIO ||
@@ -5378,633 +4952,35 @@ qemuDomainChrDefDropDefaultPath(virDomainChrDef *chr,
 
     cfg = virQEMUDriverGetConfig(driver);
 
-    virBufferEscapeRegex(&buf, "^%s", cfg->channelTargetDir);
-    virBufferAddLit(&buf, "/([^/]+\\.)|(domain-[^/]+/)");
-    virBufferEscapeRegex(&buf, "%s$", chr->target.name);
-
-    regexp = virBufferContentAndReset(&buf);
-
-    if (virStringMatch(chr->source->data.nix.path, regexp))
+    if (qemuDomainChrMatchDefaultPath(cfg->channelTargetDir,
+                                      NULL,
+                                      chr->target.name,
+                                      chr->source->data.nix.path)) {
         VIR_FREE(chr->source->data.nix.path);
-}
-
-
-static int
-qemuDomainShmemDefPostParse(virDomainShmemDef *shm)
-{
-    /* This was the default since the introduction of this device. */
-    if (shm->model != VIR_DOMAIN_SHMEM_MODEL_IVSHMEM_DOORBELL && !shm->size)
-        shm->size = 4 << 20;
-
-    /* Nothing more to check/change for IVSHMEM */
-    if (shm->model == VIR_DOMAIN_SHMEM_MODEL_IVSHMEM)
-        return 0;
-
-    if (!shm->server.enabled) {
-        if (shm->model == VIR_DOMAIN_SHMEM_MODEL_IVSHMEM_DOORBELL) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("shmem model '%1$s' is supported only with server option enabled"),
-                           virDomainShmemModelTypeToString(shm->model));
-            return -1;
-        }
-
-        if (shm->msi.enabled) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("shmem model '%1$s' doesn't support msi"),
-                           virDomainShmemModelTypeToString(shm->model));
-        }
-    } else {
-        if (shm->model == VIR_DOMAIN_SHMEM_MODEL_IVSHMEM_PLAIN) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("shmem model '%1$s' is supported only with server option disabled"),
-                           virDomainShmemModelTypeToString(shm->model));
-            return -1;
-        }
-
-        if (shm->size) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("shmem model '%1$s' does not support size setting"),
-                           virDomainShmemModelTypeToString(shm->model));
-            return -1;
-        }
-        shm->msi.enabled = true;
-        if (!shm->msi.ioeventfd)
-            shm->msi.ioeventfd = VIR_TRISTATE_SWITCH_ON;
+        return;
     }
 
-    return 0;
-}
-
-
-#define QEMU_USB_XHCI_MAXPORTS 15
-
-
-static int
-qemuDomainControllerDefPostParse(virDomainControllerDef *cont,
-                                 const virDomainDef *def,
-                                 virQEMUCaps *qemuCaps,
-                                 unsigned int parseFlags)
-{
-    switch ((virDomainControllerType)cont->type) {
-    case VIR_DOMAIN_CONTROLLER_TYPE_SCSI:
-        /* Set the default SCSI controller model if not already set */
-        if (qemuDomainSetSCSIControllerModel(def, cont, qemuCaps) < 0)
-            return -1;
-        break;
-
-    case VIR_DOMAIN_CONTROLLER_TYPE_USB:
-        if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_DEFAULT && qemuCaps) {
-            /* Pick a suitable default model for the USB controller if none
-             * has been selected by the user and we have the qemuCaps for
-             * figuring out which controllers are supported.
-             *
-             * We rely on device availability instead of setting the model
-             * unconditionally because, for some machine types, there's a
-             * chance we will get away with using the legacy USB controller
-             * when the relevant device is not available.
-             *
-             * See qemuBuildControllerDevCommandLine() */
-
-            /* Default USB controller is piix3-uhci if available. */
-            if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_PIIX3_USB_UHCI))
-                cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_PIIX3_UHCI;
-
-            if (ARCH_IS_S390(def->os.arch)) {
-                if (cont->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
-                    /* set the default USB model to none for s390 unless an
-                     * address is found */
-                    cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_NONE;
-                }
-            } else if (ARCH_IS_PPC64(def->os.arch)) {
-                /* To not break migration we need to set default USB controller
-                 * for ppc64 to pci-ohci if we cannot change ABI of the VM.
-                 * The nec-usb-xhci or qemu-xhci controller is used as default
-                 * only for newly defined domains or devices. */
-                if ((parseFlags & VIR_DOMAIN_DEF_PARSE_ABI_UPDATE) &&
-                    virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI)) {
-                    cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
-                } else if ((parseFlags & VIR_DOMAIN_DEF_PARSE_ABI_UPDATE) &&
-                    virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI)) {
-                    cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
-                } else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_PCI_OHCI)) {
-                    cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_PCI_OHCI;
-                } else {
-                    /* Explicitly fallback to legacy USB controller for PPC64. */
-                    cont->model = -1;
-                }
-            } else if (def->os.arch == VIR_ARCH_AARCH64) {
-                if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_QEMU_XHCI))
-                    cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI;
-                else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_NEC_USB_XHCI))
-                    cont->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI;
-            }
-        }
-        /* forbid usb model 'qusb1' and 'qusb2' in this kind of hyperviosr */
-        if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_QUSB1 ||
-            cont->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_QUSB2) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("USB controller model type 'qusb1' or 'qusb2' is not supported in %1$s"),
-                           virDomainVirtTypeToString(def->virtType));
-            return -1;
-        }
-        if ((cont->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI ||
-             cont->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_QEMU_XHCI) &&
-            cont->opts.usbopts.ports > QEMU_USB_XHCI_MAXPORTS) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("'%1$s' controller only supports up to '%2$u' ports"),
-                           virDomainControllerModelUSBTypeToString(cont->model),
-                           QEMU_USB_XHCI_MAXPORTS);
-            return -1;
-        }
-        break;
-
-    case VIR_DOMAIN_CONTROLLER_TYPE_PCI:
-
-        /* pSeries guests can have multiple pci-root controllers,
-         * but other machine types only support a single one */
-        if (!qemuDomainIsPSeries(def) &&
-            (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT ||
-             cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT) &&
-            cont->idx != 0) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("pci-root and pcie-root controllers "
-                             "should have index 0"));
-            return -1;
-        }
-
-        if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_EXPANDER_BUS &&
-            !qemuDomainIsI440FX(def)) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("pci-expander-bus controllers are only supported "
-                             "on 440fx-based machinetypes"));
-            return -1;
-        }
-        if (cont->model == VIR_DOMAIN_CONTROLLER_MODEL_PCIE_EXPANDER_BUS &&
-            !(qemuDomainIsQ35(def) || qemuDomainIsARMVirt(def))) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("pcie-expander-bus controllers are not supported "
-                             "with this machine type"));
-            return -1;
-        }
-
-        /* if a PCI expander bus or pci-root on Pseries has a NUMA node
-         * set, make sure that NUMA node is configured in the guest
-         * <cpu><numa> array. NUMA cell id's in this array are numbered
-         * from 0 .. size-1.
-         */
-        if (cont->opts.pciopts.numaNode >= 0 &&
-            cont->opts.pciopts.numaNode >=
-            (int)virDomainNumaGetNodeCount(def->numa)) {
-            virReportError(VIR_ERR_XML_ERROR,
-                           _("%1$s with index %2$d is configured for a NUMA node (%3$d) not present in the domain's <cpu><numa> array (%4$zu)"),
-                           virDomainControllerModelPCITypeToString(cont->model),
-                           cont->idx, cont->opts.pciopts.numaNode,
-                           virDomainNumaGetNodeCount(def->numa));
-            return -1;
-        }
-        break;
-
-    case VIR_DOMAIN_CONTROLLER_TYPE_SATA:
-    case VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL:
-    case VIR_DOMAIN_CONTROLLER_TYPE_CCID:
-    case VIR_DOMAIN_CONTROLLER_TYPE_IDE:
-    case VIR_DOMAIN_CONTROLLER_TYPE_FDC:
-    case VIR_DOMAIN_CONTROLLER_TYPE_XENBUS:
-    case VIR_DOMAIN_CONTROLLER_TYPE_ISA:
-    case VIR_DOMAIN_CONTROLLER_TYPE_LAST:
-        break;
+    /* Previously, channelTargetDir was derived from cfg->libdir, or
+     * cfg->configBaseDir even. Try them too. */
+    if (qemuDomainChrMatchDefaultPath(cfg->libDir,
+                                      "/channel",
+                                      chr->target.name,
+                                      chr->source->data.nix.path)) {
+        VIR_FREE(chr->source->data.nix.path);
+        return;
     }
 
-    return 0;
-}
-
-static int
-qemuDomainChrDefPostParse(virDomainChrDef *chr,
-                          const virDomainDef *def,
-                          virQEMUDriver *driver,
-                          unsigned int parseFlags)
-{
-    /* Historically, isa-serial and the default matched, so in order to
-     * maintain backwards compatibility we map them here. The actual default
-     * will be picked below based on the architecture and machine type. */
-    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
-        chr->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA) {
-        chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE;
+    if (qemuDomainChrMatchDefaultPath(cfg->configBaseDir,
+                                      "/qemu/channel",
+                                      chr->target.name,
+                                      chr->source->data.nix.path)) {
+        VIR_FREE(chr->source->data.nix.path);
+        return;
     }
-
-    /* Set the default serial type */
-    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
-        chr->targetType == VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE) {
-        if (ARCH_IS_X86(def->os.arch)) {
-            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA;
-        } else if (qemuDomainIsPSeries(def)) {
-            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO;
-        } else if (qemuDomainIsARMVirt(def) || qemuDomainIsRISCVVirt(def)) {
-            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM;
-        } else if (ARCH_IS_S390(def->os.arch)) {
-            chr->targetType = VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP;
-        }
-    }
-
-    /* Set the default target model */
-    if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
-        chr->targetModel == VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_NONE) {
-        switch ((virDomainChrSerialTargetType)chr->targetType) {
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA:
-            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_SERIAL;
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_USB:
-            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_USB_SERIAL;
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_PCI:
-            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PCI_SERIAL;
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SPAPR_VIO:
-            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SPAPR_VTY;
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SYSTEM:
-            if (qemuDomainIsARMVirt(def)) {
-                chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_PL011;
-            } else if (qemuDomainIsRISCVVirt(def)) {
-                chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_16550A;
-            }
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_SCLP:
-            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_SCLPCONSOLE;
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_ISA_DEBUG:
-            chr->targetModel = VIR_DOMAIN_CHR_SERIAL_TARGET_MODEL_ISA_DEBUGCON;
-            break;
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE:
-        case VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_LAST:
-            /* Nothing to do */
-            break;
-        }
-    }
-
-    /* clear auto generated unix socket path for inactive definitions */
-    if (parseFlags & VIR_DOMAIN_DEF_PARSE_INACTIVE) {
-        qemuDomainChrDefDropDefaultPath(chr, driver);
-
-        /* For UNIX chardev if no path is provided we generate one.
-         * This also implies that the mode is 'bind'. */
-        if (chr->source &&
-            chr->source->type == VIR_DOMAIN_CHR_TYPE_UNIX &&
-            !chr->source->data.nix.path) {
-            chr->source->data.nix.listen = true;
-        }
-    }
-
-    return 0;
-}
-
-
-/**
- * qemuDomainDeviceDiskDefPostParseRestoreSecAlias:
- *
- * Re-generate aliases for objects related to the storage source if they
- * were not stored in the status XML by an older libvirt.
- *
- * Note that qemuCaps should be always present for a status XML.
- */
-static int
-qemuDomainDeviceDiskDefPostParseRestoreSecAlias(virDomainDiskDef *disk,
-                                                unsigned int parseFlags)
-{
-    qemuDomainStorageSourcePrivate *priv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
-    bool restoreAuthSecret = false;
-    bool restoreEncSecret = false;
-    g_autofree char *authalias = NULL;
-    g_autofree char *encalias = NULL;
-
-    if (!(parseFlags & VIR_DOMAIN_DEF_PARSE_STATUS) ||
-        virStorageSourceIsEmpty(disk->src))
-        return 0;
-
-    /* network storage authentication secret */
-    if (disk->src->auth &&
-        (!priv || !priv->secinfo)) {
-
-        /* only RBD and iSCSI (with capability) were supporting authentication
-         * using secret object at the time we did not format the alias into the
-         * status XML */
-        if (virStorageSourceGetActualType(disk->src) == VIR_STORAGE_TYPE_NETWORK &&
-            (disk->src->protocol == VIR_STORAGE_NET_PROTOCOL_RBD ||
-             disk->src->protocol == VIR_STORAGE_NET_PROTOCOL_ISCSI))
-            restoreAuthSecret = true;
-    }
-
-    /* disk encryption secret */
-    if (disk->src->encryption &&
-        disk->src->encryption->format == VIR_STORAGE_ENCRYPTION_FORMAT_LUKS &&
-        (!priv || !priv->encinfo))
-        restoreEncSecret = true;
-
-    if (!restoreAuthSecret && !restoreEncSecret)
-        return 0;
-
-    if (!priv) {
-        if (!(disk->src->privateData = qemuDomainStorageSourcePrivateNew()))
-            return -1;
-
-        priv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(disk->src);
-    }
-
-    if (restoreAuthSecret) {
-        authalias = g_strdup_printf("%s-secret0", disk->info.alias);
-
-        if (qemuStorageSourcePrivateDataAssignSecinfo(&priv->secinfo, &authalias) < 0)
-            return -1;
-    }
-
-    if (restoreEncSecret) {
-        if (!priv->encinfo) {
-            priv->enccount = 1;
-            priv->encinfo = g_new0(qemuDomainSecretInfo *, 1);
-        }
-
-        encalias = g_strdup_printf("%s-luks-secret0", disk->info.alias);
-
-        if (qemuStorageSourcePrivateDataAssignSecinfo(&priv->encinfo[0], &encalias) < 0)
-            return -1;
-    }
-
-    return 0;
 }
 
 
 int
-qemuDomainDeviceDiskDefPostParse(virDomainDiskDef *disk,
-                                 unsigned int parseFlags)
-{
-    virStorageSource *n;
-
-    /* set default disk types and drivers */
-    if (!virDomainDiskGetDriver(disk))
-        virDomainDiskSetDriver(disk, "qemu");
-
-    /* default disk format for drives */
-    if (virDomainDiskGetFormat(disk) == VIR_STORAGE_FILE_NONE &&
-        virDomainDiskGetType(disk) != VIR_STORAGE_TYPE_VOLUME)
-        virDomainDiskSetFormat(disk, VIR_STORAGE_FILE_RAW);
-
-    /* default disk format for mirrored drive */
-    if (disk->mirror &&
-        disk->mirror->format == VIR_STORAGE_FILE_NONE)
-        disk->mirror->format = VIR_STORAGE_FILE_RAW;
-
-    /* default disk encryption engine */
-    for (n = disk->src; virStorageSourceIsBacking(n); n = n->backingStore) {
-        if (n->encryption && n->encryption->engine == VIR_STORAGE_ENCRYPTION_ENGINE_DEFAULT)
-            n->encryption->engine = VIR_STORAGE_ENCRYPTION_ENGINE_QEMU;
-    }
-
-    if (qemuDomainDeviceDiskDefPostParseRestoreSecAlias(disk, parseFlags) < 0)
-        return -1;
-
-    /* regenerate TLS alias for old status XMLs */
-    if (parseFlags & VIR_DOMAIN_DEF_PARSE_STATUS &&
-        disk->src->haveTLS == VIR_TRISTATE_BOOL_YES &&
-        !disk->src->tlsAlias &&
-        !(disk->src->tlsAlias = qemuAliasTLSObjFromSrcAlias(disk->info.alias)))
-        return -1;
-
-    return 0;
-}
-
-
-static int
-qemuDomainDeviceNetDefPostParse(virDomainNetDef *net,
-                                const virDomainDef *def,
-                                virQEMUCaps *qemuCaps)
-{
-    if (net->type == VIR_DOMAIN_NET_TYPE_VDPA &&
-        !virDomainNetGetModelString(net))
-        net->model = VIR_DOMAIN_NET_MODEL_VIRTIO;
-    else if (net->type != VIR_DOMAIN_NET_TYPE_HOSTDEV &&
-        !virDomainNetGetModelString(net) &&
-        virDomainNetResolveActualType(net) != VIR_DOMAIN_NET_TYPE_HOSTDEV)
-        net->model = qemuDomainDefaultNetModel(def, qemuCaps);
-
-    return 0;
-}
-
-
-static int
-qemuDomainDefaultVideoDevice(const virDomainDef *def,
-                          virQEMUCaps *qemuCaps)
-{
-    if (ARCH_IS_PPC64(def->os.arch))
-        return VIR_DOMAIN_VIDEO_TYPE_VGA;
-    if (qemuDomainIsARMVirt(def) ||
-        qemuDomainIsRISCVVirt(def) ||
-        ARCH_IS_S390(def->os.arch)) {
-        return VIR_DOMAIN_VIDEO_TYPE_VIRTIO;
-    }
-    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_CIRRUS_VGA))
-        return VIR_DOMAIN_VIDEO_TYPE_CIRRUS;
-    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VGA))
-        return VIR_DOMAIN_VIDEO_TYPE_VGA;
-    return VIR_DOMAIN_VIDEO_TYPE_DEFAULT;
-}
-
-
-static int
-qemuDomainDeviceVideoDefPostParse(virDomainVideoDef *video,
-                                  const virDomainDef *def,
-                                  virQEMUCaps *qemuCaps)
-{
-    if (video->type == VIR_DOMAIN_VIDEO_TYPE_DEFAULT)
-        video->type = qemuDomainDefaultVideoDevice(def, qemuCaps);
-
-    if (video->type == VIR_DOMAIN_VIDEO_TYPE_QXL &&
-        !video->vgamem) {
-        video->vgamem = QEMU_QXL_VGAMEM_DEFAULT;
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDevicePanicDefPostParse(virDomainPanicDef *panic,
-                                  const virDomainDef *def)
-{
-    if (panic->model == VIR_DOMAIN_PANIC_MODEL_DEFAULT) {
-        if (qemuDomainIsPSeries(def))
-            panic->model = VIR_DOMAIN_PANIC_MODEL_PSERIES;
-        else if (ARCH_IS_S390(def->os.arch))
-            panic->model = VIR_DOMAIN_PANIC_MODEL_S390;
-        else
-            panic->model = VIR_DOMAIN_PANIC_MODEL_ISA;
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainVsockDefPostParse(virDomainVsockDef *vsock)
-{
-    if (vsock->model == VIR_DOMAIN_VSOCK_MODEL_DEFAULT)
-        vsock->model = VIR_DOMAIN_VSOCK_MODEL_VIRTIO;
-
-    return 0;
-}
-
-
-/**
- * qemuDomainDeviceHostdevDefPostParseRestoreSecAlias:
- *
- * Re-generate aliases for objects related to the storage source if they
- * were not stored in the status XML by an older libvirt.
- *
- * Note that qemuCaps should be always present for a status XML.
- */
-static int
-qemuDomainDeviceHostdevDefPostParseRestoreSecAlias(virDomainHostdevDef *hostdev,
-                                                   unsigned int parseFlags)
-{
-    qemuDomainStorageSourcePrivate *priv;
-    virDomainHostdevSubsysSCSI *scsisrc = &hostdev->source.subsys.u.scsi;
-    virDomainHostdevSubsysSCSIiSCSI *iscsisrc = &scsisrc->u.iscsi;
-    g_autofree char *authalias = NULL;
-
-    if (!(parseFlags & VIR_DOMAIN_DEF_PARSE_STATUS))
-        return 0;
-
-    if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS ||
-        hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI ||
-        scsisrc->protocol != VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_ISCSI ||
-        !iscsisrc->src->auth)
-        return 0;
-
-    if (!(priv = qemuDomainStorageSourcePrivateFetch(iscsisrc->src)))
-        return -1;
-
-    if (priv->secinfo)
-        return 0;
-
-    authalias = g_strdup_printf("%s-secret0", hostdev->info->alias);
-
-    if (qemuStorageSourcePrivateDataAssignSecinfo(&priv->secinfo, &authalias) < 0)
-        return -1;
-
-    return 0;
-}
-
-
-/**
- * qemuDomainDeviceHostdevDefPostParseRestoreBackendAlias:
- *
- * Re-generate backend alias if it wasn't stored in the status XML by an older
- * libvirtd.
- *
- * Note that qemuCaps should be always present for a status XML.
- */
-static int
-qemuDomainDeviceHostdevDefPostParseRestoreBackendAlias(virDomainHostdevDef *hostdev,
-                                                       unsigned int parseFlags)
-{
-    virDomainHostdevSubsysSCSI *scsisrc = &hostdev->source.subsys.u.scsi;
-    virStorageSource *src;
-
-    if (!(parseFlags & VIR_DOMAIN_DEF_PARSE_STATUS))
-        return 0;
-
-    if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS ||
-        hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI)
-        return 0;
-
-    switch ((virDomainHostdevSCSIProtocolType) scsisrc->protocol) {
-    case VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_NONE:
-        if (!scsisrc->u.host.src)
-            scsisrc->u.host.src = virStorageSourceNew();
-
-        src = scsisrc->u.host.src;
-        break;
-
-    case VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_ISCSI:
-        src = scsisrc->u.iscsi.src;
-        break;
-
-    case VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_LAST:
-    default:
-        virReportEnumRangeError(virDomainHostdevSCSIProtocolType, scsisrc->protocol);
-        return -1;
-    }
-
-    if (!src->nodestorage)
-        src->nodestorage = g_strdup_printf("libvirt-%s-backend", hostdev->info->alias);
-
-    return 0;
-}
-
-
-static int
-qemuDomainHostdevDefMdevPostParse(virDomainHostdevSubsysMediatedDev *mdevsrc,
-                                  virQEMUCaps *qemuCaps)
-{
-    /* QEMU 2.12 added support for vfio-pci display type, we default to
-     * 'display=off' to stay safe from future changes */
-    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_VFIO_PCI_DISPLAY) &&
-        mdevsrc->model == VIR_MDEV_MODEL_TYPE_VFIO_PCI &&
-        mdevsrc->display == VIR_TRISTATE_SWITCH_ABSENT)
-        mdevsrc->display = VIR_TRISTATE_SWITCH_OFF;
-
-    return 0;
-}
-
-
-static int
-qemuDomainHostdevDefPostParse(virDomainHostdevDef *hostdev,
-                              virQEMUCaps *qemuCaps,
-                              unsigned int parseFlags)
-{
-    virDomainHostdevSubsys *subsys = &hostdev->source.subsys;
-
-    if (qemuDomainDeviceHostdevDefPostParseRestoreSecAlias(hostdev, parseFlags) < 0)
-        return -1;
-
-    if (qemuDomainDeviceHostdevDefPostParseRestoreBackendAlias(hostdev, parseFlags) < 0)
-        return -1;
-
-    if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
-        hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_MDEV &&
-        qemuDomainHostdevDefMdevPostParse(&subsys->u.mdev, qemuCaps) < 0)
-        return -1;
-
-    return 0;
-}
-
-
-static int
-qemuDomainTPMDefPostParse(virDomainTPMDef *tpm,
-                          const virDomainDef *def)
-{
-    if (tpm->model == VIR_DOMAIN_TPM_MODEL_DEFAULT) {
-        if (ARCH_IS_PPC64(def->os.arch))
-            tpm->model = VIR_DOMAIN_TPM_MODEL_SPAPR;
-        else
-            tpm->model = VIR_DOMAIN_TPM_MODEL_TIS;
-    }
-
-    /* TPM 1.2 and 2 are not compatible, so we choose a specific version here */
-    if (tpm->type == VIR_DOMAIN_TPM_TYPE_EMULATOR &&
-        tpm->data.emulator.version == VIR_DOMAIN_TPM_VERSION_DEFAULT) {
-        if (tpm->model == VIR_DOMAIN_TPM_MODEL_SPAPR ||
-            tpm->model == VIR_DOMAIN_TPM_MODEL_CRB ||
-            qemuDomainIsARMVirt(def))
-            tpm->data.emulator.version = VIR_DOMAIN_TPM_VERSION_2_0;
-        else
-            tpm->data.emulator.version = VIR_DOMAIN_TPM_VERSION_1_2;
-    }
-
-    return 0;
-}
-
-
-static int
 qemuDomainNVDimmAlignSizePseries(virDomainMemoryDef *mem)
 {
     /* For NVDIMMs in ppc64 in we want to align down the guest
@@ -6022,148 +4998,20 @@ qemuDomainNVDimmAlignSizePseries(virDomainMemoryDef *mem)
      * target_size = AlignDown(target_size - label_size) + label_size
      */
     unsigned long long ppc64AlignSize =  256 * 1024;
-    unsigned long long guestArea = mem->size - mem->labelsize;
+    unsigned long long guestArea = mem->size - mem->target.nvdimm.labelsize;
 
     /* Align down guestArea. We can't align down if guestArea is
      * smaller than the 256MiB alignment. */
     if (guestArea < ppc64AlignSize) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("minimum target size for the NVDIMM "
-                         "must be 256MB plus the label size"));
+                       _("minimum target size for the NVDIMM must be 256MB plus the label size"));
         return -1;
     }
 
     guestArea = (guestArea/ppc64AlignSize) * ppc64AlignSize;
-    mem->size = guestArea + mem->labelsize;
+    mem->size = guestArea + mem->target.nvdimm.labelsize;
 
     return 0;
-}
-
-
-static int
-qemuDomainMemoryDefPostParse(virDomainMemoryDef *mem, virArch arch,
-                             unsigned int parseFlags)
-{
-    /* Memory alignment can't be done for migration or snapshot
-     * scenarios. This logic was defined by commit c7d7ba85a624.
-     *
-     * There is no easy way to replicate at this point the same conditions
-     * used to call qemuDomainAlignMemorySizes(), which means checking if
-     * we're not migrating and not in a snapshot.
-     *
-     * We can use the PARSE_ABI_UPDATE flag, which is more strict -
-     * existing guests will not activate the flag to avoid breaking
-     * boot ABI. This means that any alignment done here will be replicated
-     * later on by qemuDomainAlignMemorySizes() to contemplate existing
-     * guests as well. */
-    if (parseFlags & VIR_DOMAIN_DEF_PARSE_ABI_UPDATE) {
-        if (ARCH_IS_PPC64(arch)) {
-            unsigned long long ppc64MemModuleAlign = 256 * 1024;
-
-            if (mem->model == VIR_DOMAIN_MEMORY_MODEL_NVDIMM) {
-                if (qemuDomainNVDimmAlignSizePseries(mem) < 0)
-                    return -1;
-            } else {
-                mem->size = VIR_ROUND_UP(mem->size, ppc64MemModuleAlign);
-            }
-        }
-    }
-
-    return 0;
-}
-
-
-static int
-qemuDomainDeviceDefPostParse(virDomainDeviceDef *dev,
-                             const virDomainDef *def,
-                             unsigned int parseFlags,
-                             void *opaque,
-                             void *parseOpaque)
-{
-    virQEMUDriver *driver = opaque;
-    /* Note that qemuCaps may be NULL when this function is called. This
-     * function shall not fail in that case. It will be re-run on VM startup
-     * with the capabilities populated. */
-    virQEMUCaps *qemuCaps = parseOpaque;
-    int ret = -1;
-
-    switch ((virDomainDeviceType) dev->type) {
-    case VIR_DOMAIN_DEVICE_NET:
-        ret = qemuDomainDeviceNetDefPostParse(dev->data.net, def, qemuCaps);
-        break;
-
-    case VIR_DOMAIN_DEVICE_DISK:
-        ret = qemuDomainDeviceDiskDefPostParse(dev->data.disk, parseFlags);
-        break;
-
-    case VIR_DOMAIN_DEVICE_VIDEO:
-        ret = qemuDomainDeviceVideoDefPostParse(dev->data.video, def, qemuCaps);
-        break;
-
-    case VIR_DOMAIN_DEVICE_PANIC:
-        ret = qemuDomainDevicePanicDefPostParse(dev->data.panic, def);
-        break;
-
-    case VIR_DOMAIN_DEVICE_CONTROLLER:
-        ret = qemuDomainControllerDefPostParse(dev->data.controller, def,
-                                               qemuCaps, parseFlags);
-        break;
-
-    case VIR_DOMAIN_DEVICE_SHMEM:
-        ret = qemuDomainShmemDefPostParse(dev->data.shmem);
-        break;
-
-    case VIR_DOMAIN_DEVICE_CHR:
-        ret = qemuDomainChrDefPostParse(dev->data.chr, def, driver, parseFlags);
-        break;
-
-    case VIR_DOMAIN_DEVICE_VSOCK:
-        ret = qemuDomainVsockDefPostParse(dev->data.vsock);
-        break;
-
-    case VIR_DOMAIN_DEVICE_HOSTDEV:
-        ret = qemuDomainHostdevDefPostParse(dev->data.hostdev, qemuCaps, parseFlags);
-        break;
-
-    case VIR_DOMAIN_DEVICE_TPM:
-        ret = qemuDomainTPMDefPostParse(dev->data.tpm, def);
-        break;
-
-    case VIR_DOMAIN_DEVICE_MEMORY:
-        ret = qemuDomainMemoryDefPostParse(dev->data.memory, def->os.arch,
-                                           parseFlags);
-        break;
-
-    case VIR_DOMAIN_DEVICE_LEASE:
-    case VIR_DOMAIN_DEVICE_FS:
-    case VIR_DOMAIN_DEVICE_INPUT:
-    case VIR_DOMAIN_DEVICE_SOUND:
-    case VIR_DOMAIN_DEVICE_WATCHDOG:
-    case VIR_DOMAIN_DEVICE_GRAPHICS:
-    case VIR_DOMAIN_DEVICE_HUB:
-    case VIR_DOMAIN_DEVICE_REDIRDEV:
-    case VIR_DOMAIN_DEVICE_SMARTCARD:
-    case VIR_DOMAIN_DEVICE_MEMBALLOON:
-    case VIR_DOMAIN_DEVICE_NVRAM:
-    case VIR_DOMAIN_DEVICE_RNG:
-    case VIR_DOMAIN_DEVICE_IOMMU:
-    case VIR_DOMAIN_DEVICE_AUDIO:
-    case VIR_DOMAIN_DEVICE_CRYPTO:
-        ret = 0;
-        break;
-
-    case VIR_DOMAIN_DEVICE_NONE:
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("unexpected VIR_DOMAIN_DEVICE_NONE"));
-        break;
-
-    case VIR_DOMAIN_DEVICE_LAST:
-    default:
-        virReportEnumRangeError(virDomainDeviceType, dev->type);
-        break;
-    }
-
-    return ret;
 }
 
 
@@ -6188,31 +5036,6 @@ qemuDomainDefAssignAddresses(virDomainDef *def,
         return 1;
 
     return qemuDomainAssignAddresses(def, qemuCaps, driver, NULL, newDomain);
-}
-
-
-static int
-qemuDomainPostParseDataAlloc(const virDomainDef *def,
-                             unsigned int parseFlags G_GNUC_UNUSED,
-                             void *opaque,
-                             void **parseOpaque)
-{
-    virQEMUDriver *driver = opaque;
-
-    if (!(*parseOpaque = virQEMUCapsCacheLookup(driver->qemuCapsCache,
-                                                def->emulator)))
-        return 1;
-
-    return 0;
-}
-
-
-static void
-qemuDomainPostParseDataFree(void *parseOpaque)
-{
-    virQEMUCaps *qemuCaps = parseOpaque;
-
-    virObjectUnref(qemuCaps);
 }
 
 
@@ -6299,11 +5122,9 @@ qemuDomainObjEnterMonitorInternal(virDomainObj *obj,
             return -1;
         }
     } else if (obj->job->asyncOwner == virThreadSelfID()) {
-        VIR_WARN("This thread seems to be the async job owner; entering"
-                 " monitor without asking for a nested job is dangerous");
+        VIR_WARN("This thread seems to be the async job owner; entering monitor without asking for a nested job is dangerous");
     } else if (obj->job->owner != virThreadSelfID()) {
-        VIR_WARN("Entering a monitor without owning a job. "
-                 "Job %s owner %s (%llu)",
+        VIR_WARN("Entering a monitor without owning a job. Job %s owner %s (%llu)",
                  virDomainJobTypeToString(obj->job->active),
                  obj->job->ownerAPI, obj->job->owner);
     }
@@ -6469,11 +5290,42 @@ qemuDomainDefCopy(virQEMUDriver *driver,
 }
 
 
-int
-qemuDomainMakeCPUMigratable(virCPUDef *cpu)
+typedef struct {
+    const char * const *added;
+    GStrv keep;
+} qemuDomainDropAddedCPUFeaturesData;
+
+
+static bool
+qemuDomainDropAddedCPUFeatures(const char *name,
+                               virCPUFeaturePolicy policy G_GNUC_UNUSED,
+                               void *opaque)
 {
-    if (cpu->mode == VIR_CPU_MODE_CUSTOM &&
-        STREQ_NULLABLE(cpu->model, "Icelake-Server")) {
+    qemuDomainDropAddedCPUFeaturesData *data = opaque;
+
+    if (!g_strv_contains(data->added, name))
+        return true;
+
+    if (data->keep && g_strv_contains((const char **) data->keep, name))
+        return true;
+
+    return false;
+}
+
+
+int
+qemuDomainMakeCPUMigratable(virArch arch,
+                            virCPUDef *cpu,
+                            virCPUDef *origCPU)
+{
+    qemuDomainDropAddedCPUFeaturesData data = { 0 };
+
+    if (cpu->mode != VIR_CPU_MODE_CUSTOM ||
+        !cpu->model ||
+        !ARCH_IS_X86(arch))
+        return 0;
+
+    if (STREQ(cpu->model, "Icelake-Server")) {
         /* Originally Icelake-Server CPU model contained pconfig CPU feature.
          * It was never actually enabled and thus it was removed. To enable
          * migration to QEMU 3.1.0 (with both new and old libvirt), we
@@ -6481,8 +5333,29 @@ qemuDomainMakeCPUMigratable(virCPUDef *cpu)
          * would think it was implicitly enabled on the source). New libvirt
          * will drop it from the XML before starting the domain on new QEMU.
          */
-        if (virCPUDefUpdateFeature(cpu, "pconfig", VIR_CPU_FEATURE_DISABLE) < 0)
+        virCPUDefUpdateFeature(cpu, "pconfig", VIR_CPU_FEATURE_DISABLE);
+    }
+
+    if (origCPU) {
+        if (virCPUx86GetAddedFeatures(cpu->model, &data.added) < 0)
             return -1;
+
+        /* Drop features marked as added in a CPU model unless they were
+         * explicitly requested, so the migratable definition stays
+         * compatible with destinations that do not know them. For host-model
+         * the expanded definition is itself the requested CPU, so keep all of
+         * its features; for a custom CPU keep only those listed in origCPU. */
+        if (data.added) {
+            g_auto(GStrv) keep = NULL;
+
+            if (origCPU->mode == VIR_CPU_MODE_HOST_MODEL)
+                keep = virCPUDefListExplicitFeatures(cpu);
+            else
+                keep = virCPUDefListExplicitFeatures(origCPU);
+            data.keep = keep;
+
+            virCPUDefFilterFeatures(cpu, qemuDomainDropAddedCPUFeatures, &data);
+        }
     }
 
     return 0;
@@ -6521,15 +5394,14 @@ qemuDomainDefFormatBufInternal(virQEMUDriver *driver,
             qCaps = virObjectRef(qemuCaps);
         } else {
             if (!(qCaps = virQEMUCapsCacheLookupCopy(driver->qemuCapsCache,
-                                                     def->virtType,
-                                                     def->emulator,
-                                                     def->os.machine)))
+                                                     def->emulator)))
                 return -1;
         }
 
         if (virCPUUpdate(def->os.arch, def->cpu,
                          virQEMUCapsGetHostModel(qCaps, def->virtType,
-                                                 VIR_QEMU_CAPS_HOST_CPU_MIGRATABLE)) < 0)
+                                                 VIR_QEMU_CAPS_HOST_CPU_MIGRATABLE),
+                         VIR_CPU_FEATURE_DISABLE) < 0)
             return -1;
     }
 
@@ -6655,17 +5527,38 @@ qemuDomainDefFormatBufInternal(virQEMUDriver *driver,
             }
         }
 
+        for (i = 0; i < def->ndisks; i++) {
+            virDomainDiskDef *disk = def->disks[i];
+
+            /* The 'model' property for USB disks was introduced long after USB
+             * disks to allow switching between 'usb-storage' and 'usb-bot'
+             * device. Despite sharing identical implementation 'usb-bot' allows
+             * proper configuration of USB cdroms. Unfortunately it is not ABI
+             * compatible.
+             *
+             * To preserve migration to older daemons we can strip the model to
+             * the default if:
+             * - it's a normal disk (not cdrom) as both are identical
+             * - for a usb-cdrom strip the model if it's not 'usb-bot' as that
+             *   was the old configuration
+             */
+            if (disk->bus == VIR_DOMAIN_DISK_BUS_USB &&
+                (disk->model == VIR_DOMAIN_DISK_MODEL_USB_STORAGE ||
+                 disk->device == VIR_DOMAIN_DISK_DEVICE_DISK))
+                disk->model = VIR_DOMAIN_DISK_MODEL_DEFAULT;
+        }
+
         /* Replace the CPU definition updated according to QEMU with the one
          * used for starting the domain. The updated def will be sent
          * separately for backward compatibility.
          */
         if (origCPU) {
             virCPUDefFree(def->cpu);
-            if (!(def->cpu = virCPUDefCopy(origCPU)))
-                return -1;
+            def->cpu = virCPUDefCopy(origCPU);
         }
 
-        if (def->cpu && qemuDomainMakeCPUMigratable(def->cpu) < 0)
+        if (def->cpu &&
+            qemuDomainMakeCPUMigratable(def->os.arch, def->cpu, origCPU) < 0)
             return -1;
 
         /* Old libvirt doesn't understand <audio> elements so
@@ -6780,7 +5673,7 @@ static void G_GNUC_PRINTF(5, 6)
 qemuDomainObjTaintMsg(virQEMUDriver *driver,
                       virDomainObj *obj,
                       virDomainTaintFlags taint,
-                      qemuDomainLogContext *logCtxt,
+                      domainLogContext *logCtxt,
                       const char *fmt, ...)
 {
     virErrorPtr orig_err = NULL;
@@ -6833,12 +5726,12 @@ qemuDomainObjTaintMsg(virQEMUDriver *driver,
         goto cleanup;
 
     if (logCtxt) {
-        rc = qemuDomainLogContextWrite(logCtxt,
-                                       "%s: Domain id=%d is tainted: %s%s%s%s\n",
-                                       timestamp,
-                                       obj->def->id,
-                                       virDomainTaintTypeToString(taint),
-                                       extraprefix, extramsg, extrasuffix);
+        rc = domainLogContextWrite(logCtxt,
+                                   "%s: Domain id=%d is tainted: %s%s%s%s\n",
+                                   timestamp,
+                                   obj->def->id,
+                                   virDomainTaintTypeToString(taint),
+                                   extraprefix, extramsg, extrasuffix);
     } else {
         rc = qemuDomainLogAppendMessage(driver, obj,
                                         "%s: Domain id=%d is tainted: %s%s%s%s\n",
@@ -6859,7 +5752,7 @@ qemuDomainObjTaintMsg(virQEMUDriver *driver,
 void qemuDomainObjTaint(virQEMUDriver *driver,
                         virDomainObj *obj,
                         virDomainTaintFlags taint,
-                        qemuDomainLogContext *logCtxt)
+                        domainLogContext *logCtxt)
 {
     qemuDomainObjTaintMsg(driver, obj, taint, logCtxt, NULL);
     qemuDomainSaveStatus(obj);
@@ -6868,7 +5761,7 @@ void qemuDomainObjTaint(virQEMUDriver *driver,
 static void
 qemuDomainObjCheckMachineTaint(virQEMUDriver *driver,
                                virDomainObj *obj,
-                               qemuDomainLogContext *logCtxt)
+                               domainLogContext *logCtxt)
 {
     qemuDomainObjPrivate *priv = obj->privateData;
     virQEMUCaps *qemuCaps = priv->qemuCaps;
@@ -6886,7 +5779,7 @@ qemuDomainObjCheckMachineTaint(virQEMUDriver *driver,
 static void
 qemuDomainObjCheckCPUTaint(virQEMUDriver *driver,
                            virDomainObj *obj,
-                           qemuDomainLogContext *logCtxt,
+                           domainLogContext *logCtxt,
                            bool incomingMigration)
 {
     qemuDomainObjPrivate *priv = obj->privateData;
@@ -6918,7 +5811,7 @@ qemuDomainObjCheckCPUTaint(virQEMUDriver *driver,
 
 void qemuDomainObjCheckTaint(virQEMUDriver *driver,
                              virDomainObj *obj,
-                             qemuDomainLogContext *logCtxt,
+                             domainLogContext *logCtxt,
                              bool incomingMigration)
 {
     size_t i;
@@ -6974,7 +5867,7 @@ void qemuDomainObjCheckTaint(virQEMUDriver *driver,
 void qemuDomainObjCheckDiskTaint(virQEMUDriver *driver,
                                  virDomainObj *obj,
                                  virDomainDiskDef *disk,
-                                 qemuDomainLogContext *logCtxt)
+                                 domainLogContext *logCtxt)
 {
     if (disk->rawio == VIR_TRISTATE_BOOL_YES)
         qemuDomainObjTaint(driver, obj, VIR_DOMAIN_TAINT_HIGH_PRIVILEGES,
@@ -6991,7 +5884,7 @@ void qemuDomainObjCheckDiskTaint(virQEMUDriver *driver,
 void qemuDomainObjCheckHostdevTaint(virQEMUDriver *driver,
                                     virDomainObj *obj,
                                     virDomainHostdevDef *hostdev,
-                                    qemuDomainLogContext *logCtxt)
+                                    domainLogContext *logCtxt)
 {
     if (!virHostdevIsSCSIDevice(hostdev))
         return;
@@ -7004,7 +5897,7 @@ void qemuDomainObjCheckHostdevTaint(virQEMUDriver *driver,
 void qemuDomainObjCheckNetTaint(virQEMUDriver *driver,
                                 virDomainObj *obj,
                                 virDomainNetDef *net,
-                                qemuDomainLogContext *logCtxt)
+                                domainLogContext *logCtxt)
 {
     /* script is only useful for NET_TYPE_ETHERNET (qemu) and
      * NET_TYPE_BRIDGE (xen), but could be (incorrectly) specified for
@@ -7013,166 +5906,6 @@ void qemuDomainObjCheckNetTaint(virQEMUDriver *driver,
      */
     if (net->script != NULL)
         qemuDomainObjTaint(driver, obj, VIR_DOMAIN_TAINT_SHELL_SCRIPTS, logCtxt);
-}
-
-
-qemuDomainLogContext *qemuDomainLogContextNew(virQEMUDriver *driver,
-                                                virDomainObj *vm,
-                                                qemuDomainLogContextMode mode)
-{
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
-    qemuDomainLogContext *ctxt = QEMU_DOMAIN_LOG_CONTEXT(g_object_new(QEMU_TYPE_DOMAIN_LOG_CONTEXT, NULL));
-
-    VIR_DEBUG("Context new %p stdioLogD=%d", ctxt, cfg->stdioLogD);
-    ctxt->writefd = -1;
-    ctxt->readfd = -1;
-
-    ctxt->path = g_strdup_printf("%s/%s.log", cfg->logDir, vm->def->name);
-
-    if (cfg->stdioLogD) {
-        ctxt->manager = virLogManagerNew(driver->privileged);
-        if (!ctxt->manager)
-            goto error;
-
-        ctxt->writefd = virLogManagerDomainOpenLogFile(ctxt->manager,
-                                                       "qemu",
-                                                       vm->def->uuid,
-                                                       vm->def->name,
-                                                       ctxt->path,
-                                                       0,
-                                                       &ctxt->inode,
-                                                       &ctxt->pos);
-        if (ctxt->writefd < 0)
-            goto error;
-    } else {
-        if ((ctxt->writefd = open(ctxt->path, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR)) < 0) {
-            virReportSystemError(errno, _("failed to create logfile %1$s"),
-                                 ctxt->path);
-            goto error;
-        }
-        if (virSetCloseExec(ctxt->writefd) < 0) {
-            virReportSystemError(errno, _("failed to set close-on-exec flag on %1$s"),
-                                 ctxt->path);
-            goto error;
-        }
-
-        /* For unprivileged startup we must truncate the file since
-         * we can't rely on logrotate. We don't use O_TRUNC since
-         * it is better for SELinux policy if we truncate afterwards */
-        if (mode == QEMU_DOMAIN_LOG_CONTEXT_MODE_START &&
-            !driver->privileged &&
-            ftruncate(ctxt->writefd, 0) < 0) {
-            virReportSystemError(errno, _("failed to truncate %1$s"),
-                                 ctxt->path);
-            goto error;
-        }
-
-        if (mode == QEMU_DOMAIN_LOG_CONTEXT_MODE_START) {
-            if ((ctxt->readfd = open(ctxt->path, O_RDONLY)) < 0) {
-                virReportSystemError(errno, _("failed to open logfile %1$s"),
-                                     ctxt->path);
-                goto error;
-            }
-            if (virSetCloseExec(ctxt->readfd) < 0) {
-                virReportSystemError(errno, _("failed to set close-on-exec flag on %1$s"),
-                                     ctxt->path);
-                goto error;
-            }
-        }
-
-        if ((ctxt->pos = lseek(ctxt->writefd, 0, SEEK_END)) < 0) {
-            virReportSystemError(errno, _("failed to seek in log file %1$s"),
-                                 ctxt->path);
-            goto error;
-        }
-    }
-
-    return ctxt;
-
- error:
-    g_clear_object(&ctxt);
-    return NULL;
-}
-
-
-int qemuDomainLogContextWrite(qemuDomainLogContext *ctxt,
-                              const char *fmt, ...)
-{
-    va_list argptr;
-    g_autofree char *message = NULL;
-    int ret = -1;
-
-    va_start(argptr, fmt);
-
-    message = g_strdup_vprintf(fmt, argptr);
-    if (!ctxt->manager &&
-        lseek(ctxt->writefd, 0, SEEK_END) < 0) {
-        virReportSystemError(errno, "%s",
-                             _("Unable to seek to end of domain logfile"));
-        goto cleanup;
-    }
-    if (safewrite(ctxt->writefd, message, strlen(message)) < 0) {
-        virReportSystemError(errno, "%s",
-                             _("Unable to write to domain logfile"));
-        goto cleanup;
-    }
-
-    ret = 0;
-
- cleanup:
-    va_end(argptr);
-    return ret;
-}
-
-
-ssize_t qemuDomainLogContextRead(qemuDomainLogContext *ctxt,
-                                 char **msg)
-{
-    char *buf;
-    size_t buflen;
-
-    VIR_DEBUG("Context read %p manager=%p inode=%llu pos=%llu",
-              ctxt, ctxt->manager,
-              (unsigned long long)ctxt->inode,
-              (unsigned long long)ctxt->pos);
-
-    if (ctxt->manager) {
-        buf = virLogManagerDomainReadLogFile(ctxt->manager,
-                                             ctxt->path,
-                                             ctxt->inode,
-                                             ctxt->pos,
-                                             1024 * 128,
-                                             0);
-        if (!buf)
-            return -1;
-        buflen = strlen(buf);
-    } else {
-        ssize_t got;
-
-        buflen = 1024 * 128;
-
-        /* Best effort jump to start of messages */
-        ignore_value(lseek(ctxt->readfd, ctxt->pos, SEEK_SET));
-
-        buf = g_new0(char, buflen);
-
-        got = saferead(ctxt->readfd, buf, buflen - 1);
-        if (got < 0) {
-            VIR_FREE(buf);
-            virReportSystemError(errno, "%s",
-                                 _("Unable to read from log file"));
-            return -1;
-        }
-
-        buf[got] = '\0';
-
-        buf = g_renew(char, buf, got + 1);
-        buflen = got;
-    }
-
-    *msg = buf;
-
-    return buflen;
 }
 
 
@@ -7233,42 +5966,6 @@ qemuDomainLogAppendMessage(virQEMUDriver *driver,
 }
 
 
-int qemuDomainLogContextGetWriteFD(qemuDomainLogContext *ctxt)
-{
-    return ctxt->writefd;
-}
-
-
-void qemuDomainLogContextMarkPosition(qemuDomainLogContext *ctxt)
-{
-    if (ctxt->manager)
-        virLogManagerDomainGetLogFilePosition(ctxt->manager,
-                                              ctxt->path,
-                                              0,
-                                              &ctxt->inode,
-                                              &ctxt->pos);
-    else
-        ctxt->pos = lseek(ctxt->writefd, 0, SEEK_END);
-}
-
-
-virLogManager *qemuDomainLogContextGetManager(qemuDomainLogContext *ctxt)
-{
-    return ctxt->manager;
-}
-
-
-/* Locate an appropriate 'qemu-img' binary.  */
-const char *
-qemuFindQemuImgBinary(virQEMUDriver *driver)
-{
-    if (!driver->qemuImgBinary)
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "%s", _("unable to find qemu-img"));
-
-    return driver->qemuImgBinary;
-}
-
 int
 qemuDomainSnapshotWriteMetadata(virDomainObj *vm,
                                 virDomainMomentObj *snapshot,
@@ -7303,99 +6000,6 @@ qemuDomainSnapshotWriteMetadata(virDomainObj *vm,
 }
 
 
-/* The domain is expected to be locked and inactive. Return -1 on normal
- * failure, 1 if we skipped a disk due to try_all.  */
-static int
-qemuDomainSnapshotForEachQcow2Raw(virQEMUDriver *driver,
-                                  virDomainDef *def,
-                                  virDomainMomentObj *snap,
-                                  const char *op,
-                                  bool try_all,
-                                  int ndisks)
-{
-    virDomainSnapshotDef *snapdef = virDomainSnapshotObjGetDef(snap);
-    const char *qemuimgbin;
-    size_t i;
-    bool skipped = false;
-
-    qemuimgbin = qemuFindQemuImgBinary(driver);
-    if (qemuimgbin == NULL) {
-        /* qemuFindQemuImgBinary set the error */
-        return -1;
-    }
-
-    for (i = 0; i < ndisks; i++) {
-        g_autoptr(virCommand) cmd = virCommandNewArgList(qemuimgbin, "snapshot",
-                                                         op, snap->def->name, NULL);
-        int format = virDomainDiskGetFormat(def->disks[i]);
-
-        /* FIXME: we also need to handle LVM here */
-        if (def->disks[i]->device != VIR_DOMAIN_DISK_DEVICE_DISK ||
-            snapdef->disks[i].snapshot != VIR_DOMAIN_SNAPSHOT_LOCATION_INTERNAL)
-            continue;
-
-        if (!virStorageSourceIsLocalStorage(def->disks[i]->src)) {
-            virReportError(VIR_ERR_OPERATION_INVALID,
-                           _("can't manipulate inactive snapshots of disk '%1$s'"),
-                           def->disks[i]->dst);
-            return -1;
-        }
-
-        if (format > 0 && format != VIR_STORAGE_FILE_QCOW2) {
-            if (try_all) {
-                /* Continue on even in the face of error, since other
-                 * disks in this VM may have the same snapshot name.
-                 */
-                VIR_WARN("skipping snapshot action on %s",
-                         def->disks[i]->dst);
-                skipped = true;
-                continue;
-            } else if (STREQ(op, "-c") && i) {
-                /* We must roll back partial creation by deleting
-                 * all earlier snapshots.  */
-                qemuDomainSnapshotForEachQcow2Raw(driver, def, snap,
-                                                  "-d", false, i);
-            }
-            virReportError(VIR_ERR_OPERATION_INVALID,
-                           _("Disk device '%1$s' does not support snapshotting"),
-                           def->disks[i]->dst);
-            return -1;
-        }
-
-        virCommandAddArg(cmd, virDomainDiskGetSource(def->disks[i]));
-
-        if (virCommandRun(cmd, NULL) < 0) {
-            if (try_all) {
-                VIR_WARN("skipping snapshot action on %s",
-                         def->disks[i]->dst);
-                skipped = true;
-                continue;
-            } else if (STREQ(op, "-c") && i) {
-                /* We must roll back partial creation by deleting
-                 * all earlier snapshots.  */
-                qemuDomainSnapshotForEachQcow2Raw(driver, def, snap,
-                                                  "-d", false, i);
-            }
-            return -1;
-        }
-    }
-
-    return skipped ? 1 : 0;
-}
-
-/* The domain is expected to be locked and inactive. Return -1 on normal
- * failure, 1 if we skipped a disk due to try_all.  */
-int
-qemuDomainSnapshotForEachQcow2(virQEMUDriver *driver,
-                               virDomainDef *def,
-                               virDomainMomentObj *snap,
-                               const char *op,
-                               bool try_all)
-{
-    return qemuDomainSnapshotForEachQcow2Raw(driver, def, snap,
-                                             op, try_all, def->ndisks);
-}
-
 /* Hash iterator callback to discard multiple snapshots.  */
 int qemuDomainMomentDiscardAll(void *payload,
                                const char *name G_GNUC_UNUSED,
@@ -7416,17 +6020,16 @@ int qemuDomainMomentDiscardAll(void *payload,
 
 
 static void
-qemuDomainRemoveInactiveCommon(virQEMUDriver *driver,
-                               virDomainObj *vm,
+qemuDomainRemoveInactiveCommon(virDomainObj *vm,
                                virDomainUndefineFlagsValues flags,
-                               bool outgoingMigration)
+                               bool migration)
 {
-    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
+    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(QEMU_DOMAIN_PRIVATE(vm)->driver);
     g_autofree char *snapDir = NULL;
     g_autofree char *chkDir = NULL;
 
     /* Remove any snapshot metadata prior to removing the domain */
-    if (qemuSnapshotDiscardAllMetadata(driver, vm) < 0) {
+    if (qemuSnapshotDiscardAllMetadata(vm) < 0) {
         VIR_WARN("unable to remove all snapshots for domain %s",
                  vm->def->name);
     } else {
@@ -7436,7 +6039,7 @@ qemuDomainRemoveInactiveCommon(virQEMUDriver *driver,
             VIR_WARN("unable to remove snapshot directory %s", snapDir);
     }
     /* Remove any checkpoint metadata prior to removing the domain */
-    if (qemuCheckpointDiscardAllMetadata(driver, vm) < 0) {
+    if (qemuCheckpointDiscardAllMetadata(vm) < 0) {
         VIR_WARN("unable to remove all checkpoints for domain %s",
                  vm->def->name);
     } else {
@@ -7445,7 +6048,7 @@ qemuDomainRemoveInactiveCommon(virQEMUDriver *driver,
         if (rmdir(chkDir) < 0 && errno != ENOENT)
             VIR_WARN("unable to remove checkpoint directory %s", chkDir);
     }
-    qemuExtDevicesCleanupHost(driver, vm->def, flags, outgoingMigration);
+    qemuExtDevicesCleanupHost(cfg, vm->def, flags, migration);
 }
 
 
@@ -7455,19 +6058,18 @@ qemuDomainRemoveInactiveCommon(virQEMUDriver *driver,
  * The caller must hold a lock to the vm.
  */
 void
-qemuDomainRemoveInactive(virQEMUDriver *driver,
-                         virDomainObj *vm,
+qemuDomainRemoveInactive(virDomainObj *vm,
                          virDomainUndefineFlagsValues flags,
-                         bool outgoingMigration)
+                         bool migration)
 {
     if (vm->persistent) {
         /* Short-circuit, we don't want to remove a persistent domain */
         return;
     }
 
-    qemuDomainRemoveInactiveCommon(driver, vm, flags, outgoingMigration);
+    qemuDomainRemoveInactiveCommon(vm, flags, migration);
 
-    virDomainObjListRemove(driver->domains, vm);
+    virDomainObjListRemove(QEMU_DOMAIN_PRIVATE(vm)->driver->domains, vm);
 }
 
 
@@ -7479,17 +6081,16 @@ qemuDomainRemoveInactive(virQEMUDriver *driver,
  * from locked list method.
  */
 void
-qemuDomainRemoveInactiveLocked(virQEMUDriver *driver,
-                               virDomainObj *vm)
+qemuDomainRemoveInactiveLocked(virDomainObj *vm)
 {
     if (vm->persistent) {
         /* Short-circuit, we don't want to remove a persistent domain */
         return;
     }
 
-    qemuDomainRemoveInactiveCommon(driver, vm, 0, false);
+    qemuDomainRemoveInactiveCommon(vm, 0, false);
 
-    virDomainObjListRemoveLocked(driver->domains, vm);
+    virDomainObjListRemoveLocked(QEMU_DOMAIN_PRIVATE(vm)->driver->domains, vm);
 }
 
 void
@@ -7661,7 +6262,7 @@ qemuDomainCleanupRun(virQEMUDriver *driver,
 
 void
 qemuDomainGetImageIds(virQEMUDriverConfig *cfg,
-                      virDomainObj *vm,
+                      virDomainDef *def,
                       virStorageSource *src,
                       virStorageSource *parentSrc,
                       uid_t *uid, gid_t *gid)
@@ -7670,19 +6271,11 @@ qemuDomainGetImageIds(virQEMUDriverConfig *cfg,
     virSecurityDeviceLabelDef *disklabel;
 
     if (uid)
-        *uid = -1;
+        *uid = cfg->user;
     if (gid)
-        *gid = -1;
+        *gid = cfg->group;
 
-    if (cfg) {
-        if (uid)
-            *uid = cfg->user;
-
-        if (gid)
-            *gid = cfg->group;
-    }
-
-    if (vm && (vmlabel = virDomainDefGetSecurityLabelDef(vm->def, "dac")) &&
+    if ((vmlabel = virDomainDefGetSecurityLabelDef(def, "dac")) &&
         vmlabel->label)
         virParseOwnershipIds(vmlabel->label, uid, gid);
 
@@ -7707,7 +6300,7 @@ qemuDomainStorageFileInit(virQEMUDriver *driver,
     uid_t uid;
     gid_t gid;
 
-    qemuDomainGetImageIds(cfg, vm, src, parent, &uid, &gid);
+    qemuDomainGetImageIds(cfg, vm->def, src, parent, &uid, &gid);
 
     if (virStorageSourceInitAs(src, uid, gid) < 0)
         return -1;
@@ -7730,8 +6323,6 @@ qemuDomainStorageAlias(const char *device, int depth)
     return alias;
 }
 
-
-#define QEMU_DOMAIN_STORAGE_SOURCE_CHAIN_MAX_DEPTH 200
 
 /**
  * qemuDomainStorageSourceValidateDepth:
@@ -7771,8 +6362,7 @@ qemuDomainStorageSourceValidateDepth(virStorageSource *src,
                            diskdst);
         else
             virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                           _("backing chains more than 200 layers deep are not "
-                             "supported"));
+                           _("backing chains more than 200 layers deep are not supported"));
 
         return -1;
     }
@@ -7804,6 +6394,32 @@ qemuDomainPrepareStorageSourceConfig(virStorageSource *src,
 }
 
 
+static int
+qemuDomainPrepareStorageSource(virStorageSource *src,
+                               virDomainObj *vm,
+                               virDomainDiskDef *disk,
+                               virQEMUDriverConfig *cfg)
+{
+    qemuDomainObjPrivate *priv = vm->privateData;
+
+    /* convert detected ISO format to 'raw' as qemu would not understand it */
+    if (src->format == VIR_STORAGE_FILE_ISO)
+        src->format = VIR_STORAGE_FILE_RAW;
+
+    if (qemuDomainValidateStorageSource(src, priv->qemuCaps) < 0)
+        return -1;
+
+    qemuDomainPrepareStorageSourceConfig(src, cfg);
+    qemuDomainPrepareDiskSourceData(disk, src);
+
+    if (!qemuDiskBusIsSD(disk->bus) &&
+        qemuDomainPrepareStorageSourceBlockdev(disk, src, priv, cfg) < 0)
+        return -1;
+
+    return 0;
+}
+
+
 /**
  * qemuDomainDetermineDiskChain:
  * @driver: qemu driver object
@@ -7822,9 +6438,9 @@ qemuDomainDetermineDiskChain(virQEMUDriver *driver,
                              virStorageSource *disksrc)
 {
     g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
+    bool hadDataStore = false;
     virStorageSource *src; /* iterator for the backing chain declared in XML */
     virStorageSource *n; /* iterator for the backing chain detected from disk */
-    qemuDomainObjPrivate *priv = vm->privateData;
     uid_t uid;
     gid_t gid;
 
@@ -7841,8 +6457,10 @@ qemuDomainDetermineDiskChain(virQEMUDriver *driver,
         disksrc->format < VIR_STORAGE_FILE_BACKING) {
 
         /* terminate the chain for such images as the code below would do */
-        if (!disksrc->backingStore)
+        if (!disksrc->backingStore) {
             disksrc->backingStore = virStorageSourceNew();
+            disksrc->backingStore->detected = true;
+        }
 
         /* we assume that FD-passed disks always exist */
         if (virStorageSourceIsFD(disksrc))
@@ -7898,26 +6516,28 @@ qemuDomainDetermineDiskChain(virQEMUDriver *driver,
         return 0;
     }
 
-    qemuDomainGetImageIds(cfg, vm, src, disksrc, &uid, &gid);
+    qemuDomainGetImageIds(cfg, vm->def, src, disksrc, &uid, &gid);
+
+    hadDataStore = !!src->dataFileStore;
 
     if (virStorageSourceGetMetadata(src, uid, gid,
                                     QEMU_DOMAIN_STORAGE_SOURCE_CHAIN_MAX_DEPTH,
                                     true) < 0)
         return -1;
 
-    for (n = src->backingStore; virStorageSourceIsBacking(n); n = n->backingStore) {
-        /* convert detected ISO format to 'raw' as qemu would not understand it */
-        if (n->format == VIR_STORAGE_FILE_ISO)
-            n->format = VIR_STORAGE_FILE_RAW;
+    /* As we perform image properties detection on the last member of the
+     * backing chain we need to also consider the data store part of the current
+     * image */
+    if (src->dataFileStore && !hadDataStore &&
+        qemuDomainPrepareStorageSource(src->dataFileStore, vm, disk, cfg) < 0)
+        return -1;
 
-        if (qemuDomainValidateStorageSource(n, priv->qemuCaps) < 0)
+    for (n = src->backingStore; virStorageSourceIsBacking(n); n = n->backingStore) {
+        if (qemuDomainPrepareStorageSource(n, vm, disk, cfg) < 0)
             return -1;
 
-        qemuDomainPrepareStorageSourceConfig(n, cfg);
-        qemuDomainPrepareDiskSourceData(disk, n);
-
-        if (!qemuDiskBusIsSD(disk->bus) &&
-            qemuDomainPrepareStorageSourceBlockdev(disk, n, priv, cfg) < 0)
+        if (n->dataFileStore &&
+            qemuDomainPrepareStorageSource(n->dataFileStore, vm, disk, cfg) < 0)
             return -1;
     }
 
@@ -7934,7 +6554,8 @@ qemuDomainDetermineDiskChain(virQEMUDriver *driver,
  * @disk: disk definition object
  *
  * Returns the pointer to the node-name of the topmost layer used by @disk as
- * backend. Currently returns the nodename of the copy-on-read filter if enabled
+ * backend. Currently returns the nodename of top throttle filter if enabled
+ * or the nodename of the copy-on-read filter if enabled
  * or the nodename of the top image's format driver. Empty disks return NULL.
  * This must be used only with disks instantiated via -blockdev (thus not
  * for SD cards).
@@ -7947,10 +6568,14 @@ qemuDomainDiskGetTopNodename(virDomainDiskDef *disk)
     if (virStorageSourceIsEmpty(disk->src))
         return NULL;
 
+    /* If disk has throttles, take top throttle node name */
+    if (disk->nthrottlefilters > 0)
+        return disk->throttlefilters[disk->nthrottlefilters - 1]->nodename;
+
     if (disk->copy_on_read == VIR_TRISTATE_SWITCH_ON)
         return priv->nodeCopyOnRead;
 
-    return disk->src->nodeformat;
+    return qemuBlockStorageSourceGetEffectiveNodename(disk->src);
 }
 
 
@@ -8085,6 +6710,7 @@ qemuDomainStorageSourceAccessModify(virQEMUDriver *driver,
     bool revoke_namespace = false;
     bool revoke_nvme = false;
     bool revoke_lockspace = false;
+    bool revoke_nbdkit = false;
 
     VIR_DEBUG("src='%s' readonly=%d force_ro=%d force_rw=%d revoke=%d chain=%d",
               NULLSTR(src->path), src->readonly, force_ro, force_rw, revoke, chain);
@@ -8103,6 +6729,7 @@ qemuDomainStorageSourceAccessModify(virQEMUDriver *driver,
         revoke_namespace = true;
         revoke_nvme = true;
         revoke_lockspace = true;
+        revoke_nbdkit = true;
         ret = 0;
         goto revoke;
     }
@@ -8117,6 +6744,11 @@ qemuDomainStorageSourceAccessModify(virQEMUDriver *driver,
             goto revoke;
 
         revoke_nvme = true;
+
+        if (qemuNbdkitStartStorageSource(driver, vm, src, chain) < 0)
+            goto revoke;
+
+        revoke_nbdkit = true;
 
         if (qemuDomainNamespaceSetupDisk(vm, src, &revoke_namespace) < 0)
             goto revoke;
@@ -8171,6 +6803,9 @@ qemuDomainStorageSourceAccessModify(virQEMUDriver *driver,
         if (virDomainLockImageDetach(driver->lockManager, vm, src) < 0)
             VIR_WARN("Unable to release lock on %s", srcstr);
     }
+
+    if (revoke_nbdkit)
+        qemuNbdkitStopStorageSource(src, vm, chain);
 
  cleanup:
     src->readonly = was_readonly;
@@ -8269,6 +6904,49 @@ qemuDomainStorageSourceAccessAllow(virQEMUDriver *driver,
 }
 
 
+static bool
+qemuDomainDiskChangeSupportedIothreads(virDomainDiskDef *disk,
+                                       virDomainDiskDef *orig_disk)
+{
+    GSList *old = orig_disk->iothreads;
+    GSList *new = disk->iothreads;
+
+    while (true) {
+        virDomainIothreadMappingDef *old_def;
+        virDomainIothreadMappingDef *new_def;
+        size_t i;
+
+        /* match - both empty or both at the end */
+        if (!old && !new)
+            return true;
+
+        /* mismatched length of lists */
+        if (!old || !new)
+            goto fail;
+
+        old_def = old->data;
+        new_def = new->data;
+
+        if (old_def->id != new_def->id ||
+            old_def->nqueues != new_def->nqueues)
+            goto fail;
+
+        for (i = 0; i < old_def->nqueues; i++) {
+            if (old_def->queues[i] != new_def->queues[i])
+                goto fail;
+        }
+
+        new = new->next;
+        old = old->next;
+    }
+
+ fail:
+    virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                   _("cannot modify '<iothreads>' configuration of the disk"));
+    return false;
+}
+
+
 /*
  * Makes sure the @disk differs from @orig_disk only by the source
  * path and nothing else.  Fields that are being checked and the
@@ -8327,6 +7005,8 @@ qemuDomainDiskChangeSupported(virDomainDiskDef *disk,
              "blockio logical_block_size", false);
     CHECK_EQ(blockio.physical_block_size,
              "blockio physical_block_size", false);
+    CHECK_EQ(blockio.discard_granularity,
+             "blockio discard_granularity", false);
 
     CHECK_EQ(blkdeviotune.total_bytes_sec,
              "blkdeviotune total_bytes_sec",
@@ -8386,6 +7066,7 @@ qemuDomainDiskChangeSupported(virDomainDiskDef *disk,
     CHECK_EQ(ioeventfd, "ioeventfd", true);
     CHECK_EQ(event_idx, "event_idx", true);
     CHECK_EQ(copy_on_read, "copy_on_read", true);
+    CHECK_EQ(discard_no_unref, "discard_no_unref", true);
     /* "snapshot" is a libvirt internal field and thus can be changed */
     /* startupPolicy is allowed to be updated. Therefore not checked here. */
     CHECK_EQ(transient, "transient", true);
@@ -8409,6 +7090,9 @@ qemuDomainDiskChangeSupported(virDomainDiskDef *disk,
     CHECK_EQ(sgio, "sgio", true);
     CHECK_EQ(discard, "discard", true);
     CHECK_EQ(iothread, "iothread", true);
+
+    if (!qemuDomainDiskChangeSupportedIothreads(disk, orig_disk))
+        return false;
 
     CHECK_STREQ_NULLABLE(domain_name,
                          "backenddomain");
@@ -8544,11 +7228,12 @@ qemuDomainUpdateMemoryDeviceInfo(virDomainObj *vm,
 
         switch (mem->model) {
         case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_MEM:
+            mem->target.virtio_mem.currentsize = VIR_DIV_UP(dimm->size, 1024);
+            mem->target.virtio_mem.address = dimm->address;
+            break;
+
         case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_PMEM:
-            if (mem->model == VIR_DOMAIN_MEMORY_MODEL_VIRTIO_MEM) {
-                mem->currentsize = VIR_DIV_UP(dimm->size, 1024);
-            }
-            mem->address = dimm->address;
+            mem->target.virtio_pmem.address = dimm->address;
             break;
 
         case VIR_DOMAIN_MEMORY_MODEL_DIMM:
@@ -8685,8 +7370,7 @@ qemuDomainAgentAvailable(virDomainObj *vm,
     if (priv->agentError) {
         if (reportError) {
             virReportError(VIR_ERR_AGENT_UNRESPONSIVE, "%s",
-                           _("QEMU guest agent is not "
-                             "available due to an error"));
+                           _("QEMU guest agent is not available due to an error"));
         }
         return false;
     }
@@ -8872,8 +7556,9 @@ qemuFindAgentConfig(virDomainDef *def)
     return NULL;
 }
 
-
-static bool
+/* You should normally avoid this function and use
+ * qemuDomainIsQ35() instead. */
+bool
 qemuDomainMachineIsQ35(const char *machine,
                        const virArch arch)
 {
@@ -8889,7 +7574,9 @@ qemuDomainMachineIsQ35(const char *machine,
 }
 
 
-static bool
+/* You should normally avoid this function and use
+ * qemuDomainIsI440FX() instead. */
+bool
 qemuDomainMachineIsI440FX(const char *machine,
                           const virArch arch)
 {
@@ -8978,6 +7665,22 @@ qemuDomainMachineIsPSeries(const char *machine,
 
 
 static bool
+qemuDomainMachineIsLoongArchVirt(const char *machine,
+                                 const virArch arch)
+{
+    if (!ARCH_IS_LOONGARCH(arch))
+        return false;
+
+    if (STREQ(machine, "virt") ||
+        STRPREFIX(machine, "virt-")) {
+        return true;
+    }
+
+    return false;
+}
+
+
+static bool
 qemuDomainMachineIsMipsMalta(const char *machine,
                              const virArch arch)
 {
@@ -8986,6 +7689,24 @@ qemuDomainMachineIsMipsMalta(const char *machine,
 
     if (STREQ(machine, "malta"))
         return true;
+
+    return false;
+}
+
+
+/* You should normally avoid this function and use
+ * qemuDomainIsXenFV() instead. */
+bool
+qemuDomainMachineIsXenFV(const char *machine,
+                         const virArch arch)
+{
+    if (!ARCH_IS_X86(arch))
+        return false;
+
+    if (STREQ(machine, "xenfv") ||
+        STRPREFIX(machine, "xenfv-")) {
+        return true;
+    }
 
     return false;
 }
@@ -9071,6 +7792,19 @@ qemuDomainIsMipsMalta(const virDomainDef *def)
 
 
 bool
+qemuDomainIsLoongArchVirt(const virDomainDef *def)
+{
+    return qemuDomainMachineIsLoongArchVirt(def->os.machine, def->os.arch);
+}
+
+bool
+qemuDomainIsXenFV(const virDomainDef *def)
+{
+    return qemuDomainMachineIsXenFV(def->os.machine, def->os.arch);
+}
+
+
+bool
 qemuDomainHasPCIRoot(const virDomainDef *def)
 {
     int root = virDomainControllerFind(def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0);
@@ -9116,56 +7850,61 @@ qemuDomainNeedsFDC(const virDomainDef *def)
 
 
 bool
-qemuDomainSupportsPCI(virDomainDef *def,
-                      virQEMUCaps *qemuCaps)
+qemuDomainSupportsPCI(const virDomainDef *def)
 {
-    if (def->os.arch != VIR_ARCH_ARMV6L &&
-        def->os.arch != VIR_ARCH_ARMV7L &&
-        def->os.arch != VIR_ARCH_AARCH64 &&
-        !ARCH_IS_RISCV(def->os.arch)) {
+    /* On Arm architectures, only the virt and versatilepb
+     * machine types support PCI */
+    if (ARCH_IS_ARM(def->os.arch)) {
+        if (qemuDomainIsARMVirt(def) ||
+            STREQ(def->os.machine, "versatilepb") ||
+            STRPREFIX(def->os.machine, "realview-eb")) {
+            return true;
+        }
+        return false;
+    }
+
+    /* On RISC-V, only the virt machine type supports PCI */
+    if (ARCH_IS_RISCV(def->os.arch)) {
+        if (qemuDomainIsRISCVVirt(def)) {
+            return true;
+        }
+        return false;
+    }
+
+    if (ARCH_IS_X86(def->os.arch)) {
+        if (STREQ(def->os.machine, "isapc") ||
+            STREQ(def->os.machine, "microvm")) {
+            return false;
+        }
         return true;
     }
 
-    if (STREQ(def->os.machine, "versatilepb"))
-        return true;
+    if (def->os.arch == VIR_ARCH_SPARC)
+        return false;
 
-    if ((qemuDomainIsARMVirt(def) ||
-         qemuDomainIsRISCVVirt(def)) &&
-        virQEMUCapsGet(qemuCaps, QEMU_CAPS_OBJECT_GPEX)) {
-        return true;
-    }
-
-    return false;
+    /* On all other architectures, PCI support is assumed to
+     * be present */
+    return true;
 }
 
 
-static bool
-qemuCheckMemoryDimmConflict(const virDomainDef *def,
-                            const virDomainMemoryDef *mem)
+bool
+qemuDomainSupportsPCIMultibus(const virDomainDef *def)
 {
-    size_t i;
+    /* Most architectures support multibus for all machine types on
+     * all supported QEMU versions */
+    if (ARCH_IS_X86(def->os.arch) ||
+        ARCH_IS_PPC(def->os.arch) ||
+        ARCH_IS_S390(def->os.arch)) {
+        return true;
+    }
 
-    for (i = 0; i < def->nmems; i++) {
-         virDomainMemoryDef *tmp = def->mems[i];
-
-         if (tmp == mem ||
-             tmp->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DIMM)
-             continue;
-
-         if (mem->info.addr.dimm.slot == tmp->info.addr.dimm.slot) {
-             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                            _("memory device slot '%1$u' is already being used by another memory device"),
-                            mem->info.addr.dimm.slot);
-             return true;
-         }
-
-         if (mem->info.addr.dimm.base != 0 &&
-             mem->info.addr.dimm.base == tmp->info.addr.dimm.base) {
-             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                            _("memory device base '0x%1$llx' is already being used by another memory device"),
-                            mem->info.addr.dimm.base);
-             return true;
-         }
+    /* In some cases, support for multibus is limited to some machine
+     * types */
+    if (qemuDomainIsARMVirt(def) ||
+        qemuDomainIsLoongArchVirt(def) ||
+        qemuDomainIsRISCVVirt(def)) {
+        return true;
     }
 
     return false;
@@ -9184,18 +7923,8 @@ qemuDomainDefValidateMemoryHotplugDevice(const virDomainMemoryDef *mem,
         if (mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DIMM &&
             mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("only 'dimm' addresses are supported for the "
-                             "pc-dimm device"));
+                           _("only 'dimm' addresses are supported for the pc-dimm device"));
             return -1;
-        }
-
-        if (virDomainNumaGetNodeCount(def->numa) != 0) {
-            if (mem->targetNode == -1) {
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("target NUMA node needs to be specified for "
-                                 "memory device"));
-                return -1;
-            }
         }
 
         if (mem->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DIMM) {
@@ -9205,10 +7934,6 @@ qemuDomainDefValidateMemoryHotplugDevice(const virDomainMemoryDef *mem,
                                mem->info.addr.dimm.slot, def->mem.memory_slots);
                 return -1;
             }
-
-
-            if (qemuCheckMemoryDimmConflict(def, mem))
-                return -1;
         }
         break;
 
@@ -9216,8 +7941,7 @@ qemuDomainDefValidateMemoryHotplugDevice(const virDomainMemoryDef *mem,
         if (mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI &&
             mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("only 'pci' addresses are supported for the "
-                             "virtio-pmem device"));
+                           _("only 'pci' addresses are supported for the virtio-pmem device"));
             return -1;
         }
 
@@ -9227,9 +7951,10 @@ qemuDomainDefValidateMemoryHotplugDevice(const virDomainMemoryDef *mem,
 
     case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_MEM:
         if (mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI &&
+            mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_CCW &&
             mem->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("only 'pci' addresses are supported for the %1$s device"),
+                           _("only 'pci' and 'ccw' addresses are supported for the %1$s device"),
                            virDomainMemoryModelTypeToString(mem->model));
             return -1;
         }
@@ -9250,8 +7975,7 @@ qemuDomainDefValidateMemoryHotplugDevice(const virDomainMemoryDef *mem,
         virDomainNumaGetNodeCount(def->numa) != 0) {
         if (mem->targetNode == -1) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("target NUMA node needs to be specified for "
-                             "memory device"));
+                           _("target NUMA node needs to be specified for memory device"));
             return -1;
         }
     }
@@ -9279,6 +8003,7 @@ qemuDomainDefValidateMemoryHotplug(const virDomainDef *def,
     unsigned int nmems = def->nmems;
     unsigned long long hotplugSpace;
     unsigned long long hotplugMemory = 0;
+    size_t slotsNeeded = 0;
     size_t i;
 
     hotplugSpace = def->mem.max_memory - virDomainDefGetMemoryInitial(def);
@@ -9289,37 +8014,43 @@ qemuDomainDefValidateMemoryHotplug(const virDomainDef *def,
 
         if (qemuDomainDefValidateMemoryHotplugDevice(mem, def) < 0)
             return -1;
+
+        switch (mem->model) {
+        case VIR_DOMAIN_MEMORY_MODEL_DIMM:
+        case VIR_DOMAIN_MEMORY_MODEL_NVDIMM:
+            slotsNeeded++;
+            break;
+
+        case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_PMEM:
+        case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_MEM:
+        case VIR_DOMAIN_MEMORY_MODEL_SGX_EPC:
+        case VIR_DOMAIN_MEMORY_MODEL_LAST:
+        case VIR_DOMAIN_MEMORY_MODEL_NONE:
+            break;
+        }
     }
 
     if (!virDomainDefHasMemoryHotplug(def)) {
         if (nmems) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("cannot use/hotplug a memory device when domain "
-                             "'maxMemory' is not defined"));
+                           _("cannot use/hotplug a memory device when domain 'maxMemory' is not defined"));
             return -1;
         }
 
         return 0;
     }
 
-    if (!ARCH_IS_PPC64(def->os.arch)) {
+    if (!ARCH_IS_PPC64(def->os.arch) &&
+        !ARCH_IS_S390(def->os.arch)) {
         /* due to guest support, qemu would silently enable NUMA with one node
          * once the memory hotplug backend is enabled. To avoid possible
          * confusion we will enforce user originated numa configuration along
          * with memory hotplug. */
         if (virDomainNumaGetNodeCount(def->numa) == 0) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("At least one numa node has to be configured when "
-                             "enabling memory hotplug"));
+                           _("At least one numa node has to be configured when enabling memory hotplug"));
             return -1;
         }
-    }
-
-    if (nmems > def->mem.memory_slots) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("memory device count '%1$u' exceeds slots count '%2$u'"),
-                       nmems, def->mem.memory_slots);
-        return -1;
     }
 
     for (i = 0; i < def->nmems; i++) {
@@ -9328,6 +8059,8 @@ qemuDomainDefValidateMemoryHotplug(const virDomainDef *def,
         switch (def->mems[i]->model) {
         case VIR_DOMAIN_MEMORY_MODEL_DIMM:
         case VIR_DOMAIN_MEMORY_MODEL_NVDIMM:
+            slotsNeeded++;
+            G_GNUC_FALLTHROUGH;
         case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_PMEM:
         case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_MEM:
             /* already existing devices don't need to be checked on hotplug */
@@ -9342,6 +8075,13 @@ qemuDomainDefValidateMemoryHotplug(const virDomainDef *def,
         case VIR_DOMAIN_MEMORY_MODEL_NONE:
             break;
         }
+    }
+
+    if (slotsNeeded > def->mem.memory_slots) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("count of memory devices requiring memory slots '%1$zu' exceeds slots count '%2$u'"),
+                       slotsNeeded, def->mem.memory_slots);
+        return -1;
     }
 
     if (hotplugMemory > hotplugSpace) {
@@ -9434,7 +8174,7 @@ getPPC64MemLockLimitBytes(virDomainDef *def)
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDef *dev = def->hostdevs[i];
 
-        if (virHostdevIsVFIODevice(dev)) {
+        if (virHostdevIsPCIDevice(dev)) {
 
             pciAddr = &dev->source.subsys.u.pci.addr;
             if (virPCIDeviceAddressIsValid(pciAddr, false)) {
@@ -9497,8 +8237,14 @@ getPPC64MemLockLimitBytes(virDomainDef *def)
         passthroughLimit = maxMemory +
                            128 * (1ULL<<30) / 512 * nPCIHostBridges +
                            8192;
-    } else if (qemuDomainNeedsVFIO(def) || virDomainDefHasVDPANet(def)) {
-        /* For regular (non-NVLink2 present) VFIO passthrough, the value
+    } else if (virDomainDefHasPCIHostdev(def) ||
+               virDomainDefHasMdevHostdev(def) ||
+               virDomainDefHasNVMeDisk(def) ||
+               virDomainDefHasVDPANet(def)) {
+        /* Not using qemuDomainNeedsVFIO() as that doesn't take PCI host
+         * devices with IOMMFD into account.
+         *
+         * For regular (non-NVLink2 present) VFIO passthrough, the value
          * of passthroughLimit is:
          *
          * passthroughLimit := max( 2 GiB * #PHBs,                       (c)
@@ -9539,7 +8285,7 @@ qemuDomainGetNumVFIOHostdevs(const virDomainDef *def)
     int n = 0;
 
     for (i = 0; i < def->nhostdevs; i++) {
-        if (virHostdevIsVFIODevice(def->hostdevs[i]) ||
+        if (virHostdevIsPCIDevice(def->hostdevs[i]) ||
             virHostdevIsMdevDevice(def->hostdevs[i]))
             n++;
     }
@@ -9564,7 +8310,7 @@ qemuDomainGetNumNVMeDisks(const virDomainDef *def)
 
 
 static int
-qemuDomainGetNumVDPANetDevices(const virDomainDef *def)
+qemuDomainGetNumVDPADevices(const virDomainDef *def)
 {
     size_t i;
     int n = 0;
@@ -9572,6 +8318,14 @@ qemuDomainGetNumVDPANetDevices(const virDomainDef *def)
     for (i = 0; i < def->nnets; i++) {
         if (virDomainNetGetActualType(def->nets[i]) == VIR_DOMAIN_NET_TYPE_VDPA)
             n++;
+    }
+
+    for (i = 0; i < def->ndisks; i++) {
+        virStorageSource *src;
+        for (src = def->disks[i]->src; src; src = src->backingStore) {
+            if (src->type == VIR_STORAGE_TYPE_VHOST_VDPA)
+                n++;
+        }
     }
 
     return n;
@@ -9616,7 +8370,7 @@ qemuDomainGetMemLockLimitBytes(virDomainDef *def)
 
     nvfio = qemuDomainGetNumVFIOHostdevs(def);
     nnvme = qemuDomainGetNumNVMeDisks(def);
-    nvdpa = qemuDomainGetNumVDPANetDevices(def);
+    nvdpa = qemuDomainGetNumVDPADevices(def);
     /* For device passthrough using VFIO the guest memory and MMIO memory
      * regions need to be locked persistent in order to allow DMA.
      *
@@ -9648,7 +8402,7 @@ qemuDomainGetMemLockLimitBytes(virDomainDef *def)
         int factor = nvdpa + nnvme;
 
         if (nvfio) {
-            if (def->iommu)
+            if (def->niommus > 0)
                 factor += nvfio;
             else
                 factor += 1;
@@ -9888,11 +8642,13 @@ qemuDomainValidateVcpuInfo(virDomainObj *vm)
 
 
 bool
-qemuDomainSupportsNewVcpuHotplug(virDomainObj *vm)
+qemuDomainSupportsVcpuHotplug(virDomainObj *vm)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
 
-    return virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_QUERY_HOTPLUGGABLE_CPUS);
+    return virQEMUCapsGetMachineHotplugCpus(priv->qemuCaps,
+                                            vm->def->virtType,
+                                            vm->def->os.machine);
 }
 
 
@@ -9925,7 +8681,7 @@ qemuDomainRefreshVcpuInfo(virDomainObj *vm,
     int rc;
     int ret = -1;
 
-    hotplug = qemuDomainSupportsNewVcpuHotplug(vm);
+    hotplug = qemuDomainSupportsVcpuHotplug(vm);
     VIR_DEBUG("Maxvcpus %zu hotplug %d", maxvcpus, hotplug);
 
     if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
@@ -9981,11 +8737,12 @@ qemuDomainRefreshVcpuInfo(virDomainObj *vm,
 
         if (validTIDs)
             VIR_DEBUG("vCPU[%zu] PID %llu is valid "
-                      "(node=%d socket=%d die=%d core=%d thread=%d)",
+                      "(node=%d socket=%d die=%d cluster=%d core=%d thread=%d)",
                       i, (unsigned long long)info[i].tid,
                       info[i].node_id,
                       info[i].socket_id,
                       info[i].die_id,
+                      info[i].cluster_id,
                       info[i].core_id,
                       info[i].thread_id);
     }
@@ -10030,21 +8787,6 @@ qemuDomainRefreshVcpuInfo(virDomainObj *vm,
  cleanup:
     qemuMonitorCPUInfoFree(info, maxvcpus);
     return ret;
-}
-
-/**
- * qemuDomainGetVcpuHalted:
- * @vm: domain object
- * @vcpu: cpu id
- *
- * Returns the vCPU halted state.
-  */
-bool
-qemuDomainGetVcpuHalted(virDomainObj *vm,
-                        unsigned int vcpuid)
-{
-    virDomainVcpuDef *vcpu = virDomainDefGetVcpu(vm->def, vcpuid);
-    return QEMU_DOMAIN_VCPU_PRIVATE(vcpu)->halted;
 }
 
 /**
@@ -10199,7 +8941,7 @@ qemuDomainPrepareChardevSourceOne(virDomainDeviceDef *dev,
     struct qemuDomainPrepareChardevSourceData *data = opaque;
     qemuDomainChrSourcePrivate *charpriv = QEMU_DOMAIN_CHR_SOURCE_PRIVATE(charsrc);
 
-    switch ((virDomainDeviceType) dev->type) {
+    switch (dev->type) {
 
     case VIR_DOMAIN_DEVICE_CHR:
     case VIR_DOMAIN_DEVICE_RNG:
@@ -10213,6 +8955,7 @@ qemuDomainPrepareChardevSourceOne(virDomainDeviceDef *dev,
 
             if (charsrc->data.tcp.haveTLS == VIR_TRISTATE_BOOL_YES) {
                 charpriv->tlsCertPath = g_strdup(data->cfg->chardevTLSx509certdir);
+                charpriv->tlsPriority = g_strdup(data->cfg->chardevTLSpriority);
                 charpriv->tlsVerify = data->cfg->chardevTLSx509verify;
             }
         }
@@ -10247,41 +8990,8 @@ qemuDomainPrepareChardevSourceOne(virDomainDeviceDef *dev,
     case VIR_DOMAIN_DEVICE_VSOCK:
     case VIR_DOMAIN_DEVICE_AUDIO:
     case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
         break;
-    }
-
-    return 0;
-}
-
-
-static int
-qemuProcessPrepareStorageSourceTLSVxhs(virStorageSource *src,
-                                       virQEMUDriverConfig *cfg,
-                                       qemuDomainObjPrivate *priv,
-                                       const char *parentAlias)
-{
-    /* VxHS uses only client certificates and thus has no need for
-     * the server-key.pem nor a secret that could be used to decrypt
-     * the it, so no need to add a secinfo for a secret UUID. */
-    if (src->haveTLS == VIR_TRISTATE_BOOL_ABSENT) {
-        if (cfg->vxhsTLS)
-            src->haveTLS = VIR_TRISTATE_BOOL_YES;
-        else
-            src->haveTLS = VIR_TRISTATE_BOOL_NO;
-        src->tlsFromConfig = true;
-    }
-
-    if (src->haveTLS == VIR_TRISTATE_BOOL_YES) {
-        src->tlsAlias = qemuAliasTLSObjFromSrcAlias(parentAlias);
-        src->tlsCertdir = g_strdup(cfg->vxhsTLSx509certdir);
-
-        if (cfg->vxhsTLSx509secretUUID) {
-            qemuDomainStorageSourcePrivate *srcpriv = qemuDomainStorageSourcePrivateFetch(src);
-
-            if (!(srcpriv->tlsKeySecret = qemuDomainSecretInfoTLSNew(priv, src->tlsAlias,
-                                                                     cfg->vxhsTLSx509secretUUID)))
-                return -1;
-        }
     }
 
     return 0;
@@ -10311,6 +9021,7 @@ qemuProcessPrepareStorageSourceTLSNBD(virStorageSource *src,
 
         src->tlsAlias = qemuAliasTLSObjFromSrcAlias(parentAlias);
         src->tlsCertdir = g_strdup(cfg->nbdTLSx509certdir);
+        src->tlsPriority = g_strdup(cfg->nbdTLSpriority);
 
         if (cfg->nbdTLSx509secretUUID) {
             qemuDomainStorageSourcePrivate *srcpriv = qemuDomainStorageSourcePrivateFetch(src);
@@ -10361,6 +9072,37 @@ qemuDomainPrepareStorageSourceNFS(virStorageSource *src)
 }
 
 
+/* qemuPrepareStorageSourceNbdkit:
+ * @src: source for a disk
+ *
+ * If src is an network source that is managed by nbdkit, prepare data so that
+ * nbdkit can be launched before the domain is started
+ *
+ * Returns true if nbdkit will be used for this source,
+ */
+static bool
+qemuDomainPrepareStorageSourceNbdkit(virStorageSource *src,
+                                     virQEMUDriverConfig *cfg,
+                                     const char *alias,
+                                     qemuDomainObjPrivate *priv)
+{
+    g_autoptr(qemuNbdkitCaps) nbdkit = NULL;
+
+    if (!cfg->storageUseNbdkit)
+        return false;
+
+    if (virStorageSourceGetActualType(src) != VIR_STORAGE_TYPE_NETWORK)
+        return false;
+
+    nbdkit = qemuGetNbdkitCaps(priv->driver);
+    if (!nbdkit)
+        return false;
+
+    return qemuNbdkitInitStorageSource(nbdkit, src, priv->libDir,
+                                       alias, cfg->user, cfg->group);
+}
+
+
 /* qemuProcessPrepareStorageSourceTLS:
  * @source: source for a disk
  * @cfg: driver configuration
@@ -10381,10 +9123,9 @@ qemuDomainPrepareStorageSourceTLS(virStorageSource *src,
     if (virStorageSourceGetActualType(src) != VIR_STORAGE_TYPE_NETWORK)
         return 0;
 
-    switch ((virStorageNetProtocol) src->protocol) {
+    switch (src->protocol) {
     case VIR_STORAGE_NET_PROTOCOL_VXHS:
-        if (qemuProcessPrepareStorageSourceTLSVxhs(src, cfg, priv, parentAlias) < 0)
-            return -1;
+        /* vxhs is no longer supported */
         break;
 
     case VIR_STORAGE_NET_PROTOCOL_NBD:
@@ -10504,45 +9245,17 @@ qemuDomainVcpuPersistOrder(virDomainDef *def)
 }
 
 
-int
-qemuDomainCheckMonitor(virDomainObj *vm,
-                       virDomainAsyncJob asyncJob)
-{
-    qemuDomainObjPrivate *priv = vm->privateData;
-    int ret;
-
-    if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
-        return -1;
-
-    ret = qemuMonitorCheck(priv->mon);
-
-    qemuDomainObjExitMonitor(vm);
-
-    return ret;
-}
-
-
-bool
-qemuDomainSupportsVideoVga(const virDomainVideoDef *video,
-                           virQEMUCaps *qemuCaps)
-{
-    if (video->type == VIR_DOMAIN_VIDEO_TYPE_VIRTIO) {
-        if (video->backend == VIR_DOMAIN_VIDEO_BACKEND_TYPE_VHOSTUSER) {
-            if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VHOST_USER_VGA))
-                return false;
-        } else if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VIRTIO_VGA)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-
+/**
+ * qemuDomainNeedsVFIO:
+ * @def: domain definition to check
+ *
+ * Check the domain definition to figure out if QEMU needs access
+ * to /dev/vfio/vfio. It's not required if IOMMUFD is used.
+ */
 bool
 qemuDomainNeedsVFIO(const virDomainDef *def)
 {
-    return virDomainDefHasVFIOHostdev(def) ||
+    return virDomainDefHasPCIHostdevWithoutIOMMUFD(def) ||
         virDomainDefHasMdevHostdev(def) ||
         virDomainDefHasNVMeDisk(def);
 }
@@ -10580,11 +9293,11 @@ qemuDomainGetHostdevPath(virDomainHostdevDef *dev,
     g_autofree char *tmpPath = NULL;
     int perm = 0;
 
-    switch ((virDomainHostdevMode) dev->mode) {
+    switch (dev->mode) {
     case VIR_DOMAIN_HOSTDEV_MODE_SUBSYS:
-        switch ((virDomainHostdevSubsysType)dev->source.subsys.type) {
+        switch (dev->source.subsys.type) {
         case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI:
-            if (pcisrc->backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+            if (pcisrc->driver.name == VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO) {
                 if (!(tmpPath = virPCIDeviceAddressGetIOMMUGroupDev(&pcisrc->addr)))
                     return -1;
 
@@ -10757,12 +9470,18 @@ qemuDomainGetStorageSourceByDevstr(const char *devstr,
     for (n = disk->src; virStorageSourceIsBacking(n); n = n->backingStore) {
         if (n->id == idx)
             return n;
+
+        if (n->dataFileStore && n->dataFileStore->id == idx)
+            return n->dataFileStore;
     }
 
     if (disk->mirror) {
         for (n = disk->mirror; virStorageSourceIsBacking(n); n = n->backingStore) {
             if (n->id == idx)
                 return n;
+
+            if (n->dataFileStore && n->dataFileStore->id == idx)
+                return n->dataFileStore;
         }
     }
 
@@ -10778,6 +9497,9 @@ qemuDomainGetStorageSourceByDevstr(const char *devstr,
             for (n = backupdisk->store; virStorageSourceIsBacking(n); n = n->backingStore) {
                 if (n->id == idx)
                     return n;
+
+                if (n->dataFileStore && n->dataFileStore->id == idx)
+                    return n->dataFileStore;
             }
         }
     }
@@ -10811,8 +9533,8 @@ qemuDomainSaveCookieNew(virDomainObj *vm)
     if (!(cookie = virObjectNew(qemuDomainSaveCookieClass)))
         return NULL;
 
-    if (priv->origCPU && !(cookie->cpu = virCPUDefCopy(vm->def->cpu)))
-        return NULL;
+    if (priv->origCPU)
+        cookie->cpu = virCPUDefCopy(vm->def->cpu);
 
     cookie->slirpHelper = qemuDomainGetSlirpHelperOk(vm);
 
@@ -10874,16 +9596,15 @@ virSaveCookieCallbacks virQEMUDriverDomainSaveCookie = {
  * @vm: domain which is being started
  * @cpu: CPU updated when the domain was running previously (before migration,
  *       snapshot, or save)
- * @origCPU: where to store the original CPU from vm->def in case @cpu was
- *           used instead
+ * @origCPU: where to store the original CPU from vm->def
  *
- * Replace the CPU definition with the updated one when QEMU is new enough to
- * allow us to check extra features it is about to enable or disable when
- * starting a domain. The original CPU is stored in @origCPU.
- *
- * Returns 0 on success, -1 on error.
+ * Save the original CPU definition from inactive XML in @origCPU so that we
+ * can safely update it and still be able to check what exactly a user asked
+ * for. The domain definition will either contain a copy of the original CPU
+ * definition or a copy of @cpu in case the domain was already running and
+ * we're just restoring a saved state or preparing for incoming migration.
  */
-int
+void
 qemuDomainUpdateCPU(virDomainObj *vm,
                     virCPUDef *cpu,
                     virCPUDef **origCPU)
@@ -10892,33 +9613,42 @@ qemuDomainUpdateCPU(virDomainObj *vm,
 
     *origCPU = NULL;
 
-    if (!cpu || !vm->def->cpu ||
-        !virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_QUERY_CPU_MODEL_EXPANSION) ||
-        virCPUDefIsEqual(vm->def->cpu, cpu, false))
-        return 0;
+    if (!vm->def->cpu)
+        return;
 
-    if (!(cpu = virCPUDefCopy(cpu)))
-        return -1;
+    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_QUERY_CPU_MODEL_EXPANSION))
+        return;
 
-    VIR_DEBUG("Replacing CPU def with the updated one");
+    /* nothing to do if only topology part of CPU def is used */
+    if (vm->def->cpu->mode == VIR_CPU_MODE_CUSTOM && !vm->def->cpu->model)
+        return;
 
-    *origCPU = vm->def->cpu;
-    vm->def->cpu = cpu;
+    VIR_DEBUG("Replacing CPU definition");
 
-    return 0;
+    *origCPU = g_steal_pointer(&vm->def->cpu);
+
+    if (cpu)
+        vm->def->cpu = virCPUDefCopy(cpu);
+    else
+        vm->def->cpu = virCPUDefCopy(*origCPU);
 }
 
 
 /**
- * qemuDomainFixupCPUS:
+ * qemuDomainFixupCPUs:
  * @vm: domain object
  * @origCPU: original CPU used when the domain was started
  *
  * Libvirt older than 3.9.0 could have messed up the expansion of host-model
  * CPU when reconnecting to a running domain by adding features QEMU does not
- * support (such as cmt). This API fixes both the actual CPU provided by QEMU
- * (stored in the domain object) and the @origCPU used when starting the
- * domain.
+ * support (such as cmt).
+ *
+ * Newer libvirt would not include feature unknown to QEMU, but the CPU
+ * definitions could contain features that were removed from QEMU and added to
+ * our list of ignored features as they were not actually doing anything.
+ *
+ * This API fixes both the actual CPU provided by QEMU (stored in the domain
+ * object) and the @origCPU used when starting the domain.
  *
  * This is safe even if the original CPU definition used mode='custom' (rather
  * than host-model) since we know QEMU was able to start the domain and thus
@@ -10926,51 +9656,30 @@ qemuDomainUpdateCPU(virDomainObj *vm,
  *
  * This function can only be used on an active domain or when restoring a
  * domain which was running.
- *
- * Returns 0 on success, -1 on error.
  */
-int
+void
 qemuDomainFixupCPUs(virDomainObj *vm,
-                    virCPUDef **origCPU)
+                    virCPUDef *origCPU)
 {
     virArch arch = vm->def->os.arch;
 
     if (!ARCH_IS_X86(arch))
-        return 0;
+        return;
 
     if (!vm->def->cpu ||
         vm->def->cpu->mode != VIR_CPU_MODE_CUSTOM ||
         !vm->def->cpu->model)
-        return 0;
+        return;
 
     /* Missing origCPU means QEMU created exactly the same virtual CPU which
      * we asked for or libvirt was too old to mess up the translation from
      * host-model.
      */
-    if (!*origCPU)
-        return 0;
+    if (!origCPU)
+        return;
 
-    if (virCPUDefFindFeature(vm->def->cpu, "cmt")) {
-        g_autoptr(virCPUDef) fixedCPU = virCPUDefCopyWithoutModel(vm->def->cpu);
-
-        virCPUDefCopyModelFilter(fixedCPU, vm->def->cpu, false,
-                                 virQEMUCapsCPUFilterFeatures, &arch);
-
-        virCPUDefFree(vm->def->cpu);
-        vm->def->cpu = g_steal_pointer(&fixedCPU);
-    }
-
-    if (virCPUDefFindFeature(*origCPU, "cmt")) {
-        g_autoptr(virCPUDef) fixedOrig = virCPUDefCopyWithoutModel(*origCPU);
-
-        virCPUDefCopyModelFilter(fixedOrig, *origCPU, false,
-                                 virQEMUCapsCPUFilterFeatures, &arch);
-
-        virCPUDefFree(*origCPU);
-        *origCPU = g_steal_pointer(&fixedOrig);
-    }
-
-    return 0;
+    virCPUDefFilterFeatures(vm->def->cpu, virQEMUCapsCPUFilterFeatures, &arch);
+    virCPUDefFilterFeatures(origCPU, virQEMUCapsCPUFilterFeatures, &arch);
 }
 
 
@@ -11014,14 +9723,11 @@ qemuDomainPrepareDiskSourceData(virDomainDiskDef *disk,
     if (!disk)
         return;
 
-    /* transfer properties valid only for the top level image */
-    if (src == disk->src)
-        src->detect_zeroes = disk->detect_zeroes;
-
-    /* transfer properties valid for the full chain */
+    src->detect_zeroes = disk->detect_zeroes;
     src->iomode = disk->iomode;
     src->cachemode = disk->cachemode;
     src->discard = disk->discard;
+    src->discard_no_unref = disk->discard_no_unref;
 
     if (disk->device == VIR_DOMAIN_DISK_DEVICE_FLOPPY)
         src->floppyimg = true;
@@ -11078,9 +9784,12 @@ qemuDomainPrepareDiskSourceLegacy(virDomainDiskDef *disk,
     qemuDomainPrepareStorageSourceConfig(disk->src, cfg);
     qemuDomainPrepareDiskSourceData(disk, disk->src);
 
-    if (qemuDomainSecretStorageSourcePrepare(priv, disk->src,
-                                             disk->info.alias,
-                                             disk->info.alias) < 0)
+    if (qemuDomainSecretStorageSourcePrepareEncryption(priv, disk->src,
+                                                       disk->info.alias) < 0)
+        return -1;
+
+    if (qemuDomainSecretStorageSourcePrepareAuth(priv, disk->src,
+                                                 disk->info.alias) < 0)
         return -1;
 
     if (qemuDomainPrepareStorageSourcePR(disk->src, priv, disk->info.alias) < 0)
@@ -11100,7 +9809,7 @@ qemuDomainPrepareStorageSourceFDs(virStorageSource *src,
 {
     qemuDomainStorageSourcePrivate *srcpriv = NULL;
     virStorageType actualType = virStorageSourceGetActualType(src);
-    virStorageSourceFDTuple *fdt = NULL;
+    virDomainFDTuple *fdt = NULL;
     size_t i;
 
     if (actualType != VIR_STORAGE_TYPE_FILE &&
@@ -11119,19 +9828,11 @@ qemuDomainPrepareStorageSourceFDs(virStorageSource *src,
 
     srcpriv = qemuDomainStorageSourcePrivateFetch(src);
 
-    srcpriv->fdpass = qemuFDPassNew(src->nodestorage, priv);
+    srcpriv->fdpass = qemuFDPassNew(qemuBlockStorageSourceGetStorageNodename(src), priv);
 
     for (i = 0; i < fdt->nfds; i++) {
         g_autofree char *idx = g_strdup_printf("%zu", i);
-        int tmpfd;
-
-        if (fdt->testfds) {
-            /* when testing we want to use stable FD numbers provided by the test
-             * case */
-            tmpfd = dup2(fdt->fds[i], fdt->testfds[i]);
-        } else {
-            tmpfd = dup(fdt->fds[i]);
-        }
+        int tmpfd = dup(fdt->fds[i]);
 
         if (tmpfd < 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -11149,15 +9850,32 @@ qemuDomainPrepareStorageSourceFDs(virStorageSource *src,
 }
 
 
-int
+static int
 qemuDomainPrepareStorageSourceBlockdevNodename(virDomainDiskDef *disk,
                                                virStorageSource *src,
                                                const char *nodenameprefix,
                                                qemuDomainObjPrivate *priv,
                                                virQEMUDriverConfig *cfg)
 {
-    src->nodestorage = g_strdup_printf("%s-storage", nodenameprefix);
-    src->nodeformat = g_strdup_printf("%s-format", nodenameprefix);
+    char *nodestorage = g_strdup_printf("%s-storage", nodenameprefix);
+    const char *encryptionAlias = nodestorage;
+
+    /* qemuBlockStorageSourceSetStorageNodename steals 'nodestorage' */
+    qemuBlockStorageSourceSetStorageNodename(src, nodestorage);
+
+    if (qemuDomainPrepareStorageSourceFDs(src, priv) < 0)
+        return -1;
+
+    if (qemuBlockStorageSourceNeedsFormatLayer(src, priv->qemuCaps)) {
+        char *nodeformat = g_strdup_printf("%s-format", nodenameprefix);
+
+        qemuBlockStorageSourceSetFormatNodename(src, nodeformat);
+
+        encryptionAlias = nodeformat;
+    }
+
+    if (qemuDomainSecretStorageSourcePrepareEncryption(priv, src, encryptionAlias) < 0)
+        return -1;
 
     if (qemuBlockStorageSourceNeedsStorageSliceLayer(src))
         src->sliceStorage->nodename = g_strdup_printf("libvirt-%u-slice-sto", src->id);
@@ -11171,25 +9889,40 @@ qemuDomainPrepareStorageSourceBlockdevNodename(virDomainDiskDef *disk,
     qemuDomainPrepareStorageSourceConfig(src, cfg);
     qemuDomainPrepareDiskSourceData(disk, src);
 
-    if (qemuDomainSecretStorageSourcePrepare(priv, src,
-                                             src->nodestorage,
-                                             src->nodeformat) < 0)
+    if (!qemuDomainPrepareStorageSourceNbdkit(src, cfg, nodestorage, priv)) {
+        /* If we're using nbdkit to serve the storage source, we don't pass
+         * authentication secrets to qemu, but will pass them to nbdkit instead */
+        if (qemuDomainSecretStorageSourcePrepareAuth(priv, src, nodestorage) < 0)
+            return -1;
+    }
+
+    if (qemuDomainPrepareStorageSourcePR(src, priv, nodestorage) < 0)
         return -1;
 
-    if (qemuDomainPrepareStorageSourcePR(src, priv, src->nodestorage) < 0)
-        return -1;
-
-    if (qemuDomainPrepareStorageSourceTLS(src, cfg, src->nodestorage,
+    if (qemuDomainPrepareStorageSourceTLS(src, cfg, nodestorage,
                                           priv) < 0)
         return -1;
 
     if (qemuDomainPrepareStorageSourceNFS(src) < 0)
         return -1;
 
-    if (qemuDomainPrepareStorageSourceFDs(src, priv) < 0)
-        return -1;
-
     return 0;
+}
+
+
+static void
+qemuDomainPrepareThrottleFilterBlockdev(virDomainThrottleFilterDef *filter,
+                                        qemuDomainObjPrivate *priv)
+{
+    g_autofree char *nodenameprefix = NULL;
+
+    /* skip setting throttle filter nodename if it's set by parsing statusxml */
+    if (filter->nodename) {
+        return;
+    }
+    nodenameprefix = g_strdup_printf("libvirt-%u", qemuDomainStorageIDNew(priv));
+
+    qemuBlockThrottleFilterSetNodename(filter, g_strdup_printf("%s-filter", nodenameprefix));
 }
 
 
@@ -11216,6 +9949,7 @@ qemuDomainPrepareDiskSourceBlockdev(virDomainDiskDef *disk,
 {
     qemuDomainDiskPrivate *diskPriv = QEMU_DOMAIN_DISK_PRIVATE(disk);
     virStorageSource *n;
+    size_t i;
 
     if (disk->copy_on_read == VIR_TRISTATE_SWITCH_ON &&
         !diskPriv->nodeCopyOnRead)
@@ -11224,6 +9958,14 @@ qemuDomainPrepareDiskSourceBlockdev(virDomainDiskDef *disk,
     for (n = disk->src; virStorageSourceIsBacking(n); n = n->backingStore) {
         if (qemuDomainPrepareStorageSourceBlockdev(disk, n, priv, cfg) < 0)
             return -1;
+
+        if (n->dataFileStore &&
+            qemuDomainPrepareStorageSourceBlockdev(disk, n->dataFileStore, priv, cfg) < 0)
+            return -1;
+    }
+
+    for (i = 0; i < disk->nthrottlefilters; i++) {
+        qemuDomainPrepareThrottleFilterBlockdev(disk->throttlefilters[i], priv);
     }
 
     return 0;
@@ -11274,7 +10016,7 @@ qemuDomainPrepareHostdevSCSI(virDomainHostdevDef *hostdev,
     virStorageSource *src = NULL;
     g_autofree char *devstr = NULL;
 
-    switch ((virDomainHostdevSCSIProtocolType) scsisrc->protocol) {
+    switch (scsisrc->protocol) {
     case VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_NONE:
         virObjectUnref(scsisrc->u.host.src);
         scsisrc->u.host.src = virStorageSourceNew();
@@ -11303,12 +10045,14 @@ qemuDomainPrepareHostdevSCSI(virDomainHostdevDef *hostdev,
     }
 
     if (src) {
-        const char *backendalias = hostdev->info->alias;
+        char *backendalias;
 
         src->readonly = hostdev->readonly;
         src->id = qemuDomainStorageIDNew(priv);
-        src->nodestorage = g_strdup_printf("libvirt-%d-backend", src->id);
-        backendalias = src->nodestorage;
+        backendalias = g_strdup_printf("libvirt-%d-backend", src->id);
+
+        /* 'src' takes ownership of 'backendalias' */
+        qemuBlockStorageSourceSetStorageNodename(src, backendalias);
 
         if (src->auth) {
             virSecretUsageType usageType = VIR_SECRET_USAGE_TYPE_ISCSI;
@@ -11329,71 +10073,68 @@ qemuDomainPrepareHostdevSCSI(virDomainHostdevDef *hostdev,
 
 
 static int
-qemuDomainPrepareHostdevPCI(virDomainHostdevDef *hostdev,
+qemuDomainPrepareHostdevPCI(const virDomainDef *def,
+                            virDomainHostdevDef *hostdev,
                             virQEMUCaps *qemuCaps)
 {
-    bool supportsPassthroughVFIO = qemuHostdevHostSupportsPassthroughVFIO();
-    virDomainHostdevSubsysPCIBackendType *backend = &hostdev->source.subsys.u.pci.backend;
+    virDeviceHostdevPCIDriverName *driverName = &hostdev->source.subsys.u.pci.driver.name;
+    virDomainHostdevSubsysPCI *pcisrc = &hostdev->source.subsys.u.pci;
 
     /* assign defaults for hostdev passthrough */
-    switch (*backend) {
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT:
-        if (supportsPassthroughVFIO) {
-            if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VFIO_PCI)) {
-                *backend = VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO;
-            } else {
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("VFIO PCI device assignment is not supported by this version of QEMU"));
-                return -1;
-            }
-        } else {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("host doesn't support passthrough of host PCI devices"));
-            return -1;
-        }
+    switch (*driverName) {
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_DEFAULT:
+        /* Since nowadays only VFIO is supported default to it */
+        *driverName = VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO;
         break;
 
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO:
-        if (!supportsPassthroughVFIO) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("host doesn't support VFIO PCI passthrough"));
-            return false;
-        }
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO:
         break;
 
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_KVM:
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("host doesn't support legacy PCI passthrough"));
-        return false;
-
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN:
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_KVM:
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("QEMU does not support device assignment mode '%1$s'"),
-                       virDomainHostdevSubsysPCIBackendTypeToString(*backend));
-        return false;
+                       virDeviceHostdevPCIDriverNameTypeToString(*driverName));
+        return -1;
 
     default:
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_TYPE_LAST:
-        virReportEnumRangeError(virDomainHostdevSubsysPCIBackendType, *backend);
-        break;
+    case VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_LAST:
+        virReportEnumRangeError(virDeviceHostdevPCIDriverName, *driverName);
+        return -1;
     }
 
-    return true;
+    if (!virHostdevHostSupportsPassthroughVFIO()) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("VFIO PCI device assignment is not supported by the host"));
+        return -1;
+    }
+
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VFIO_PCI)) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("VFIO PCI device assignment is not supported by this QEMU binary"));
+        return -1;
+    }
+
+    if (pcisrc->driver.iommufd == VIR_TRISTATE_BOOL_ABSENT)
+        pcisrc->driver.iommufd = def->iommufd;
+
+    return 0;
 }
 
 
 int
-qemuDomainPrepareHostdev(virDomainHostdevDef *hostdev,
+qemuDomainPrepareHostdev(const virDomainDef *def,
+                         virDomainHostdevDef *hostdev,
                          qemuDomainObjPrivate *priv)
 {
     if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS)
         return 0;
 
-    switch ((virDomainHostdevSubsysType)hostdev->source.subsys.type) {
+    switch (hostdev->source.subsys.type) {
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI:
         return qemuDomainPrepareHostdevSCSI(hostdev, priv);
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI:
-        return qemuDomainPrepareHostdevPCI(hostdev, priv->qemuCaps);
+        return qemuDomainPrepareHostdevPCI(def, hostdev, priv->qemuCaps);
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_USB:
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI_HOST:
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_MDEV:
@@ -11407,13 +10148,18 @@ qemuDomainPrepareHostdev(virDomainHostdevDef *hostdev,
 
 /**
  * qemuDomainDiskCachemodeFlags:
+ * @cachemode: aggregated cache mode
+ * @writeback: populated with 'writeback' component of @cachemode (may be NULL)
+ * @direct: populated with 'direct' component of @cachemode (may be NULL)
+ * @noflush: populated with 'noflush' component of @cachemode (may be NULL)
  *
- * Converts disk cachemode to the cache mode options for qemu. Returns -1 for
- * invalid @cachemode values and fills the flags and returns 0 on success.
- * Flags may be NULL.
+ * Converts disk @cachemode to the cache mode options for qemu according to the
+ * table below.
+ *
+ * Returns true if @cachemode is a relevant cache mode setting.
  */
-int
-qemuDomainDiskCachemodeFlags(int cachemode,
+bool
+qemuDomainDiskCachemodeFlags(virDomainDiskCache cachemode,
                              bool *writeback,
                              bool *direct,
                              bool *noflush)
@@ -11438,45 +10184,43 @@ qemuDomainDiskCachemodeFlags(int cachemode,
      * directsync   │ false             true           false
      * unsafe       │ true              false          true
      */
-    switch ((virDomainDiskCache) cachemode) {
+    switch (cachemode) {
     case VIR_DOMAIN_DISK_CACHE_DISABLE: /* 'none' */
         *writeback = true;
         *direct = true;
         *noflush = false;
-        break;
+        return true;
 
     case VIR_DOMAIN_DISK_CACHE_WRITETHRU:
         *writeback = false;
         *direct = false;
         *noflush = false;
-        break;
+        return true;
 
     case VIR_DOMAIN_DISK_CACHE_WRITEBACK:
         *writeback = true;
         *direct = false;
         *noflush = false;
-        break;
+        return true;
 
     case VIR_DOMAIN_DISK_CACHE_DIRECTSYNC:
         *writeback = false;
         *direct = true;
         *noflush = false;
-        break;
+        return true;
 
     case VIR_DOMAIN_DISK_CACHE_UNSAFE:
         *writeback = true;
         *direct = false;
         *noflush = true;
-        break;
+        return true;
 
     case VIR_DOMAIN_DISK_CACHE_DEFAULT:
     case VIR_DOMAIN_DISK_CACHE_LAST:
-    default:
-        virReportEnumRangeError(virDomainDiskCache, cachemode);
-        return -1;
+        return false;
     }
 
-    return 0;
+    return false;
 }
 
 
@@ -11496,9 +10240,9 @@ qemuProcessEventFree(struct qemuProcessEvent *event)
     case QEMU_PROCESS_EVENT_WATCHDOG:
     case QEMU_PROCESS_EVENT_DEVICE_DELETED:
     case QEMU_PROCESS_EVENT_NETDEV_STREAM_DISCONNECTED:
+    case QEMU_PROCESS_EVENT_NETDEV_VHOST_USER_DISCONNECTED:
     case QEMU_PROCESS_EVENT_NIC_RX_FILTER_CHANGED:
     case QEMU_PROCESS_EVENT_SERIAL_CHANGED:
-    case QEMU_PROCESS_EVENT_MONITOR_EOF:
     case QEMU_PROCESS_EVENT_GUEST_CRASHLOADED:
         g_free(event->data);
         break;
@@ -11511,6 +10255,9 @@ qemuProcessEventFree(struct qemuProcessEvent *event)
     case QEMU_PROCESS_EVENT_PR_DISCONNECT:
     case QEMU_PROCESS_EVENT_UNATTENDED_MIGRATION:
     case QEMU_PROCESS_EVENT_RESET:
+    case QEMU_PROCESS_EVENT_NBDKIT_EXITED:
+    case QEMU_PROCESS_EVENT_MONITOR_EOF:
+    case QEMU_PROCESS_EVENT_SHUTDOWN_COMPLETED:
     case QEMU_PROCESS_EVENT_LAST:
         break;
     }
@@ -11646,29 +10393,6 @@ qemuDomainDefHasManagedPR(virDomainObj *vm)
 
 
 /**
- * qemuDomainSupportsCheckpointsBlockjobs:
- * @vm: domain object
- *
- * Checks whether a block job is supported in possible combination with
- * checkpoints (qcow2 bitmaps). Returns -1 if unsupported and reports an error
- * 0 in case everything is supported.
- */
-int
-qemuDomainSupportsCheckpointsBlockjobs(virDomainObj *vm)
-{
-    qemuDomainObjPrivate *priv = vm->privateData;
-
-    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_INCREMENTAL_BACKUP) &&
-        virDomainListCheckpoints(vm->checkpoints, NULL, NULL, NULL, 0) > 0) {
-        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
-                       _("cannot perform block operations while checkpoint exists"));
-        return -1;
-    }
-
-    return 0;
-}
-
-/**
  * qemuDomainInitializePflashStorageSource:
  *
  * This helper converts the specification of the source of the 'loader' in case
@@ -11698,12 +10422,13 @@ qemuDomainInitializePflashStorageSource(virDomainObj *vm,
     pflash0->format = def->os.loader->format;
     pflash0->path = g_strdup(def->os.loader->path);
     pflash0->readonly = false;
+    pflash0->backingStore = virStorageSourceNew(); /* terminator */
     virTristateBoolToBool(def->os.loader->readonly, &pflash0->readonly);
-    pflash0->nodeformat = g_strdup("libvirt-pflash0-format");
-    pflash0->nodestorage = g_strdup("libvirt-pflash0-storage");
-
+    qemuBlockStorageSourceSetFormatNodename(pflash0, g_strdup("libvirt-pflash0-format"));
+    qemuBlockStorageSourceSetStorageNodename(pflash0, g_strdup("libvirt-pflash0-storage"));
 
     if (def->os.loader->nvram) {
+        def->os.loader->nvram->backingStore = virStorageSourceNew(); /* terminator */
         if (qemuDomainPrepareStorageSourceBlockdevNodename(NULL,
                                                            def->os.loader->nvram,
                                                            "libvirt-pflash1",
@@ -11715,6 +10440,23 @@ qemuDomainInitializePflashStorageSource(virDomainObj *vm,
     priv->pflash0 = g_steal_pointer(&pflash0);
 
     return 0;
+}
+
+
+/**
+ * qemuDomainDiskHasLatencyHistogram:
+ * @disk: disk definition
+ *
+ * Returns whether @disk has any latency histogram settings configured.
+ */
+bool
+qemuDomainDiskHasLatencyHistogram(virDomainDiskDef *disk)
+{
+    return disk->histogram_boundaries ||
+           disk->histogram_boundaries_read ||
+           disk->histogram_boundaries_write ||
+           disk->histogram_boundaries_zone ||
+           disk->histogram_boundaries_flush;
 }
 
 
@@ -11767,7 +10509,12 @@ virQEMUFileOpenAs(uid_t fallback_uid,
     bool need_unlink = false;
     unsigned int vfoflags = 0;
     int fd = -1;
-    int path_shared = virFileIsSharedFS(path);
+    /* Note that it would be pointless to pass
+     * virQEMUDriverConfig.sharedFilesystems here, since those
+     * listed there are by definition paths that can be accessed
+     * as local from the current host. Thus, a second attempt at
+     * opening the file would not make a difference */
+    int path_shared = virFileIsSharedFS(path, NULL);
     uid_t uid = geteuid();
     gid_t gid = getegid();
 
@@ -11904,7 +10651,6 @@ qemuDomainOpenFile(virQEMUDriverConfig *cfg,
     bool dynamicOwnership = cfg->dynamicOwnership;
     virSecurityLabelDef *seclabel;
 
-    /* TODO: Take imagelabel into account? */
     if (def &&
         (seclabel = virDomainDefGetSecurityLabelDef(def, "dac")) != NULL &&
         seclabel->label != NULL &&
@@ -12049,7 +10795,7 @@ qemuDomainDeviceBackendChardevForeachOne(virDomainDeviceDef *dev,
                                          qemuDomainDeviceBackendChardevForeachCallback cb,
                                          void *opaque)
 {
-    switch ((virDomainDeviceType) dev->type) {
+    switch (dev->type) {
     case VIR_DOMAIN_DEVICE_DISK:
         if (virStorageSourceGetActualType(dev->data.disk->src) != VIR_STORAGE_TYPE_VHOST_USER)
             return 0;
@@ -12122,6 +10868,7 @@ qemuDomainDeviceBackendChardevForeachOne(virDomainDeviceDef *dev,
     case VIR_DOMAIN_DEVICE_VSOCK:
     case VIR_DOMAIN_DEVICE_AUDIO:
     case VIR_DOMAIN_DEVICE_CRYPTO:
+    case VIR_DOMAIN_DEVICE_PSTORE:
         /* no chardev backend */
         break;
     }
@@ -12148,7 +10895,7 @@ qemuDomainDeviceBackendChardevIter(virDomainDef *def G_GNUC_UNUSED,
 
 
 /**
- * qemuDomainDeviceBackendChardevForeach:a
+ * qemuDomainDeviceBackendChardevForeach:
  * @def: domain definition
  * @cb: callback
  * @opqaue: data for @cb
@@ -12214,6 +10961,18 @@ qemuDomainRemoveLogs(virQEMUDriver *driver,
 }
 
 
+/**
+ * qemuDomainObjWait:
+ * @vm: domain object
+ *
+ * Wait for a signal on the main domain condition. Take into account internal
+ * qemu state in addition to what virDomainObjWait checks. Code in the qemu
+ * driver must use this function exclusively instead of virDomainObjWait.
+ *
+ * Returns:
+ *  0 on successful wait AND VM is guaranteed to be running
+ *  -1 on failure to wait or VM was terminated while waiting
+ */
 int
 qemuDomainObjWait(virDomainObj *vm)
 {
@@ -12228,6 +10987,24 @@ qemuDomainObjWait(virDomainObj *vm)
     }
 
     return 0;
+}
+
+
+/**
+ * qemuDomainObjIsActive:
+ * @vm: domain object
+ *
+ * Return whether @vm is active. Take qemu-driver specifics into account.
+ */
+bool
+qemuDomainObjIsActive(virDomainObj *vm)
+{
+    qemuDomainObjPrivate *priv = vm->privateData;
+
+    if (priv->beingDestroyed)
+        return false;
+
+    return virDomainObjIsActive(vm);
 }
 
 
@@ -12278,8 +11055,7 @@ syncNicRxFilterMacAddr(char *ifname, virNetDevRxFilter *guestFilter,
 
         /* set new MAC address from guest to associated macvtap device */
         if (virNetDevSetMAC(ifname, &guestFilter->mac) < 0) {
-            VIR_WARN("Couldn't set new MAC address %s to device %s "
-                     "while responding to NIC_RX_FILTER_CHANGED",
+            VIR_WARN("Couldn't set new MAC address %s to device %s while responding to NIC_RX_FILTER_CHANGED",
                      newMacStr, ifname);
         } else {
             VIR_DEBUG("device %s MAC address set to %s", ifname, newMacStr);
@@ -12311,8 +11087,7 @@ syncNicRxFilterGuestMulticast(char *ifname, virNetDevRxFilter *guestFilter,
             virMacAddrFormat(&guestFilter->multicast.table[i], macstr);
 
             if (virNetDevAddMulti(ifname, &guestFilter->multicast.table[i]) < 0) {
-                VIR_WARN("Couldn't add new multicast MAC address %s to "
-                         "device %s while responding to NIC_RX_FILTER_CHANGED",
+                VIR_WARN("Couldn't add new multicast MAC address %s to device %s while responding to NIC_RX_FILTER_CHANGED",
                          macstr, ifname);
             } else {
                 VIR_DEBUG("Added multicast MAC %s to %s interface",
@@ -12346,8 +11121,7 @@ syncNicRxFilterHostMulticast(char *ifname, virNetDevRxFilter *guestFilter,
             virMacAddrFormat(&hostFilter->multicast.table[i], macstr);
 
             if (virNetDevDelMulti(ifname, &hostFilter->multicast.table[i]) < 0) {
-                VIR_WARN("Couldn't delete multicast MAC address %s from "
-                         "device %s while responding to NIC_RX_FILTER_CHANGED",
+                VIR_WARN("Couldn't delete multicast MAC address %s from device %s while responding to NIC_RX_FILTER_CHANGED",
                          macstr, ifname);
             } else {
                 VIR_DEBUG("Deleted multicast MAC %s from %s interface",
@@ -12380,8 +11154,7 @@ syncNicRxFilterPromiscMode(char *ifname,
 
     if (setpromisc) {
         if (virNetDevSetPromiscuous(ifname, promisc) < 0) {
-            VIR_WARN("Couldn't set PROMISC flag to %s for device %s "
-                     "while responding to NIC_RX_FILTER_CHANGED",
+            VIR_WARN("Couldn't set PROMISC flag to %s for device %s while responding to NIC_RX_FILTER_CHANGED",
                      promisc ? "true" : "false", ifname);
         }
     }
@@ -12398,9 +11171,8 @@ syncNicRxFilterMultiMode(char *ifname, virNetDevRxFilter *guestFilter,
         switch (guestFilter->multicast.mode) {
         case VIR_NETDEV_RX_FILTER_MODE_ALL:
             if (virNetDevSetRcvAllMulti(ifname, true) < 0) {
-                VIR_WARN("Couldn't set allmulticast flag to 'on' for "
-                         "device %s while responding to "
-                         "NIC_RX_FILTER_CHANGED", ifname);
+                VIR_WARN("Couldn't set allmulticast flag to 'on' for device %s while responding to NIC_RX_FILTER_CHANGED",
+                         ifname);
             }
             break;
 
@@ -12411,16 +11183,13 @@ syncNicRxFilterMultiMode(char *ifname, virNetDevRxFilter *guestFilter,
             }
 
             if (virNetDevSetRcvMulti(ifname, true) < 0) {
-                VIR_WARN("Couldn't set multicast flag to 'on' for "
-                         "device %s while responding to "
-                         "NIC_RX_FILTER_CHANGED", ifname);
+                VIR_WARN("Couldn't set multicast flag to 'on' for device %s while responding to NIC_RX_FILTER_CHANGED",
+                         ifname);
             }
 
             if (virNetDevSetRcvAllMulti(ifname,
                                         guestFilter->multicast.overflow) < 0) {
-                VIR_WARN("Couldn't set allmulticast flag to '%s' for "
-                         "device %s while responding to "
-                         "NIC_RX_FILTER_CHANGED",
+                VIR_WARN("Couldn't set allmulticast flag to '%s' for device %s while responding to NIC_RX_FILTER_CHANGED",
                          virTristateSwitchTypeToString(virTristateSwitchFromBool(guestFilter->multicast.overflow)),
                          ifname);
             }
@@ -12428,15 +11197,12 @@ syncNicRxFilterMultiMode(char *ifname, virNetDevRxFilter *guestFilter,
 
         case VIR_NETDEV_RX_FILTER_MODE_NONE:
             if (virNetDevSetRcvAllMulti(ifname, false) < 0) {
-                VIR_WARN("Couldn't set allmulticast flag to 'off' for "
-                         "device %s while responding to "
-                         "NIC_RX_FILTER_CHANGED", ifname);
+                VIR_WARN("Couldn't set allmulticast flag to 'off' for device %s while responding to NIC_RX_FILTER_CHANGED",
+                         ifname);
             }
 
             if (virNetDevSetRcvMulti(ifname, false) < 0) {
-                VIR_WARN("Couldn't set multicast flag to 'off' for "
-                         "device %s while responding to "
-                         "NIC_RX_FILTER_CHANGED",
+                VIR_WARN("Couldn't set multicast flag to 'off' for device %s while responding to NIC_RX_FILTER_CHANGED",
                          ifname);
             }
             break;
@@ -12464,14 +11230,29 @@ syncNicRxFilterMulticast(char *ifname,
 }
 
 
+/**
+ * qemuDomainSyncRxFilter:
+ * @vm: domain object
+ * @def: domain interface definition
+ * @asyncJob: async job type
+ *
+ * Fetch new state of RX Filter and set host side of the interface
+ * accordingly (e.g. reflect MAC address change on macvtap).
+ *
+ * Reflect changed MAC address in the domain definition.
+ *
+ * Returns: 0 on success, -1 on error.
+ */
 int
 qemuDomainSyncRxFilter(virDomainObj *vm,
                        virDomainNetDef *def,
-                       virDomainAsyncJob asyncJob)
+                       virDomainAsyncJob asyncJob,
+                       virObjectEvent **event)
 {
     qemuDomainObjPrivate *priv = vm->privateData;
     g_autoptr(virNetDevRxFilter) guestFilter = NULL;
     g_autoptr(virNetDevRxFilter) hostFilter = NULL;
+    virMacAddr *oldMac = NULL;
     int rc;
 
     if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
@@ -12515,6 +11296,37 @@ qemuDomainSyncRxFilter(virDomainObj *vm,
             virNetDevBandwidthUpdateFilter(brname, &guestFilter->mac,
                                            def->data.network.actual->class_id) < 0)
             return -1;
+    }
+
+    if (def->currentAddress)
+        oldMac = def->currentAddress;
+    else
+        oldMac = &def->mac;
+
+    if (virMacAddrCmp(oldMac, &guestFilter->mac)) {
+        if (event) {
+            char oldMACStr[VIR_MAC_STRING_BUFLEN] = { 0 };
+            char newMACStr[VIR_MAC_STRING_BUFLEN] = { 0 };
+
+            virMacAddrFormat(oldMac, oldMACStr);
+            virMacAddrFormat(&guestFilter->mac, newMACStr);
+
+            *event = virDomainEventNICMACChangeNewFromObj(vm,
+                                                          def->info.alias,
+                                                          oldMACStr,
+                                                          newMACStr);
+        }
+
+        /* Reflect changed MAC address in the domain XML. */
+        if (virMacAddrCmp(&def->mac, &guestFilter->mac)) {
+            if (!def->currentAddress) {
+                def->currentAddress = g_new0(virMacAddr, 1);
+            }
+
+            virMacAddrSet(def->currentAddress, &guestFilter->mac);
+        } else {
+            VIR_FREE(def->currentAddress);
+        }
     }
 
     return 0;
@@ -12702,4 +11514,278 @@ qemuDomainNumatuneMaybeFormatNodesetUnion(virDomainObj *vm,
 
     if (nodeset)
         *nodeset = g_steal_pointer(&unionMask);
+}
+
+
+/**
+ * @cfg: driver configuration data
+ * @vm: domain object
+ * @src: storage source data
+ * @ret_fd: pointer to return open'd file descriptor
+ * @ret_sb: pointer to return stat buffer (local or remote)
+ * @skipInaccessible: Don't report error if files are not accessible
+ *
+ * For local storage, open the file using qemuDomainOpenFile and then use
+ * fstat() to grab the stat struct data for the caller.
+ *
+ * For remote storage, attempt to access the file and grab the stat
+ * struct data if the remote connection supports it.
+ *
+ * Returns 1 if @src was successfully opened (@ret_fd and @ret_sb is populated),
+ * 0 if @src can't be opened and @skipInaccessible is true (no errors are
+ * reported) or -1 otherwise (errors are reported).
+ */
+int
+qemuDomainStorageOpenStat(virQEMUDriverConfig *cfg,
+                          virDomainObj *vm,
+                          virStorageSource *src,
+                          int *ret_fd,
+                          struct stat *ret_sb,
+                          bool skipInaccessible)
+{
+    if (virStorageSourceIsLocalStorage(src)) {
+        if (skipInaccessible && !virFileExists(src->path))
+            return 0;
+
+        if ((*ret_fd = qemuDomainOpenFile(cfg, vm->def, src->path, O_RDONLY,
+                                          NULL)) < 0)
+            return -1;
+
+        if (fstat(*ret_fd, ret_sb) < 0) {
+            virReportSystemError(errno, _("cannot stat file '%1$s'"), src->path);
+            VIR_FORCE_CLOSE(*ret_fd);
+            return -1;
+        }
+    } else {
+        if (skipInaccessible && virStorageSourceSupportsBackingChainTraversal(src) <= 0)
+            return 0;
+
+        if (virStorageSourceInitAs(src, cfg->user, cfg->group) < 0)
+            return -1;
+
+        if (virStorageSourceStat(src, ret_sb) < 0) {
+            virStorageSourceDeinit(src);
+            virReportSystemError(errno, _("failed to stat remote file '%1$s'"),
+                                 NULLSTR(src->path));
+            return -1;
+        }
+    }
+
+    return 1;
+}
+
+
+/**
+ * @src: storage source data
+ * @fd: file descriptor to close for local
+ *
+ * If local, then just close the file descriptor.
+ * else remote, then tear down the storage driver backend connection.
+ */
+void
+qemuDomainStorageCloseStat(virStorageSource *src,
+                           int *fd)
+{
+    if (virStorageSourceIsLocalStorage(src))
+        VIR_FORCE_CLOSE(*fd);
+    else
+        virStorageSourceDeinit(src);
+}
+
+
+/**
+ * qemuDomainStorageUpdatePhysical:
+ * @cfg: qemu driver configuration object
+ * @vm: domain object
+ * @src: storage source to update
+ *
+ * Update the physical size of the disk by reading the actual size of the image
+ * on disk.
+ *
+ * Returns 0 on successful update and -1 otherwise (some uncommon errors may be
+ * reported but are reset (thus only logged)).
+ */
+int
+qemuDomainStorageUpdatePhysical(virQEMUDriverConfig *cfg,
+                                virDomainObj *vm,
+                                virStorageSource *src)
+{
+    int ret;
+    int fd = -1;
+    struct stat sb;
+
+    if (virStorageSourceIsEmpty(src))
+        return 0;
+
+    if ((ret = qemuDomainStorageOpenStat(cfg, vm, src, &fd, &sb, true)) <= 0) {
+        if (ret < 0)
+            virResetLastError();
+        return -1;
+    }
+
+    ret = virStorageSourceUpdatePhysicalSize(src, fd, &sb);
+
+    qemuDomainStorageCloseStat(src, &fd);
+
+    return ret;
+}
+
+
+/**
+ * qemuDomainCheckCPU:
+ * @arch: CPU architecture
+ * @virtType: domain type (KVM vs. TCG)
+ * @qemuCaps: QEMU capabilities
+ * @cpu: CPU definition to check against "host CPU"
+ * @compatCPU: type of CPU used for old style check
+ * @failIncompatible: return an error instead of VIR_CPU_COMPARE_INCOMPATIBLE
+ *
+ * Perform a "partial" check of the @cpu against a "host CPU".
+ *
+ * Old style check used with all existing CPU models uses cpu_map definition of
+ * the model in @cpu and compares it to the host CPU fetched @qemuCaps
+ * according to @compatCPU.
+ *
+ * For future CPU models (without <check partial='compat'/>) only explicitly
+ * requested features are checked against the host CPU definition provided by
+ * QEMU and the usability (with a list of blocking features) info for the base
+ * CPU model. Our definition of the mode in cpu_map is ignored completely.
+ *
+ * Returns VIR_CPU_COMPARE_ERROR on error, VIR_CPU_COMPARE_INCOMPATIBLE when
+ * the two CPUs are incompatible, VIR_CPU_COMPARE_IDENTICAL when the two CPUs
+ * are identical, VIR_CPU_COMPARE_SUPERSET when the @cpu CPU is a superset of
+ * the @host CPU. If @failIncompatible is true, the function will return
+ * VIR_CPU_COMPARE_ERROR (and set VIR_ERR_CPU_INCOMPATIBLE error) when the
+ * two CPUs are incompatible.
+ */
+virCPUCompareResult
+qemuDomainCheckCPU(virArch arch,
+                   virDomainVirtType virtType,
+                   virQEMUCaps *qemuCaps,
+                   virCPUDef *cpu,
+                   virQEMUCapsHostCPUType compatCPU,
+                   bool failIncompatible)
+{
+    virCPUDef *hypervisorCPU;
+    bool compat = false;
+    char **blockers = NULL;
+
+    if (virQEMUCapsIsCPUUsable(qemuCaps, virtType, cpu))
+        return VIR_CPU_COMPARE_SUPERSET;
+
+    hypervisorCPU = virQEMUCapsGetHostModel(qemuCaps, virtType,
+                                            VIR_QEMU_CAPS_HOST_CPU_REPORTED);
+
+    /* Force compat check if the CPU model is not found in qemuCaps or
+     * we don't have host CPU data from QEMU */
+    if (!cpu->model ||
+        !hypervisorCPU ||
+        hypervisorCPU->fallback != VIR_CPU_FALLBACK_FORBID ||
+        virQEMUCapsGetCPUBlockers(qemuCaps, virtType,
+                                  cpu->model, &blockers) < 0)
+        compat = true;
+    else if (virCPUGetCheckMode(arch, cpu, &compat) < 0)
+        return VIR_CPU_COMPARE_ERROR;
+
+    if (compat) {
+        virCPUDef *host = virQEMUCapsGetHostModel(qemuCaps, virtType, compatCPU);
+        return virCPUCompare(arch, host, cpu, failIncompatible);
+    }
+
+    return virCPUCompareUnusable(arch, hypervisorCPU, cpu,
+                                 blockers, failIncompatible);
+}
+
+
+bool
+qemuDomainMachineSupportsFloppy(const char *machine,
+                                virQEMUCaps *qemuCaps)
+{
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_BUS_FLOPPY))
+        return false;
+
+    /* PowerPC pseries based VMs do not support floppy device */
+    if (qemuDomainMachineIsPSeries(machine, virQEMUCapsGetArch(qemuCaps)))
+        return false;
+
+    return true;
+}
+
+
+/**
+ * qemuDomainUpdateCustomCapabilities:
+ * @def: domain definition
+ * @qemuCaps: qemu capabilities
+ * @qemuCapsCopy: if non-NULL filled filled with a valid virQEMUCaps pointer (see below)
+ *
+ * Updates @qemuCaps based on the qemu namespace XML config for modifying
+ * capabilities:
+ *
+ *  <domain type='qemu' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+ *    <qemu:capabilities>
+ *      <qemu:add capability='blockdev'/>
+ *      <qemu:del capability='drive'/>
+ *    </qemu:capabilities>
+ *  </domain>
+ *
+ *  If @qemuCapsCopy is NULL, @qemuCaps is directly modified.
+ *
+ *  If @qemuCapsCopy is non-NULL, it's always filled with a virQEMUCaps instance
+ *  that the caller needs to unref. The following applies:
+ *   - no caps modification needed: @qemuCaps is ref'd and filled into @qemuCapsCopy
+ *   - caps modifications are needed: @qemuCaps is copied into @qemuCapsCopy and
+ *                                    modifications happen on the copy
+ *
+ *  Returns 0 on success (including when no modification was needed), -1 on
+ *  error and reports libvirt errors.
+ */
+int
+qemuDomainUpdateCustomCapabilities(const virDomainDef *def,
+                                   virQEMUCaps *qemuCaps,
+                                   virQEMUCaps **qemuCapsCopy)
+{
+    qemuDomainXmlNsDef *nsdef = def->namespaceData;
+    char **next;
+    int tmp;
+
+    if (!nsdef ||
+        (!nsdef->capsadd && !nsdef->capsdel)) {
+
+        if (qemuCapsCopy)
+            *qemuCapsCopy = virObjectRef(qemuCaps);
+
+        return 0;
+    }
+
+    if (qemuCapsCopy) {
+        *qemuCapsCopy = virQEMUCapsNewCopy(qemuCaps);
+
+        qemuCaps = *qemuCapsCopy;
+    }
+
+    for (next = nsdef->capsadd; next && *next; next++) {
+        if ((tmp = virQEMUCapsTypeFromString(*next)) < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("invalid qemu namespace capability '%1$s'"),
+                           *next);
+            return -1;
+        }
+
+        virQEMUCapsSet(qemuCaps, tmp);
+    }
+
+    for (next = nsdef->capsdel; next && *next; next++) {
+        if ((tmp = virQEMUCapsTypeFromString(*next)) < 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("invalid qemu namespace capability '%1$s'"),
+                           *next);
+            return -1;
+        }
+
+        virQEMUCapsClear(qemuCaps, tmp);
+    }
+
+    virQEMUCapsInitProcessCapsInterlock(qemuCaps);
+
+    return 0;
 }

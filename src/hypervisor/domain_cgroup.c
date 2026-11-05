@@ -233,8 +233,7 @@ virDomainCgroupSetMemoryLimitParameters(virCgroup *cgroup,
 
         if (mem_limit > swap_limit) {
             virReportError(VIR_ERR_INVALID_ARG, "%s",
-                           _("memory hard_limit tunable value must be lower "
-                             "than or equal to swap_hard_limit"));
+                           _("memory hard_limit tunable value must be lower than or equal to swap_hard_limit"));
             return -1;
         }
     }
@@ -343,7 +342,7 @@ virDomainCgroupSetupCpuCgroup(virDomainObj *vm,
 }
 
 
-int
+static int
 virDomainCgroupInitCgroup(const char *prefix,
                           virDomainObj *vm,
                           size_t nnicindexes,
@@ -352,6 +351,7 @@ virDomainCgroupInitCgroup(const char *prefix,
                           int cgroupControllers,
                           unsigned int maxThreadsPerProc,
                           bool privileged,
+                          bool daemonDomainShutdown,
                           char *machineName)
 {
     if (!privileged)
@@ -385,6 +385,7 @@ virDomainCgroupInitCgroup(const char *prefix,
                             vm->def->resource->partition,
                             cgroupControllers,
                             maxThreadsPerProc,
+                            daemonDomainShutdown,
                             cgroup) < 0) {
         if (virCgroupNewIgnoreError())
             return 0;
@@ -411,8 +412,7 @@ virDomainCgroupRestoreCgroupState(virDomainObj *vm,
     if (!(all_nodes = virNumaGetHostMemoryNodeset()))
         goto error;
 
-    if (!(mem_mask = virBitmapFormat(all_nodes)))
-        goto error;
+    mem_mask = virBitmapFormat(all_nodes);
 
     if (virCgroupHasEmptyTasks(cgroup, VIR_CGROUP_CONTROLLER_CPUSET) <= 0)
         goto error;
@@ -515,6 +515,7 @@ virDomainCgroupSetupCgroup(const char *prefix,
                            int cgroupControllers,
                            unsigned int maxThreadsPerProc,
                            bool privileged,
+                           bool daemonDomainShutdown,
                            char *machineName)
 {
     if (vm->pid == 0) {
@@ -531,6 +532,7 @@ virDomainCgroupSetupCgroup(const char *prefix,
                                   cgroupControllers,
                                   maxThreadsPerProc,
                                   privileged,
+                                  daemonDomainShutdown,
                                   machineName) < 0)
         return -1;
 
@@ -649,8 +651,7 @@ virDomainCgroupEmulatorAllNodesAllow(virCgroup *cgroup,
     if (!(all_nodes = virNumaGetHostMemoryNodeset()))
         goto cleanup;
 
-    if (!(all_nodes_str = virBitmapFormat(all_nodes)))
-        goto cleanup;
+    all_nodes_str = virBitmapFormat(all_nodes);
 
     data = g_new0(virCgroupEmulatorAllNodesData, 1);
 

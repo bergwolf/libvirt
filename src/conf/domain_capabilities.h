@@ -43,6 +43,13 @@ struct _virDomainCapsStringValues {
     size_t nvalues; /* number of strings */
 };
 
+typedef struct _virDomainCapsFirmwareFeatures virDomainCapsFirmwareFeatures;
+struct _virDomainCapsFirmwareFeatures {
+    virTristateBool supported;
+    virDomainCapsEnum secureBoot;
+    virDomainCapsEnum enrolledKeys;
+};
+
 STATIC_ASSERT_ENUM(VIR_DOMAIN_LOADER_TYPE_LAST);
 STATIC_ASSERT_ENUM(VIR_TRISTATE_BOOL_LAST);
 typedef struct _virDomainCapsLoader virDomainCapsLoader;
@@ -54,12 +61,19 @@ struct _virDomainCapsLoader {
     virDomainCapsEnum secure;   /* Info about secure:virTristateBool */
 };
 
+typedef struct _virDomainCapsVarstore virDomainCapsVarstore;
+struct _virDomainCapsVarstore {
+    virTristateBool supported;
+};
+
 STATIC_ASSERT_ENUM(VIR_DOMAIN_OS_DEF_FIRMWARE_LAST);
 typedef struct _virDomainCapsOS virDomainCapsOS;
 struct _virDomainCapsOS {
     virTristateBool supported;
     virDomainCapsEnum firmware;     /* Info about virDomainOsDefFirmware */
+    virDomainCapsFirmwareFeatures firmwareFeatures;
     virDomainCapsLoader loader;     /* Info about virDomainLoaderDef */
+    virDomainCapsVarstore varstore;
 };
 
 STATIC_ASSERT_ENUM(VIR_DOMAIN_MEMORY_SOURCE_LAST);
@@ -99,7 +113,7 @@ STATIC_ASSERT_ENUM(VIR_DOMAIN_HOSTDEV_MODE_LAST);
 STATIC_ASSERT_ENUM(VIR_DOMAIN_STARTUP_POLICY_LAST);
 STATIC_ASSERT_ENUM(VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_LAST);
 STATIC_ASSERT_ENUM(VIR_DOMAIN_HOSTDEV_CAPS_TYPE_LAST);
-STATIC_ASSERT_ENUM(VIR_DOMAIN_HOSTDEV_PCI_BACKEND_TYPE_LAST);
+STATIC_ASSERT_ENUM(VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_LAST);
 typedef struct _virDomainCapsDeviceHostdev virDomainCapsDeviceHostdev;
 struct _virDomainCapsDeviceHostdev {
     virTristateBool supported;
@@ -108,6 +122,7 @@ struct _virDomainCapsDeviceHostdev {
     virDomainCapsEnum subsysType;       /* Info about virDomainHostdevSubsysType */
     virDomainCapsEnum capsType;         /* Info about virDomainHostdevCapsType */
     virDomainCapsEnum pciBackend;       /* Info about virDomainHostdevSubsysPCIBackendType */
+    virDomainCapsEnum iommufd;          /* Info about iommufd:virTristateBool */
     /* add new fields here */
 };
 
@@ -163,7 +178,20 @@ typedef struct _virDomainCapsFeatureHyperv virDomainCapsFeatureHyperv;
 struct _virDomainCapsFeatureHyperv {
     virTristateBool supported;
     virDomainCapsEnum features; /* Info about supported virDomainHyperv features */
+    unsigned int spinlocks;
+    virTristateSwitch stimer_direct;
+    virTristateSwitch tlbflush_direct;
+    virTristateSwitch tlbflush_extended;
+    char *vendor_id;
 };
+
+STATIC_ASSERT_ENUM(VIR_DOMAIN_LAUNCH_SECURITY_LAST);
+typedef struct _virDomainCapsLaunchSecurity virDomainCapsLaunchSecurity;
+struct _virDomainCapsLaunchSecurity {
+    virTristateBool supported;
+    virDomainCapsEnum sectype; /* Info about supported virDomainLaunchSecurity */
+};
+
 
 typedef enum {
     VIR_DOMCAPS_CPU_USABLE_UNKNOWN,
@@ -181,6 +209,7 @@ struct _virDomainCapsCPUModel {
     char **blockers; /* NULL-terminated list of usability blockers */
     bool deprecated;
     char *vendor;
+    char *canonical;
 };
 
 typedef struct _virDomainCapsCPUModels virDomainCapsCPUModels;
@@ -242,13 +271,37 @@ struct _virDomainCapsDeviceCrypto {
     virDomainCapsEnum backendModel;   /* virDomainCryptoBackend */
 };
 
+STATIC_ASSERT_ENUM(VIR_DOMAIN_NET_BACKEND_LAST);
+typedef struct _virDomainCapsDeviceNet virDomainCapsDeviceNet;
+struct _virDomainCapsDeviceNet {
+    virTristateBool supported;
+    virDomainCapsEnum backendType; /* virDomainNetBackendType */
+};
+
+STATIC_ASSERT_ENUM(VIR_DOMAIN_PANIC_MODEL_LAST);
+typedef struct _virDomainCapsDevicePanic virDomainCapsDevicePanic;
+struct _virDomainCapsDevicePanic {
+    virTristateBool supported;
+    virDomainCapsEnum model;   /* virDomainPanicModel */
+};
+
+typedef struct _virDomainCapsDeviceConsole virDomainCapsDeviceConsole;
+struct _virDomainCapsDeviceConsole {
+    virTristateBool supported;
+    virDomainCapsEnum type;   /* virDomainChrType */
+};
+
+
 typedef enum {
     VIR_DOMAIN_CAPS_FEATURE_IOTHREADS = 0,
     VIR_DOMAIN_CAPS_FEATURE_VMCOREINFO,
     VIR_DOMAIN_CAPS_FEATURE_GENID,
     VIR_DOMAIN_CAPS_FEATURE_BACKING_STORE_INPUT,
     VIR_DOMAIN_CAPS_FEATURE_BACKUP,
+    VIR_DOMAIN_CAPS_FEATURE_ASYNC_TEARDOWN,
     VIR_DOMAIN_CAPS_FEATURE_S390_PV,
+    VIR_DOMAIN_CAPS_FEATURE_PS2,
+    VIR_DOMAIN_CAPS_FEATURE_TDX,
 
     VIR_DOMAIN_CAPS_FEATURE_LAST
 } virDomainCapsFeature;
@@ -277,12 +330,16 @@ struct _virDomainCaps {
     virDomainCapsDeviceRedirdev redirdev;
     virDomainCapsDeviceChannel channel;
     virDomainCapsDeviceCrypto crypto;
+    virDomainCapsDeviceNet net;
+    virDomainCapsDevicePanic panic;
+    virDomainCapsDeviceConsole console;
     /* add new domain devices here */
 
     virDomainCapsFeatureGIC gic;
     virSEVCapability *sev;
     virSGXCapability *sgx;
     virDomainCapsFeatureHyperv *hyperv;
+    virDomainCapsLaunchSecurity launchSecurity;
     /* add new domain features here */
 
     virTristateBool features[VIR_DOMAIN_CAPS_FEATURE_LAST];
@@ -304,10 +361,13 @@ virDomainCapsCPUModelsAdd(virDomainCapsCPUModels *cpuModels,
                           virDomainCapsCPUUsable usable,
                           char **blockers,
                           bool deprecated,
-                          const char *vendor);
+                          const char *vendor,
+                          const char *canonical);
 virDomainCapsCPUModel *
 virDomainCapsCPUModelsGet(virDomainCapsCPUModels *cpuModels,
                           const char *name);
+void
+virDomainCapsCPUModelsSort(virDomainCapsCPUModels *cpuModels);
 
 #define VIR_DOMAIN_CAPS_ENUM_IS_SET(capsEnum, value) \
     ((capsEnum).values & (1U << value))
@@ -338,3 +398,9 @@ void
 virSGXCapabilitiesFree(virSGXCapability *capabilities);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virSGXCapability, virSGXCapabilitiesFree);
+
+void virDomainCapsFeatureHypervFree(virDomainCapsFeatureHyperv *capabilities);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virDomainCapsFeatureHyperv, virDomainCapsFeatureHypervFree);
+
+virDomainCapsFeatureHyperv *
+virDomainCapsFeatureHypervCopy(virDomainCapsFeatureHyperv *cap);

@@ -569,7 +569,7 @@ struct remote_domain_save_params_args {
                 u_int              params_len;
                 remote_typed_param * params_val;
         } params;
-    u_int                      flags;
+        u_int                      flags;
 };
 struct remote_domain_restore_args {
         remote_nonnull_string      from;
@@ -628,7 +628,7 @@ struct remote_domain_migrate_prepare_args {
         remote_string              uri_in;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
 };
 struct remote_domain_migrate_prepare_ret {
         struct {
@@ -646,7 +646,7 @@ struct remote_domain_migrate_perform_args {
         remote_nonnull_string      uri;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
 };
 struct remote_domain_migrate_finish_args {
         remote_nonnull_string      dname;
@@ -664,7 +664,7 @@ struct remote_domain_migrate_prepare2_args {
         remote_string              uri_in;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
         remote_nonnull_string      dom_xml;
 };
 struct remote_domain_migrate_prepare2_ret {
@@ -1050,6 +1050,20 @@ struct remote_domain_get_block_io_tune_ret {
         } params;
         int                        nparams;
 };
+struct remote_domain_set_throttle_group_args {
+        remote_nonnull_domain      dom;
+        remote_nonnull_string      group;
+        struct {
+                u_int              params_len;
+                remote_typed_param * params_val;
+        } params;
+        u_int                      flags;
+};
+struct remote_domain_del_throttle_group_args {
+        remote_nonnull_domain      dom;
+        remote_string              group;
+        u_int                      flags;
+};
 struct remote_domain_get_cpu_stats_args {
         remote_nonnull_domain      dom;
         u_int                      nparams;
@@ -1115,7 +1129,7 @@ struct remote_network_create_xml_ret {
 };
 struct remote_network_create_xml_flags_args {
         remote_nonnull_string      xml;
-        u_int                    flags;
+        u_int                      flags;
 };
 struct remote_network_create_xml_flags_ret {
         remote_nonnull_network     net;
@@ -1128,7 +1142,7 @@ struct remote_network_define_xml_ret {
 };
 struct remote_network_define_xml_flags_args {
         remote_nonnull_string      xml;
-        u_int                    flags;
+        u_int                      flags;
 };
 struct remote_network_define_xml_flags_ret {
         remote_nonnull_network     net;
@@ -1673,6 +1687,11 @@ struct remote_node_device_is_active_args {
 struct remote_node_device_is_active_ret {
         int                        active;
 };
+struct remote_node_device_update_args {
+        remote_nonnull_string      name;
+        remote_nonnull_string      xml_desc;
+        u_int                      flags;
+};
 struct remote_connect_domain_event_register_ret {
         int                        cb_registered;
 };
@@ -1767,7 +1786,7 @@ struct remote_secret_lookup_by_usage_ret {
 struct remote_domain_migrate_prepare_tunnel_args {
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
         remote_nonnull_string      dom_xml;
 };
 struct remote_connect_is_secure_ret {
@@ -2243,7 +2262,7 @@ struct remote_domain_migrate_begin3_args {
         remote_string              xmlin;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
 };
 struct remote_domain_migrate_begin3_ret {
         struct {
@@ -2260,7 +2279,7 @@ struct remote_domain_migrate_prepare3_args {
         remote_string              uri_in;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
         remote_nonnull_string      dom_xml;
 };
 struct remote_domain_migrate_prepare3_ret {
@@ -2277,7 +2296,7 @@ struct remote_domain_migrate_prepare_tunnel3_args {
         } cookie_in;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
         remote_nonnull_string      dom_xml;
 };
 struct remote_domain_migrate_prepare_tunnel3_ret {
@@ -2297,7 +2316,7 @@ struct remote_domain_migrate_perform3_args {
         remote_string              uri;
         uint64_t                   flags;
         remote_string              dname;
-        uint64_t                   resource;
+        uint64_t                   bandwidth;
 };
 struct remote_domain_migrate_perform3_ret {
         struct {
@@ -2686,6 +2705,29 @@ struct remote_network_event_lifecycle_msg {
         remote_nonnull_network     net;
         int                        event;
         int                        detail;
+};
+struct remote_network_event_callback_metadata_change_msg {
+        int                        callbackID;
+        remote_nonnull_network     net;
+        int                        type;
+        remote_string              nsuri;
+};
+struct remote_network_set_metadata_args {
+        remote_nonnull_network     network;
+        int                        type;
+        remote_string              metadata;
+        remote_string              key;
+        remote_string              uri;
+        u_int                      flags;
+};
+struct remote_network_get_metadata_args {
+        remote_nonnull_network     network;
+        int                        type;
+        remote_string              uri;
+        u_int                      flags;
+};
+struct remote_network_get_metadata_ret {
+        remote_nonnull_string      metadata;
 };
 struct remote_connect_storage_pool_event_register_any_args {
         int                        eventID;
@@ -3262,15 +3304,58 @@ struct remote_domain_start_dirty_rate_calc_args {
         int                        seconds;
         u_int                      flags;
 };
+struct remote_domain_graphics_reload_args {
+        remote_nonnull_domain      dom;
+        u_int                      type;
+        u_int                      flags;
+};
 struct remote_domain_event_memory_device_size_change_msg {
         int                        callbackID;
         remote_nonnull_domain      dom;
         remote_nonnull_string      alias;
         uint64_t                   size;
 };
+struct remote_domain_event_vcpu_removed_msg {
+        int                        callbackID;
+        remote_nonnull_domain      dom;
+        u_int                      vcpuid;
+};
 struct remote_domain_fd_associate_args {
         remote_nonnull_domain      dom;
         remote_nonnull_string      name;
+        u_int                      flags;
+};
+struct remote_domain_get_autostart_once_args {
+        remote_nonnull_domain      dom;
+};
+struct remote_domain_get_autostart_once_ret {
+        int                        autostart;
+};
+struct remote_domain_set_autostart_once_args {
+        remote_nonnull_domain      dom;
+        int                        autostart;
+};
+struct remote_domain_event_nic_mac_change_msg {
+        int                        callbackID;
+        remote_nonnull_domain      dom;
+        remote_nonnull_string      alias;
+        remote_nonnull_string      oldMAC;
+        remote_nonnull_string      newMAC;
+};
+struct remote_domain_event_callback_channel_lifecycle_msg {
+        int                        callbackID;
+        remote_nonnull_domain      dom;
+        remote_nonnull_string      channelName;
+        int                        state;
+        int                        reason;
+};
+struct remote_domain_announce_interface_args {
+        remote_nonnull_domain      dom;
+        remote_string              device;
+        struct {
+                u_int              params_len;
+                remote_typed_param * params_val;
+        } params;
         u_int                      flags;
 };
 enum remote_procedure {
@@ -3717,4 +3802,17 @@ enum remote_procedure {
         REMOTE_PROC_DOMAIN_RESTORE_PARAMS = 441,
         REMOTE_PROC_DOMAIN_ABORT_JOB_FLAGS = 442,
         REMOTE_PROC_DOMAIN_FD_ASSOCIATE = 443,
+        REMOTE_PROC_NETWORK_SET_METADATA = 444,
+        REMOTE_PROC_NETWORK_GET_METADATA = 445,
+        REMOTE_PROC_NETWORK_EVENT_CALLBACK_METADATA_CHANGE = 446,
+        REMOTE_PROC_NODE_DEVICE_UPDATE = 447,
+        REMOTE_PROC_DOMAIN_GRAPHICS_RELOAD = 448,
+        REMOTE_PROC_DOMAIN_GET_AUTOSTART_ONCE = 449,
+        REMOTE_PROC_DOMAIN_SET_AUTOSTART_ONCE = 450,
+        REMOTE_PROC_DOMAIN_SET_THROTTLE_GROUP = 451,
+        REMOTE_PROC_DOMAIN_DEL_THROTTLE_GROUP = 452,
+        REMOTE_PROC_DOMAIN_EVENT_NIC_MAC_CHANGE = 453,
+        REMOTE_PROC_DOMAIN_EVENT_VCPU_REMOVED = 454,
+        REMOTE_PROC_DOMAIN_EVENT_CALLBACK_CHANNEL_LIFECYCLE = 455,
+        REMOTE_PROC_DOMAIN_ANNOUNCE_INTERFACE = 456,
 };

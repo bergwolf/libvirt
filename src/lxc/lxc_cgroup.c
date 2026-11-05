@@ -130,10 +130,10 @@ static int virLXCCgroupGetMemStat(virCgroup *cgroup,
 {
     return virCgroupGetMemoryStat(cgroup,
                                   &meminfo->cached,
-                                  &meminfo->inactive_anon,
                                   &meminfo->active_anon,
-                                  &meminfo->inactive_file,
+                                  &meminfo->inactive_anon,
                                   &meminfo->active_file,
+                                  &meminfo->inactive_file,
                                   &meminfo->unevictable);
 }
 
@@ -309,10 +309,13 @@ static int virLXCCgroupSetupDeviceACL(virDomainDef *def,
                                              VIR_CGROUP_DEVICE_MKNOD, false) < 0)
                     return -1;
                 break;
+            case VIR_DOMAIN_HOSTDEV_CAPS_TYPE_NET:
+            case VIR_DOMAIN_HOSTDEV_CAPS_TYPE_LAST:
             default:
                 break;
             }
         default:
+        case VIR_DOMAIN_HOSTDEV_MODE_LAST:
             break;
         }
     }
@@ -332,7 +335,7 @@ static int virLXCCgroupSetupDeviceACL(virDomainDef *def,
         if (timer->present == VIR_TRISTATE_BOOL_NO)
             continue;
 
-        switch ((virDomainTimerNameType)timer->name) {
+        switch (timer->name) {
         case VIR_DOMAIN_TIMER_NAME_PLATFORM:
         case VIR_DOMAIN_TIMER_NAME_TSC:
         case VIR_DOMAIN_TIMER_NAME_KVMCLOCK:
@@ -397,6 +400,7 @@ virCgroup *virLXCCgroupCreate(virDomainDef *def,
                             def->resource->partition,
                             -1,
                             0,
+                            false,
                             &cgroup) < 0)
         return NULL;
 

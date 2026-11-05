@@ -121,6 +121,9 @@ eventDetailToString(int event,
             case VIR_DOMAIN_EVENT_UNDEFINED_RENAMED:
                 return "Renamed";
 
+            case VIR_DOMAIN_EVENT_UNDEFINED_MIGRATED:
+                return "Migrated";
+
             case VIR_DOMAIN_EVENT_UNDEFINED_LAST:
                 break;
             }
@@ -142,6 +145,9 @@ eventDetailToString(int event,
 
             case VIR_DOMAIN_EVENT_STARTED_WAKEUP:
                 return "Event wakeup";
+
+            case VIR_DOMAIN_EVENT_STARTED_RECREATED:
+                return "Recreated";
 
             case VIR_DOMAIN_EVENT_STARTED_LAST:
                 break;
@@ -176,6 +182,9 @@ eventDetailToString(int event,
 
             case VIR_DOMAIN_EVENT_SUSPENDED_POSTCOPY_FAILED:
                 return "Post-copy Error";
+
+            case VIR_DOMAIN_EVENT_SUSPENDED_GUEST_SHUTDOWN:
+                return "guest OS shutdown";
 
             case VIR_DOMAIN_EVENT_SUSPENDED_LAST:
                 break;
@@ -227,6 +236,9 @@ eventDetailToString(int event,
             case VIR_DOMAIN_EVENT_STOPPED_FROM_SNAPSHOT:
                 return "Snapshot";
 
+            case VIR_DOMAIN_EVENT_STOPPED_RECREATED:
+                return "Recreated";
+
             case VIR_DOMAIN_EVENT_STOPPED_LAST:
                 break;
             }
@@ -242,6 +254,9 @@ eventDetailToString(int event,
 
             case VIR_DOMAIN_EVENT_SHUTDOWN_HOST:
                 return "Host request";
+
+            case VIR_DOMAIN_EVENT_SHUTDOWN_GUEST_RESET:
+                return "Guest reboot request";
 
             case VIR_DOMAIN_EVENT_SHUTDOWN_LAST:
                 break;
@@ -338,6 +353,45 @@ guestAgentLifecycleEventReasonToString(int event)
         return "Channel event";
 
     case VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_LAST:
+        break;
+    }
+
+    return "unknown";
+}
+
+
+static const char *
+guestChannelLifecycleEventStateToString(int event)
+{
+    switch ((virConnectDomainEventChannelLifecycleState) event) {
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_STATE_DISCONNECTED:
+        return "Disconnected";
+
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_STATE_CONNECTED:
+        return "Connected";
+
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_STATE_LAST:
+        break;
+    }
+
+    return "unknown";
+}
+
+
+static const char *
+guestChannelLifecycleEventReasonToString(int event)
+{
+    switch ((virConnectDomainEventChannelLifecycleReason) event) {
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_UNKNOWN:
+        return "Unknown";
+
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_DOMAIN_STARTED:
+        return "Domain started";
+
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_CHANNEL:
+        return "Channel event";
+
+    case VIR_CONNECT_DOMAIN_EVENT_CHANNEL_LIFECYCLE_REASON_LAST:
         break;
     }
 
@@ -861,6 +915,23 @@ myDomainEventAgentLifecycleCallback(virConnectPtr conn G_GNUC_UNUSED,
 
 
 static int
+myDomainEventChannelLifecycleCallback(virConnectPtr conn G_GNUC_UNUSED,
+                                      virDomainPtr dom,
+                                      const char *channelName,
+                                      int state,
+                                      int reason,
+                                      void *opaque G_GNUC_UNUSED)
+{
+    printf("%s EVENT: Domain %s(%d) guest channel(%s) state changed: %s reason: %s\n",
+           __func__, virDomainGetName(dom), virDomainGetID(dom), channelName,
+           guestChannelLifecycleEventStateToString(state),
+           guestChannelLifecycleEventReasonToString(reason));
+
+    return 0;
+}
+
+
+static int
 myDomainEventDeviceAddedCallback(virConnectPtr conn G_GNUC_UNUSED,
                                  virDomainPtr dom,
                                  const char *devAlias,
@@ -969,7 +1040,7 @@ myDomainEventMemoryFailureCallback(virConnectPtr conn G_GNUC_UNUSED,
                                    void *opaque G_GNUC_UNUSED)
 {
     printf("%s EVENT: Domain %s(%d) memory failure: recipient '%d', "
-           "aciont '%d', flags '%d'\n", __func__, virDomainGetName(dom),
+           "aciont '%d', flags '0x%x'\n", __func__, virDomainGetName(dom),
            virDomainGetID(dom), recipient, action, flags);
     return 0;
 }
@@ -1030,6 +1101,17 @@ myDomainEventDeviceRemovalFailedCallback(virConnectPtr conn G_GNUC_UNUSED,
     return 0;
 }
 
+static int
+myDomainEventVcpuRemovedCallback(virConnectPtr conn G_GNUC_UNUSED,
+                                 virDomainPtr dom,
+                                 unsigned int vcpuid,
+                                 void *opaque G_GNUC_UNUSED)
+{
+    printf("%s EVENT: Domain %s(%d) vcpu removed: %u\n",
+           __func__, virDomainGetName(dom), virDomainGetID(dom), vcpuid);
+    return 0;
+}
+
 
 static const char *
 metadataTypeToStr(int status)
@@ -1064,6 +1146,56 @@ myDomainEventMetadataChangeCallback(virConnectPtr conn G_GNUC_UNUSED,
     return 0;
 }
 
+
+static const char *
+networkMetadataTypeToStr(int type)
+{
+    switch ((virNetworkMetadataType) type) {
+        case VIR_NETWORK_METADATA_DESCRIPTION:
+            return "description";
+
+        case VIR_NETWORK_METADATA_TITLE:
+            return "title";
+
+        case VIR_NETWORK_METADATA_ELEMENT:
+            return "element";
+
+        case VIR_NETWORK_METADATA_LAST:
+            break;
+    }
+    return "unknown";
+}
+
+static int
+myNetworkEventMetadataChangeCallback(virConnectPtr conn G_GNUC_UNUSED,
+                                     virNetworkPtr net,
+                                     int type,
+                                     const char *nsuri,
+                                     void *opaque G_GNUC_UNUSED)
+{
+    const char *typestr = networkMetadataTypeToStr(type);
+    char uuid[VIR_UUID_STRING_BUFLEN];
+    virNetworkGetUUIDString(net, uuid);
+
+    printf("%s EVENT: Network: (%s) uuid: (%s) metadata type: (%s) nsuri: (%s)\n",
+           __func__, virNetworkGetName(net), uuid, typestr, nsuri ? nsuri : "n/a");
+
+    return 0;
+}
+
+
+static int
+myDomainEventNICMACChangeCallback(virConnectPtr conn G_GNUC_UNUSED,
+                                  virDomainPtr dom,
+                                  const char *alias,
+                                  const char *oldMAC,
+                                  const char *newMAC,
+                                  void *opaque G_GNUC_UNUSED)
+{
+    printf("%s EVENT: Domain %s(%d) NIC MAC changed: alias: '%s' oldMAC: '%s' newMAC: '%s'\n",
+           __func__, virDomainGetName(dom), virDomainGetID(dom), alias, oldMAC, newMAC);
+    return 0;
+}
 
 
 static void
@@ -1123,6 +1255,9 @@ struct domainEventData domainEvents[] = {
     DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_BLOCK_THRESHOLD, myDomainEventBlockThresholdCallback),
     DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_MEMORY_FAILURE, myDomainEventMemoryFailureCallback),
     DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_MEMORY_DEVICE_SIZE_CHANGE, myDomainEventMemoryDeviceSizeChangeCallback),
+    DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_NIC_MAC_CHANGE, myDomainEventNICMACChangeCallback),
+    DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_VCPU_REMOVED, myDomainEventVcpuRemovedCallback),
+    DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_CHANNEL_LIFECYCLE, myDomainEventChannelLifecycleCallback),
 };
 
 struct storagePoolEventData {
@@ -1170,11 +1305,27 @@ struct secretEventData secretEvents[] = {
     SECRET_EVENT(VIR_SECRET_EVENT_ID_VALUE_CHANGED, mySecretEventValueChanged),
 };
 
+struct networkEventData {
+    int event;
+    int id;
+    virConnectNetworkEventGenericCallback cb;
+    const char *name;
+};
+
+#define NETWORK_EVENT(event, callback) \
+    {event, -1, VIR_NETWORK_EVENT_CALLBACK(callback), #event}
+
+struct networkEventData networkEvents[] = {
+    NETWORK_EVENT(VIR_NETWORK_EVENT_ID_LIFECYCLE, myNetworkEventCallback),
+    NETWORK_EVENT(VIR_NETWORK_EVENT_ID_METADATA_CHANGE, myNetworkEventMetadataChangeCallback),
+};
+
 /* make sure that the events are kept in sync */
 G_STATIC_ASSERT(G_N_ELEMENTS(domainEvents) == VIR_DOMAIN_EVENT_ID_LAST);
 G_STATIC_ASSERT(G_N_ELEMENTS(storagePoolEvents) == VIR_STORAGE_POOL_EVENT_ID_LAST);
 G_STATIC_ASSERT(G_N_ELEMENTS(nodeDeviceEvents) == VIR_NODE_DEVICE_EVENT_ID_LAST);
 G_STATIC_ASSERT(G_N_ELEMENTS(secretEvents) == VIR_SECRET_EVENT_ID_LAST);
+G_STATIC_ASSERT(G_N_ELEMENTS(networkEvents) == VIR_NETWORK_EVENT_ID_LAST);
 
 int
 main(int argc, char **argv)
@@ -1182,7 +1333,6 @@ main(int argc, char **argv)
     int ret = EXIT_FAILURE;
     virConnectPtr dconn = NULL;
     int callback1ret = -1;
-    int callback16ret = -1;
     size_t i;
 
     if (argc > 1 && STREQ(argv[1], "--help")) {
@@ -1241,11 +1391,21 @@ main(int argc, char **argv)
         }
     }
 
-    callback16ret = virConnectNetworkEventRegisterAny(dconn,
-                                                      NULL,
-                                                      VIR_NETWORK_EVENT_ID_LIFECYCLE,
-                                                      VIR_NETWORK_EVENT_CALLBACK(myNetworkEventCallback),
-                                                      strdup("net callback"), myFreeFunc);
+    /* register common network callbacks */
+    for (i = 0; i < G_N_ELEMENTS(networkEvents); i++) {
+        struct networkEventData *event = networkEvents + i;
+
+        event->id = virConnectNetworkEventRegisterAny(dconn, NULL,
+                                                      event->event,
+                                                      event->cb,
+                                                      strdup(event->name),
+                                                      myFreeFunc);
+
+        if (event->id < 0) {
+            fprintf(stderr, "Failed to register event '%s'\n", event->name);
+            goto cleanup;
+        }
+    }
 
     /* register common storage pool callbacks */
     for (i = 0; i < G_N_ELEMENTS(storagePoolEvents); i++) {
@@ -1295,8 +1455,7 @@ main(int argc, char **argv)
         }
     }
 
-    if ((callback1ret == -1) ||
-        (callback16ret == -1))
+    if (callback1ret == -1)
         goto cleanup;
 
     if (virConnectSetKeepAlive(dconn, 5, 3) < 0) {
@@ -1314,13 +1473,19 @@ main(int argc, char **argv)
 
     printf("Deregistering event callbacks\n");
     virConnectDomainEventDeregister(dconn, myDomainEventCallback1);
-    virConnectNetworkEventDeregisterAny(dconn, callback16ret);
 
 
     printf("Deregistering domain event callbacks\n");
     for (i = 0; i < G_N_ELEMENTS(domainEvents); i++) {
         if (domainEvents[i].id > 0)
             virConnectDomainEventDeregisterAny(dconn, domainEvents[i].id);
+    }
+
+
+    printf("Deregistering network event callbacks\n");
+    for (i = 0; i < G_N_ELEMENTS(networkEvents); i++) {
+        if (networkEvents[i].id > 0)
+            virConnectNetworkEventDeregisterAny(dconn, networkEvents[i].id);
     }
 
 

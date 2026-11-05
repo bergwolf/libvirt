@@ -58,7 +58,7 @@ qemuExtDeviceLogCommand(virQEMUDriver *driver,
 /*
  * qemuExtDevicesInitPaths:
  *
- * @driver: QEMU driver
+ * @cfg: QEMU driver config
  * @def: domain definition
  *
  * Initialize paths of external devices so that it is known where state is
@@ -66,7 +66,7 @@ qemuExtDeviceLogCommand(virQEMUDriver *driver,
  * changes.
  */
 int
-qemuExtDevicesInitPaths(virQEMUDriver *driver,
+qemuExtDevicesInitPaths(virQEMUDriverConfig *cfg,
                         virDomainDef *def)
 {
     size_t i;
@@ -75,7 +75,7 @@ qemuExtDevicesInitPaths(virQEMUDriver *driver,
         virDomainTPMDef *tpm = def->tpms[i];
 
         if (tpm->type == VIR_DOMAIN_TPM_TYPE_EMULATOR &&
-            qemuExtTPMInitPaths(driver, def, tpm) < 0)
+            qemuExtTPMInitPaths(cfg, def, tpm) < 0)
             return -1;
     }
 
@@ -95,10 +95,11 @@ int
 qemuExtDevicesPrepareDomain(virQEMUDriver *driver,
                             virDomainObj *vm)
 {
+    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     int ret = 0;
     size_t i;
 
-    if (qemuExtDevicesInitPaths(driver, vm->def) < 0)
+    if (qemuExtDevicesInitPaths(cfg, vm->def) < 0)
         return -1;
 
     for (i = 0; i < vm->def->nvideos; i++) {
@@ -151,21 +152,21 @@ qemuExtDevicesPrepareHost(virQEMUDriver *driver,
 
 
 void
-qemuExtDevicesCleanupHost(virQEMUDriver *driver,
+qemuExtDevicesCleanupHost(virQEMUDriverConfig *cfg,
                           virDomainDef *def,
                           virDomainUndefineFlagsValues flags,
-                          bool outgoingMigration)
+                          bool migration)
 {
     size_t i;
 
-    if (qemuExtDevicesInitPaths(driver, def) < 0)
+    if (qemuExtDevicesInitPaths(cfg, def) < 0)
         return;
 
     for (i = 0; i < def->ntpms; i++) {
         virDomainTPMDef *tpm = def->tpms[i];
 
         if (tpm->type == VIR_DOMAIN_TPM_TYPE_EMULATOR)
-            qemuExtTPMCleanupHost(tpm, flags, outgoingMigration);
+            qemuExtTPMCleanupHost(cfg, tpm, flags, migration);
     }
 }
 
@@ -175,6 +176,7 @@ qemuExtDevicesStart(virQEMUDriver *driver,
                     virDomainObj *vm,
                     bool incomingMigration)
 {
+    virDomainDef *persistentDef = vm->newDef;
     virDomainDef *def = vm->def;
     size_t i;
 
@@ -189,22 +191,32 @@ qemuExtDevicesStart(virQEMUDriver *driver,
 
     for (i = 0; i < def->ntpms; i++) {
         virDomainTPMDef *tpm = def->tpms[i];
+        virDomainTPMDef *persistentTPMDef = NULL;
+
+        if (persistentDef) {
+            /* do not try to update the profile in the persistent definition
+             * if the device does not match */
+            if (persistentDef->ntpms == def->ntpms)
+                persistentTPMDef = persistentDef->tpms[i];
+            if (persistentTPMDef &&
+                (persistentTPMDef->type != tpm->type ||
+                 persistentTPMDef->model != tpm->model))
+                persistentTPMDef = NULL;
+        }
 
         if (tpm->type == VIR_DOMAIN_TPM_TYPE_EMULATOR &&
-            qemuExtTPMStart(driver, vm, tpm, incomingMigration) < 0)
+            qemuExtTPMStart(driver, vm, tpm, persistentTPMDef,
+                            incomingMigration) < 0)
             return -1;
     }
 
     for (i = 0; i < def->nnets; i++) {
         virDomainNetDef *net = def->nets[i];
 
-        if (net->type != VIR_DOMAIN_NET_TYPE_USER)
-            continue;
-
         if (net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST) {
             if (qemuPasstStart(vm, net) < 0)
                 return -1;
-        } else {
+        } else if (net->type == VIR_DOMAIN_NET_TYPE_USER) {
             if (qemuSlirpStart(vm, net, incomingMigration) < 0)
                 return -1;
         }
@@ -213,7 +225,7 @@ qemuExtDevicesStart(virQEMUDriver *driver,
     for (i = 0; i < def->nfss; i++) {
         virDomainFSDef *fs = def->fss[i];
 
-        if (fs->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_VIRTIOFS && !fs->sock) {
+        if (fs->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_VIRTIOFS) {
             if (qemuVirtioFSStart(driver, vm, fs) < 0)
                 return -1;
         }
@@ -222,13 +234,44 @@ qemuExtDevicesStart(virQEMUDriver *driver,
     for (i = 0; i < def->ngraphics; i++) {
         virDomainGraphicsDef *graphics = def->graphics[i];
 
-        if (graphics->type != VIR_DOMAIN_GRAPHICS_TYPE_DBUS)
+        switch (graphics->type) {
+        case VIR_DOMAIN_GRAPHICS_TYPE_DBUS: {
+            if (graphics->data.dbus.p2p || graphics->data.dbus.fromConfig)
+                continue;
+            if (qemuDBusStart(driver, vm) < 0)
+                return -1;
             continue;
-
-        if (graphics->data.dbus.p2p || graphics->data.dbus.fromConfig)
+        }
+        case VIR_DOMAIN_GRAPHICS_TYPE_RDP: {
+            if (qemuRdpStart(vm, graphics) < 0)
+                return -1;
             continue;
+        }
+        case VIR_DOMAIN_GRAPHICS_TYPE_VNC: {
+            if (QEMU_DOMAIN_GRAPHICS_PRIVATE(graphics)->vnc) {
+                if (qemuVncStart(vm, graphics) < 0)
+                    return -1;
+            }
+            continue;
+        }
+        case VIR_DOMAIN_GRAPHICS_TYPE_SDL:
+        case VIR_DOMAIN_GRAPHICS_TYPE_DESKTOP:
+        case VIR_DOMAIN_GRAPHICS_TYPE_SPICE:
+        case VIR_DOMAIN_GRAPHICS_TYPE_EGL_HEADLESS:
+        case VIR_DOMAIN_GRAPHICS_TYPE_LAST:
+        default:
+            continue;
+        }
+    }
 
-        if (qemuDBusStart(driver, vm) < 0)
+    for (i = 0; i < def->ndisks; i++) {
+        virDomainDiskDef *disk = def->disks[i];
+        if (qemuNbdkitStartStorageSource(driver, vm, disk->src, true) < 0)
+            return -1;
+    }
+
+    if (def->os.loader && def->os.loader->nvram) {
+        if (qemuNbdkitStartStorageSource(driver, vm, def->os.loader->nvram, true) < 0)
             return -1;
     }
 
@@ -239,12 +282,13 @@ qemuExtDevicesStart(virQEMUDriver *driver,
 void
 qemuExtDevicesStop(virQEMUDriver *driver,
                    virDomainObj *vm,
-                   bool outgoingMigration)
+                   bool migration)
 {
+    g_autoptr(virQEMUDriverConfig) cfg = virQEMUDriverGetConfig(driver);
     virDomainDef *def = vm->def;
     size_t i;
 
-    if (qemuExtDevicesInitPaths(driver, def) < 0)
+    if (qemuExtDevicesInitPaths(cfg, def) < 0)
         return;
 
     for (i = 0; i < def->nvideos; i++) {
@@ -256,7 +300,7 @@ qemuExtDevicesStop(virQEMUDriver *driver,
 
     for (i = 0; i < def->ntpms; i++) {
         if (def->tpms[i]->type == VIR_DOMAIN_TPM_TYPE_EMULATOR)
-            qemuExtTPMStop(driver, vm, outgoingMigration);
+            qemuExtTPMStop(driver, vm, migration);
     }
 
     for (i = 0; i < def->nnets; i++) {
@@ -267,10 +311,8 @@ qemuExtDevicesStop(virQEMUDriver *driver,
         if (slirp)
             qemuSlirpStop(slirp, vm, driver, net);
 
-        if (net->type == VIR_DOMAIN_NET_TYPE_USER &&
-            net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST) {
+        if (net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST)
             qemuPasstStop(vm, net);
-        }
 
         if (actualType == VIR_DOMAIN_NET_TYPE_ETHERNET && net->downscript)
             virNetDevRunEthernetScript(net->ifname, net->downscript);
@@ -279,10 +321,40 @@ qemuExtDevicesStop(virQEMUDriver *driver,
     for (i = 0; i < def->nfss; i++) {
         virDomainFSDef *fs = def->fss[i];
 
-        if (!fs->sock &&
-            fs->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_VIRTIOFS)
+        if (fs->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_VIRTIOFS)
             qemuVirtioFSStop(driver, vm, fs);
     }
+
+    for (i = 0; i < def->ngraphics; i++) {
+        virDomainGraphicsDef *graphics = def->graphics[i];
+
+        switch (graphics->type) {
+        case VIR_DOMAIN_GRAPHICS_TYPE_RDP: {
+            qemuRdpStop(vm, graphics);
+            continue;
+        }
+        case VIR_DOMAIN_GRAPHICS_TYPE_VNC: {
+            qemuVncStop(vm, graphics);
+            continue;
+        }
+        case VIR_DOMAIN_GRAPHICS_TYPE_DBUS:
+        case VIR_DOMAIN_GRAPHICS_TYPE_SDL:
+        case VIR_DOMAIN_GRAPHICS_TYPE_DESKTOP:
+        case VIR_DOMAIN_GRAPHICS_TYPE_SPICE:
+        case VIR_DOMAIN_GRAPHICS_TYPE_EGL_HEADLESS:
+        case VIR_DOMAIN_GRAPHICS_TYPE_LAST:
+        default:
+            continue;
+        }
+    }
+
+    for (i = 0; i < def->ndisks; i++) {
+        virDomainDiskDef *disk = def->disks[i];
+        qemuNbdkitStopStorageSource(disk->src, vm, true);
+    }
+
+    if (def->os.loader && def->os.loader->nvram)
+        qemuNbdkitStopStorageSource(def->os.loader->nvram, vm, true);
 }
 
 
@@ -302,8 +374,7 @@ qemuExtDevicesHasDevice(virDomainDef *def)
         if (QEMU_DOMAIN_NETWORK_PRIVATE(net)->slirp)
             return true;
 
-        if (net->type == VIR_DOMAIN_NET_TYPE_USER &&
-            net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST)
+        if (net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST)
             return true;
     }
 
@@ -319,7 +390,39 @@ qemuExtDevicesHasDevice(virDomainDef *def)
             return true;
     }
 
+    for (i = 0; i < def->ndisks; i++) {
+        virDomainDiskDef *disk = def->disks[i];
+        virStorageSource *backing;
+
+        for (backing = disk->src; backing; backing = backing->backingStore) {
+            qemuDomainStorageSourcePrivate* priv =
+                QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(backing);
+            if (priv && priv->nbdkitProcess)
+                return true;
+        }
+    }
+
+
     return false;
+}
+
+
+/* recursively setup nbdkit cgroups for backing chain of src */
+static int
+qemuExtDevicesSetupCgroupNbdkit(virStorageSource *src,
+                                virCgroup *cgroup)
+{
+    virStorageSource *backing;
+
+    for (backing = src; backing; backing = backing->backingStore) {
+        qemuDomainStorageSourcePrivate *priv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(src);
+
+        if (priv && priv->nbdkitProcess &&
+            qemuNbdkitProcessSetupCgroup(priv->nbdkitProcess, cgroup) < 0)
+            return -1;
+    }
+
+    return 0;
 }
 
 
@@ -352,8 +455,7 @@ qemuExtDevicesSetupCgroup(virQEMUDriver *driver,
         if (slirp && qemuSlirpSetupCgroup(slirp, cgroup) < 0)
             return -1;
 
-        if (net->type == VIR_DOMAIN_NET_TYPE_USER &&
-            net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST &&
+        if (net->backend.type == VIR_DOMAIN_NET_BACKEND_PASST &&
             qemuPasstSetupCgroup(vm, net, cgroup) < 0) {
             return -1;
         }
@@ -365,11 +467,21 @@ qemuExtDevicesSetupCgroup(virQEMUDriver *driver,
             return -1;
     }
 
+    for (i = 0; i < def->ndisks; i++) {
+        virDomainDiskDef *disk = def->disks[i];
+        if (qemuExtDevicesSetupCgroupNbdkit(disk->src, cgroup) < 0)
+            return -1;
+    }
+
+    if (def->os.loader && def->os.loader->nvram) {
+        if (qemuExtDevicesSetupCgroupNbdkit(def->os.loader->nvram, cgroup) < 0)
+            return -1;
+    }
+
     for (i = 0; i < def->nfss; i++) {
         virDomainFSDef *fs = def->fss[i];
 
-        if (!fs->sock &&
-            fs->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_VIRTIOFS &&
+        if (fs->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_VIRTIOFS &&
             qemuVirtioFSSetupCgroup(vm, fs, cgroup) < 0)
             return -1;
     }

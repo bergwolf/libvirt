@@ -9,6 +9,7 @@ bhyve_sources = files(
   'bhyve_driver.c',
   'bhyve_monitor.c',
   'bhyve_process.c',
+  'bhyve_rctl.c',
 )
 
 driver_source_files += bhyve_sources
@@ -64,4 +65,9 @@ if conf.has('WITH_BHYVE')
   virt_daemon_confs += {
     'name': 'virtbhyved',
   }
+
+  virt_install_dirs += [
+    localstatedir / 'lib' / 'libvirt' / 'bhyve',
+    localstatedir / 'lib' / 'libvirt' / 'bhyve' / 'nvram',
+  ]
 endif

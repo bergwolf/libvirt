@@ -127,9 +127,12 @@ The top-level ``domainsnapshot`` element may contain the following elements:
 
       :since:`Since 8.2.0` the ``snapshot`` attribute supports the ``manual``
       value which instructs the hypervisor to create the snapshot and keep a
-      synchronized state by pausing the VM which allows to snapshot disk
+      synchronized state by pausing the VM (and where supported deactivating
+      the storage backends of the hypervisor), which allows to snapshot disk
       storage from outside of the hypervisor if the storage provider supports
-      it.  The caller is responsible for resuming a VM paused by requesting a
+      it.  VM operations requiring the storage (e.g. blockjobs, migration) should
+      be avoided to ensure that the storage backends can stay deactivated.
+      The caller is responsible for resuming a VM paused by requesting a
       ``manual`` snapshot. When reverting such snapshot, the expectation is that
       the storage is configured in a way where the hypervisor will see the
       correct image state.
@@ -170,6 +173,18 @@ The top-level ``domainsnapshot`` element may contain the following elements:
          sub-element can be used with same semantics as the identically named
          subelement of the domain definition disk's driver.
 
+      ``snapshotDeleteInProgress``
+
+         This element is valid only in existing snapshot metadata XMLs and makes
+         no sense when creating a snapshot.
+
+         Presence of this element signifies that a deletion of a snapshot was
+         not completed yet and the disk images are in inconsistent state. User
+         needs to re-start any previous snapshot deletion to finish this process.
+
+         Users should not add or remove it as it can result in image corruption
+         on subsequent operations. :since:`Since 9.0`
+
 ``creationTime``
 
    A readonly representation of the time this snapshot was created. The time is
@@ -199,8 +214,8 @@ The top-level ``domainsnapshot`` element may contain the following elements:
    uuid; reverting to a snapshot like this is risky if the current state of the
    domain differs from the state that the domain was created in, and requires
    the use of the ``VIR_DOMAIN_SNAPSHOT_REVERT_FORCE`` flag in
-   ``virDomainRevertToSnapshot()``.  Newer versions of libvirt ( :since:`since
-   0.9.5` ) store the entire inactive `domain configuration
+   ``virDomainRevertToSnapshot()``.  Newer versions of libvirt
+   (:since:`since 0.9.5`) store the entire inactive `domain configuration
    <formatdomain.html>`__ at the time of the snapshot ( :since:`since 0.9.5` ).
    The domain will have security-sensitive information omitted unless the flag
    ``VIR_DOMAIN_SNAPSHOT_XML_SECURE`` is provided on a read-write connection.

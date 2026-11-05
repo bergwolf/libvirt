@@ -48,7 +48,7 @@ main(int argc, char **argv)
     virQEMUCaps *caps;
     virArch host;
     virArch guest;
-    const char *mock = VIR_TEST_MOCK("qemucapsprobe");
+    g_autofree char *mock = g_strdup_printf("%s/%s", abs_builddir, VIR_TEST_MOCK("qemucapsprobe"));
 
     if (!virFileIsExecutable(mock)) {
         perror(mock);
@@ -79,7 +79,8 @@ main(int argc, char **argv)
         return EXIT_FAILURE;
 
     if (!(caps = virQEMUCapsNewForBinaryInternal(VIR_ARCH_NONE, argv[1], "/tmp",
-                                                 -1, -1, NULL, 0, NULL, NULL)))
+                                                 -1, -1, NULL, 0, NULL, NULL,
+                                                 NULL)))
         return EXIT_FAILURE;
 
     host = virArchFromHost();

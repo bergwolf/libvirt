@@ -1,11 +1,11 @@
 qemu_driver_sources = [
-  'qemu_agent.c',
   'qemu_alias.c',
   'qemu_backup.c',
   'qemu_block.c',
   'qemu_blockjob.c',
   'qemu_capabilities.c',
   'qemu_cgroup.c',
+  'qemu_chardev.c',
   'qemu_checkpoint.c',
   'qemu_command.c',
   'qemu_conf.c',
@@ -26,11 +26,13 @@ qemu_driver_sources = [
   'qemu_migration_params.c',
   'qemu_monitor.c',
   'qemu_monitor_json.c',
-  'qemu_monitor_text.c',
   'qemu_namespace.c',
+  'qemu_nbdkit.c',
   'qemu_passt.c',
+  'qemu_postparse.c',
   'qemu_process.c',
   'qemu_qapi.c',
+  'qemu_rdp.c',
   'qemu_saveimage.c',
   'qemu_security.c',
   'qemu_snapshot.c',
@@ -40,6 +42,7 @@ qemu_driver_sources = [
   'qemu_vhost_user.c',
   'qemu_vhost_user_gpu.c',
   'qemu_virtiofs.c',
+  'qemu_vnc.c',
 ]
 
 driver_source_files += files(qemu_driver_sources)
@@ -97,6 +100,7 @@ if conf.has('WITH_QEMU')
       access_dep,
       capng_dep,
       gnutls_dep,
+      libnbd_dep,
       libnl_dep,
       log_dep,
       selinux_dep,
@@ -134,6 +138,7 @@ if conf.has('WITH_QEMU')
   qemu_user_group_conf = configuration_data({
     'QEMU_USER': qemu_user,
     'QEMU_GROUP': qemu_group,
+    'USE_NBDKIT_DEFAULT': use_nbdkit_default.to_int(),
   })
   qemu_conf = configure_file(
     input: 'qemu.conf.in',
@@ -144,6 +149,7 @@ if conf.has('WITH_QEMU')
   qemu_user_group_hack_conf = configuration_data({
     'QEMU_USER': qemu_user,
     'QEMU_GROUP': qemu_group,
+    'USE_NBDKIT_DEFAULT': use_nbdkit_default.to_int(),
     # This hack is necessary because the output file is going to be
     # used as input for another configure_file() call later, which
     # will take care of substituting @CONFIG@ with useful data
@@ -153,6 +159,13 @@ if conf.has('WITH_QEMU')
     input: 'test_libvirtd_qemu.aug.in',
     output: 'test_libvirtd_qemu.aug.tmp',
     configuration: qemu_user_group_hack_conf,
+  )
+
+  # Install the sysuser config for the qemu driver
+  install_data(
+    'libvirt-qemu.sysusers.conf',
+    install_dir: sysusersdir,
+    rename: [ 'libvirt-qemu.conf' ],
   )
 
   virt_conf_files += qemu_conf
@@ -180,24 +193,22 @@ if conf.has('WITH_QEMU')
 
   virt_daemon_units += {
     'service': 'virtqemud',
-    'service_in': files('virtqemud.service.in'),
-    'name': 'Libvirt qemu',
-    'sockprefix': 'virtqemud',
-    'sockets': [ 'main', 'ro', 'admin' ],
+    'name': 'QEMU',
+    'service_extra_in': [
+      files('virtqemud.service.extra.in'),
+      systemd_service_limitnofile_extra_in,
+      systemd_service_tasksmax_extra_in,
+      systemd_service_limitmemlock_extra_in,
+    ],
+    'socket_extra_in': [
+      files('virtqemud.socket.extra.in'),
+    ],
   }
 
   openrc_init_files += {
     'name': 'virtqemud',
     'in_file': files('virtqemud.init.in'),
   }
-
-  if conf.has('WITH_SYSCTL')
-    install_data(
-      'postcopy-migration.sysctl',
-      install_dir: prefix / 'lib' / 'sysctl.d',
-      rename: [ '60-qemu-postcopy-migration.conf' ],
-    )
-  endif
 
   virt_install_dirs += [
     confdir / 'qemu',
@@ -212,6 +223,7 @@ if conf.has('WITH_QEMU')
     localstatedir / 'lib' / 'libvirt' / 'qemu' / 'ram',
     localstatedir / 'lib' / 'libvirt' / 'qemu' / 'save',
     localstatedir / 'lib' / 'libvirt' / 'qemu' / 'snapshot',
+    localstatedir / 'lib' / 'libvirt' / 'qemu' / 'varstore',
     localstatedir / 'lib' / 'libvirt' / 'swtpm',
     localstatedir / 'log' / 'libvirt' / 'qemu',
     localstatedir / 'log' / 'swtpm' / 'libvirt' / 'qemu',

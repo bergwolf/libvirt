@@ -2,10 +2,11 @@
 
 import argparse
 import copy
-import lark
 import os
 import re
-import xml.etree.ElementTree
+import lxml.etree
+
+import lark
 
 
 def translate_vendor(name):
@@ -13,16 +14,17 @@ def translate_vendor(name):
         "CPUID_VENDOR_AMD": "AMD",
         "CPUID_VENDOR_INTEL": "Intel",
         "CPUID_VENDOR_HYGON": "Hygon",
+        "CPUID_VENDOR_ZHAOXIN1": "Zhaoxin CentaurHauls",
     }
 
     if name in T:
         return T[name]
 
-    print("warning: Unknown vendor '{}'".format(name))
+    print(f"warning: Unknown vendor '{name}'")
     return name
 
 
-def translate_feature(name):
+def translate_feature(name, model):
     T = {
         "CPUID_6_EAX_ARAT": "arat",
         "CPUID_7_0_EBX_ADX": "adx",
@@ -49,6 +51,9 @@ def translate_feature(name):
         "CPUID_7_0_EBX_SHA_NI": "sha-ni",
         "CPUID_7_0_EBX_SMAP": "smap",
         "CPUID_7_0_EBX_SMEP": "smep",
+        "CPUID_7_0_EBX_TSC_ADJUST": "tsc_adjust",
+        "CPUID_7_0_EBX_ZERO_FCS_FDS": "zero-fcs-fds",
+        "CPUID_7_0_EBX_FDP_EXCPTN_ONLY": "fdp-excptn-only",
         "CPUID_7_0_ECX_AVX512BITALG": "avx512bitalg",
         "CPUID_7_0_ECX_AVX512VNNI": "avx512vnni",
         "CPUID_7_0_ECX_AVX512_VBMI": "avx512vbmi",
@@ -79,11 +84,58 @@ def translate_feature(name):
         "CPUID_7_0_EDX_SPEC_CTRL_SSBD": "ssbd",
         "CPUID_7_0_EDX_STIBP": "stibp",
         "CPUID_7_0_EDX_TSX_LDTRK": "tsx-ldtrk",
+        "CPUID_7_0_EDX_AVX512_VP2INTERSECT": "avx512-vp2intersect",
+        "CPUID_7_0_ECX_CET_SHSTK": "cet-ss",
+        "CPUID_7_0_EDX_CET_IBT": "cet-ibt",
+        "CPUID_7_0_EDX_FLUSH_L1D": "flush-l1d",
+        "CPUID_7_0_EDX_MD_CLEAR": "md-clear",
+        "CPUID_7_1_EAX_AMX_FP16": "amx-fp16",
         "CPUID_7_1_EAX_AVX512_BF16": "avx512-bf16",
+        "CPUID_7_1_EAX_AVX_IFMA": "avx-ifma",
         "CPUID_7_1_EAX_AVX_VNNI": "avx-vnni",
+        "CPUID_7_1_EAX_CMPCCXADD": "cmpccxadd",
         "CPUID_7_1_EAX_FSRC": "fsrc",
         "CPUID_7_1_EAX_FSRS": "fsrs",
         "CPUID_7_1_EAX_FZRM": "fzrm",
+        "CPUID_7_1_EAX_LAM": "lam",
+        "CPUID_7_1_EAX_SHA512": "sha512",
+        "CPUID_7_1_EAX_SM3": "sm3",
+        "CPUID_7_1_EAX_SM4": "sm4",
+        "CPUID_7_1_EAX_AVX_VNNI": "avx-vnni",
+        "CPUID_7_1_EAX_MOVRS": "movrs",
+        "CPUID_7_1_EAX_FRED": "fred",
+        "CPUID_7_1_EAX_LKGS": "lkgs",
+        "CPUID_7_1_EAX_WRMSRNS": "wrmsrns",
+        "CPUID_7_1_ECX_MSR_IMM": "msr-imm",
+        "CPUID_7_1_EDX_AVX_NE_CONVERT": "avx-ne-convert",
+        "CPUID_7_1_EDX_AVX_VNNI_INT8": "avx-vnni-int8",
+        "CPUID_7_1_EDX_PREFETCHITI": "prefetchiti",
+        "CPUID_7_1_EDX_AVX10": "avx10",
+        "CPUID_7_1_EDX_AVX_VNNI_INT16": "avx-vnni-int16",
+        "CPUID_7_1_EDX_APXF": "apxf",
+        "CPUID_7_1_EDX_AMX_COMPLEX": "amx-complex",
+        "CPUID_7_2_EDX_MCDT_NO": "mcdt-no",
+        "CPUID_7_2_EDX_PSFD": "intel-psfd",
+        "CPUID_7_2_EDX_IPRED_CTRL": "ipred-ctrl",
+        "CPUID_7_2_EDX_RRSBA_CTRL": "rrsba-ctrl",
+        "CPUID_7_2_EDX_BHI_CTRL": "bhi-ctrl",
+        "CPUID_7_2_EDX_DDPD_U": "ddpd-u",
+        "CPUID_1E_1_EAX_AMX_AVX512": "amx-avx512",
+        "CPUID_1E_1_EAX_AMX_BF16_ALIAS": "amx-bf16-alias",
+        "CPUID_1E_1_EAX_AMX_COMPLEX_ALIAS": "amx-complex-alias",
+        "CPUID_1E_1_EAX_AMX_FP16_ALIAS": "amx-fp16-alias",
+        "CPUID_1E_1_EAX_AMX_FP8": "amx-fp8",
+        "CPUID_1E_1_EAX_AMX_INT8_ALIAS": "amx-int8-alias",
+        "CPUID_1E_1_EAX_AMX_MOVRS": "amx-movrs",
+        "CPUID_1E_1_EAX_AMX_TF32": "amx-tf32",
+        "CPUID_24_0_EBX_AVX10_128": "avx10-128",
+        "CPUID_24_0_EBX_AVX10_256": "avx10-256",
+        "CPUID_24_0_EBX_AVX10_512": "avx10-512",
+        "CPUID_24_1_ECX_AVX10_VNNI_INT": "avx10-vnni-int",
+        "CPUID_29_0_EBX_APX_NCI_NDD_NF": "apx-nci-ndd-nf",
+        "CPUID_APM_INVTSC": "invtsc",
+        "CPUID_8000_0007_EBX_OVERFLOW_RECOV": "overflow-recov",
+        "CPUID_8000_0007_EBX_SUCCOR": "succor",
         "CPUID_8000_0008_EBX_AMD_PSFD": "amd-psfd",
         "CPUID_8000_0008_EBX_AMD_SSBD": "amd-ssbd",
         "CPUID_8000_0008_EBX_CLZERO": "clzero",
@@ -97,7 +149,26 @@ def translate_feature(name):
         "CPUID_8000_0021_EAX_LFENCE_ALWAYS_SERIALIZING":
             "lfence-always-serializing",
         "CPUID_8000_0021_EAX_NULL_SEL_CLR_BASE": "null-sel-clr-base",
-        "CPUID_8000_0021_EAX_No_NESTED_DATA_BP": "no-nested-data-bp",
+        "CPUID_8000_0021_EAX_NO_NESTED_DATA_BP": "no-nested-data-bp",
+        "CPUID_8000_0021_EAX_FS_GS_BASE_NS": "fs-gs-base-ns",
+        "CPUID_8000_0021_EAX_PREFETCHI": "prefetchi",
+        "CPUID_8000_0021_EAX_VERW_CLEAR": "verw-clear",
+        "CPUID_8000_0021_ECX_TSA_SQ_NO": "tsa-sq-no",
+        "CPUID_8000_0021_ECX_TSA_L1_NO": "tsa-l1-no",
+        "CPUID_8000_0021_EAX_SBPB": "sbpb",
+        "CPUID_8000_0021_EAX_IBPB_BRTYPE": "ibpb-brtype",
+        "CPUID_8000_0021_EAX_SRSO_USER_KERNEL_NO": "srso-user-kernel-no",
+        "CPUID_8000_0022_EAX_PERFMON_V2": "perfmon-v2",
+        "CPUID_C000_0001_EDX_XSTORE": "xstore",
+        "CPUID_C000_0001_EDX_XSTORE_EN": "xstore-en",
+        "CPUID_C000_0001_EDX_XCRYPT": "xcrypt",
+        "CPUID_C000_0001_EDX_XCRYPT_EN": "xcrypt-en",
+        "CPUID_C000_0001_EDX_ACE2": "ace2",
+        "CPUID_C000_0001_EDX_ACE2_EN": "ace2-en",
+        "CPUID_C000_0001_EDX_PHE": "phe",
+        "CPUID_C000_0001_EDX_PHE_EN": "phe-en",
+        "CPUID_C000_0001_EDX_PMM": "pmm",
+        "CPUID_C000_0001_EDX_PMM_EN": "pmm-en",
         "CPUID_ACPI": "acpi",
         "CPUID_APIC": "apic",
         "CPUID_CLFLUSH": "clflush",
@@ -163,29 +234,161 @@ def translate_feature(name):
         "CPUID_SVM_NRIPSAVE": "nrip-save",
         "CPUID_SVM_SVME_ADDR_CHK": "svme-addr-chk",
         "CPUID_SVM_VNMI": "vnmi",
+        "CPUID_SVM_LBRV": "lbrv",
+        "CPUID_SVM_TSCSCALE": "tsc-scale",
+        "CPUID_SVM_VMCBCLEAN": "vmcb-clean",
+        "CPUID_SVM_FLUSHASID": "flushbyasid",
+        "CPUID_SVM_PAUSEFILTER": "pause-filter",
+        "CPUID_SVM_PFTHRESHOLD": "pfthreshold",
+        "CPUID_SVM_V_VMSAVE_VMLOAD": "v-vmsave-vmload",
+        "CPUID_SVM_VGIF": "vgif",
+        "CPUID_SVM_GMET": "gmet",
         "CPUID_TSC": "tsc",
         "CPUID_VME": "vme",
         "CPUID_XSAVE_XGETBV1": "xgetbv1",
         "CPUID_XSAVE_XSAVEC": "xsavec",
         "CPUID_XSAVE_XSAVEOPT": "xsaveopt",
         "CPUID_XSAVE_XSAVES": "xsaves",
+        "MSR_ARCH_CAP_FBSDP_NO": "fbsdp-no",
         "MSR_ARCH_CAP_IBRS_ALL": "ibrs-all",
         "MSR_ARCH_CAP_MDS_NO": "mds-no",
+        "MSR_ARCH_CAP_PBRSB_NO": "pbrsb-no",
         "MSR_ARCH_CAP_PSCHANGE_MC_NO": "pschange-mc-no",
+        "MSR_ARCH_CAP_PSDP_NO": "psdp-no",
         "MSR_ARCH_CAP_RDCL_NO": "rdctl-no",
+        "MSR_ARCH_CAP_SBDR_SSDP_NO": "sbdr-ssdp-no",
         "MSR_ARCH_CAP_SKIP_L1DFL_VMENTRY": "skip-l1dfl-vmentry",
         "MSR_ARCH_CAP_TAA_NO": "taa-no",
+        "MSR_ARCH_CAP_BHI_NO": "bhi-no",
         "MSR_CORE_CAP_SPLIT_LOCK_DETECT": "split-lock-detect",
+        "MSR_ARCH_CAP_GDS_NO": "gds-no",
+        "MSR_ARCH_CAP_RFDS_NO": "rfds-no",
+        "MSR_ARCH_CAP_SSB_NO": "ssb-no",
+
+        # FEAT_VMX_PROCBASED_CTLS
+        "VMX_CPU_BASED_VIRTUAL_INTR_PENDING": "vmx-vintr-pending",
+        "VMX_CPU_BASED_USE_TSC_OFFSETING": "vmx-tsc-offset",
+        "VMX_CPU_BASED_HLT_EXITING": "vmx-hlt-exit",
+        "VMX_CPU_BASED_INVLPG_EXITING": "vmx-invlpg-exit",
+        "VMX_CPU_BASED_MWAIT_EXITING": "vmx-mwait-exit",
+        "VMX_CPU_BASED_RDPMC_EXITING": "vmx-rdpmc-exit",
+        "VMX_CPU_BASED_RDTSC_EXITING": "vmx-rdtsc-exit",
+        "VMX_CPU_BASED_CR3_LOAD_EXITING": "vmx-cr3-load-noexit",
+        "VMX_CPU_BASED_CR3_STORE_EXITING": "vmx-cr3-store-noexit",
+        "VMX_CPU_BASED_CR8_LOAD_EXITING": "vmx-cr8-load-exit",
+        "VMX_CPU_BASED_CR8_STORE_EXITING": "vmx-cr8-store-exit",
+        "VMX_CPU_BASED_TPR_SHADOW": "vmx-flexpriority",
+        "VMX_CPU_BASED_VIRTUAL_NMI_PENDING": "vmx-vnmi-pending",
+        "VMX_CPU_BASED_MOV_DR_EXITING": "vmx-movdr-exit",
+        "VMX_CPU_BASED_UNCOND_IO_EXITING": "vmx-io-exit",
+        "VMX_CPU_BASED_USE_IO_BITMAPS": "vmx-io-bitmap",
+        "VMX_CPU_BASED_MONITOR_TRAP_FLAG": "vmx-mtf",
+        "VMX_CPU_BASED_USE_MSR_BITMAPS": "vmx-msr-bitmap",
+        "VMX_CPU_BASED_MONITOR_EXITING": "vmx-monitor-exit",
+        "VMX_CPU_BASED_PAUSE_EXITING": "vmx-pause-exit",
+        "VMX_CPU_BASED_ACTIVATE_SECONDARY_CONTROLS": "vmx-secondary-ctls",
+
+        # FEAT_VMX_SECONDARY_CTLS
+        "VMX_SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES": "vmx-apicv-xapic",
+        "VMX_SECONDARY_EXEC_ENABLE_EPT": "vmx-ept",
+        "VMX_SECONDARY_EXEC_DESC": "vmx-desc-exit",
+        "VMX_SECONDARY_EXEC_RDTSCP": "vmx-rdtscp-exit",
+        "VMX_SECONDARY_EXEC_VIRTUALIZE_X2APIC_MODE": "vmx-apicv-x2apic",
+        "VMX_SECONDARY_EXEC_ENABLE_VPID": "vmx-vpid",
+        "VMX_SECONDARY_EXEC_WBINVD_EXITING": "vmx-wbinvd-exit",
+        "VMX_SECONDARY_EXEC_UNRESTRICTED_GUEST": "vmx-unrestricted-guest",
+        "VMX_SECONDARY_EXEC_APIC_REGISTER_VIRT": "vmx-apicv-register",
+        "VMX_SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY": "vmx-apicv-vid",
+        "VMX_SECONDARY_EXEC_PAUSE_LOOP_EXITING": "vmx-ple",
+        "VMX_SECONDARY_EXEC_RDRAND_EXITING": "vmx-rdrand-exit",
+        "VMX_SECONDARY_EXEC_ENABLE_INVPCID": "vmx-invpcid-exit",
+        "VMX_SECONDARY_EXEC_ENABLE_VMFUNC": "vmx-vmfunc",
+        "VMX_SECONDARY_EXEC_SHADOW_VMCS": "vmx-shadow-vmcs",
+        "VMX_SECONDARY_EXEC_ENCLS_EXITING": "vmx-encls-exit",
+        "VMX_SECONDARY_EXEC_RDSEED_EXITING": "vmx-rdseed-exit",
+        "VMX_SECONDARY_EXEC_ENABLE_PML": "vmx-pml",
+        "VMX_SECONDARY_EXEC_XSAVES": "vmx-xsaves",
+        "VMX_SECONDARY_EXEC_TSC_SCALING": "vmx-tsc-scaling",
+        "VMX_SECONDARY_EXEC_ENABLE_USER_WAIT_PAUSE": "vmx-enable-user-wait-pause",
+        "VMX_SECONDARY_EXEC_MODE_BASED_EPT_EXEC": "vmx-mbec",
+
+        # FEAT_VMX_PINBASED_CTLS
+        "VMX_PIN_BASED_EXT_INTR_MASK": "vmx-intr-exit",
+        "VMX_PIN_BASED_NMI_EXITING": "vmx-nmi-exit",
+        "VMX_PIN_BASED_VIRTUAL_NMIS": "vmx-vnmi",
+        "VMX_PIN_BASED_VMX_PREEMPTION_TIMER": "vmx-preemption-timer",
+        "VMX_PIN_BASED_POSTED_INTR": "vmx-posted-intr",
+
+        # FEAT_VMX_EXIT_CTLS
+        "VMX_VM_EXIT_SAVE_DEBUG_CONTROLS": "vmx-exit-nosave-debugctl",
+        "VMX_VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL": "vmx-exit-load-perf-global-ctrl",
+        "VMX_VM_EXIT_ACK_INTR_ON_EXIT": "vmx-exit-ack-intr",
+        "VMX_VM_EXIT_SAVE_IA32_PAT": "vmx-exit-save-pat",
+        "VMX_VM_EXIT_LOAD_IA32_PAT": "vmx-exit-load-pat",
+        "VMX_VM_EXIT_SAVE_IA32_EFER": "vmx-exit-save-efer",
+        "VMX_VM_EXIT_LOAD_IA32_EFER": "vmx-exit-load-efer",
+        "VMX_VM_EXIT_SAVE_VMX_PREEMPTION_TIMER": "vmx-exit-save-preemption-timer",
+        "VMX_VM_EXIT_CLEAR_BNDCFGS": "vmx-exit-clear-bndcfgs",
+        "VMX_VM_EXIT_CLEAR_IA32_RTIT_CTL": "vmx-exit-clear-rtit-ctl",
+        "VMX_VM_EXIT_LOAD_IA32_PKRS": "vmx-exit-load-pkrs",
+        "VMX_VM_EXIT_SAVE_CET": "vmx-exit-save-cet",
+        "VMX_VM_EXIT_ACTIVATE_SECONDARY_CONTROLS": "vmx-exit-secondary-ctls",
+
+        # FEAT_VMX_ENTRY_CTLS
+        "VMX_VM_ENTRY_LOAD_DEBUG_CONTROLS": "vmx-entry-noload-debugctl",
+        "VMX_VM_ENTRY_IA32E_MODE": "vmx-entry-ia32e-mode",
+        "VMX_VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL": "vmx-entry-load-perf-global-ctrl",
+        "VMX_VM_ENTRY_LOAD_IA32_PAT": "vmx-entry-load-pat",
+        "VMX_VM_ENTRY_LOAD_IA32_EFER": "vmx-entry-load-efer",
+        "VMX_VM_ENTRY_LOAD_BNDCFGS": "vmx-entry-load-bndcfgs",
+        "VMX_VM_ENTRY_LOAD_IA32_RTIT_CTL": "vmx-entry-load-rtit-ctl",
+        "VMX_VM_ENTRY_LOAD_IA32_PKRS": "vmx-entry-load-pkrs",
+        "VMX_VM_ENTRY_LOAD_CET": "vmx-entry-load-cet",
+        "VMX_VM_ENTRY_LOAD_IA32_FRED": "vmx-entry-load-fred",
+
+        # FEAT_VMX_MISC
+        "MSR_VMX_MISC_STORE_LMA": "vmx-store-lma",
+        "MSR_VMX_MISC_ACTIVITY_HLT": "vmx-activity-hlt",
+        "MSR_VMX_MISC_ACTIVITY_SHUTDOWN": "vmx-activity-shutdown",
+        "MSR_VMX_MISC_ACTIVITY_WAIT_SIPI": "vmx-activity-wait-sipi",
+        "MSR_VMX_MISC_VMWRITE_VMEXIT": "vmx-vmwrite-vmexit-fields",
+        "MSR_VMX_MISC_ZERO_LEN_INJECT": "vmx-zero-len-inject",
+
+        # FEAT_VMX_EPT_VPID_CAPS
+        "MSR_VMX_EPT_EXECONLY": "vmx-ept-execonly",
+        "MSR_VMX_EPT_PAGE_WALK_LENGTH_4": "vmx-page-walk-4",
+        "MSR_VMX_EPT_PAGE_WALK_LENGTH_5": "vmx-page-walk-5",
+        "MSR_VMX_EPT_2MB": "vmx-ept-2mb",
+        "MSR_VMX_EPT_1GB": "vmx-ept-1gb",
+        "MSR_VMX_EPT_INVEPT": "vmx-invept",
+        "MSR_VMX_EPT_AD_BITS": "vmx-eptad",
+        "MSR_VMX_EPT_ADVANCED_VMEXIT_INFO": "vmx-ept-advanced-exitinfo",
+        "MSR_VMX_EPT_INVEPT_SINGLE_CONTEXT": "vmx-invept-single-context",
+        "MSR_VMX_EPT_INVEPT_ALL_CONTEXT": "vmx-invept-all-context",
+        "MSR_VMX_EPT_INVVPID": "vmx-invvpid",
+        "MSR_VMX_EPT_INVVPID_SINGLE_ADDR": "vmx-invvpid-single-addr",
+        "MSR_VMX_EPT_INVVPID_ALL_CONTEXT": "vmx-invvpid-all-context",
+        "MSR_VMX_EPT_INVVPID_SINGLE_CONTEXT_NOGLOBALS": "vmx-invvpid-single-context-noglobals",
+
+        # FEAT_VMX_BASIC
+        "MSR_VMX_BASIC_INS_OUTS": "vmx-ins-outs",
+        "MSR_VMX_BASIC_TRUE_CTLS": "vmx-true-ctls",
+        "MSR_VMX_BASIC_ANY_ERRCODE": "vmx-any-errcode",
+        "MSR_VMX_BASIC_NESTED_EXCEPTION": "vmx-nested-exception",
+
+        # FEAT_VMX_VMFUNC
+        "MSR_VMX_VMFUNC_EPT_SWITCHING": "vmx-eptp-switching",
     }
 
     ignore = any([
-        name.startswith("VMX_"),
-        name.startswith("vmx-"),
-        name.startswith("MSR_VMX_"),
         name in ("0", "model", "model-id", "stepping"),
         name in ("CPUID_EXT_MONITOR", "monitor"),
         name in ("MSR_VMX_BASIC_DUAL_MONITOR", "dual-monitor"),
         name in ("CPUID_EXT3_TOPOEXT", "topoext"),
+        name in ("MSR_VMX_EPT_UC", "MSR_VMX_EPT_WB"),
+        name in ("MSR_VMX_EPT_INVVPID_SINGLE_CONTEXT"),
+        name in ("x-force-cpuid-0x1f", "avx10-version"),
+        name in ("VMX_VM_EXIT_HOST_ADDR_SPACE_SIZE"),
     ])
 
     if ignore:
@@ -198,7 +401,7 @@ def translate_feature(name):
         if name.replace("-", "_") == v.replace("-", "_"):
             return v
 
-    print("warning: Unknown feature '{}'".format(name))
+    print(f"warning: Unknown feature '{name}' in model '{model}'")
     return name
 
 
@@ -309,7 +512,30 @@ def transform(item):
     raise RuntimeError("unexpected item type")
 
 
-def expand_model(model):
+def get_signature(outdir, model):
+    file = os.path.join(outdir, f"x86_{model}.xml")
+
+    if not os.path.isfile(file):
+        return None
+
+    xml = lxml.etree.parse(file)
+
+    signature = []
+    for sig in xml.xpath("//signature"):
+        attr = sig.attrib
+        family = attr["family"]
+        model = attr["model"]
+        if "stepping" in attr:
+            stepping = attr["stepping"]
+        else:
+            stepping = None
+
+        signature.append((family, model, stepping))
+
+    return signature
+
+
+def expand_model(outdir, model):
     """Expand a qemu cpu model description that has its feature split up into
     different fields and may have differing versions into several libvirt-
     friendly cpu models."""
@@ -318,32 +544,52 @@ def expand_model(model):
         "name": model.pop(".name"),
         "vendor": translate_vendor(model.pop(".vendor")),
         "features": set(),
-        "extra": dict()}
+        "extra": dict(),
+        "signature": list(),
+    }
 
     if ".family" in model and ".model" in model:
-        result["family"] = model.pop(".family")
-        result["model"] = model.pop(".model")
+        result["signature"].append((str(int(model.pop(".family"), base=0)),
+                                    str(int(model.pop(".model"), base=0)),
+                                    None))
 
     for k in [k for k in model if k.startswith(".features")]:
         v = model.pop(k)
         for feature in v.split():
-            translated = translate_feature(feature)
+            translated = translate_feature(feature, result["name"])
             if translated:
                 result["features"].add(translated)
 
     versions = model.pop(".versions", [])
     for k, v in model.items():
         result["extra"]["model" + k] = v
+
+    print(result['name'])
     yield result
 
+    if len(versions) == 0:
+        versions.append({".version": "1"})
+
+    name = result["name"]
     for version in versions:
         result = copy.deepcopy(result)
-        result["name"] = version.pop(".alias", result["name"])
+
+        ver = int(version.pop(".version"))
+        result["name"] = f"{name}-v{ver}"
+        result["base"] = name
+
+        alias = version.pop(".alias", None)
+        if not alias and ver == 1:
+            alias = name
+
+            sig = get_signature(outdir, name)
+            if sig:
+                result["signature"] = sig
 
         props = version.pop(".props", dict())
         for k, v in props:
             if k not in ("model-id", "stepping", "model"):
-                k = translate_feature(k)
+                k = translate_feature(k, result["name"])
             if k is None:
                 continue
 
@@ -357,34 +603,123 @@ def expand_model(model):
         for k, v in version.items():
             result["extra"]["version" + k] = v
 
-        yield result
+        if alias:
+            print(f"v{ver}: {result['name']} => {alias}")
+            yield {
+                "vendor": result["vendor"],
+                "name": result["name"],
+                "base": result["base"],
+                "alias": alias,
+                "extra": None,
+                "features": [],
+            }
+
+            if ver != 1:
+                result["name"] = alias
+                print(f"v{ver}: {result['name']}")
+                yield result
+        else:
+            print(f"v{ver}: {result['name']}")
+            yield result
 
 
-def output_model(f, model):
+def output_model(f, extra, model):
     if model["extra"]:
-        f.write("<!-- extra info from qemu:\n")
-        for k, v in model["extra"].items():
-            f.write("  '{}': '{}'\n".format(k, v))
-        f.write("-->\n")
+        with open(extra, "wt") as ex:
+            ex.write("# THIS FILE SHOULD NEVER BE ADDED TO A COMMIT\n")
+            ex.write("extra info from qemu:\n")
+            for k, v in model["extra"].items():
+                ex.write(f"  {k}: {v}\n")
+
+    decode = "off" if "base" in model else "on"
 
     f.write("<cpus>\n")
-    f.write("  <model name='{}'>\n".format(model["name"]))
-    f.write("    <decode host='on' guest='on'/>\n")
-    f.write("    <signature family='{}' model='{}'/>\n".format(
-        model["family"], model["model"]))
-    f.write("    <vendor name='{}'/>\n".format(model["vendor"]))
+    f.write(f"  <model name='{model['name']}'>\n")
+    f.write(f"    <decode host='on' guest='{decode}'/>\n")
+
+    if "alias" in model:
+        f.write(f"    <model name='{model['alias']}'/>\n")
+    else:
+        for sig_family, sig_model, sig_stepping in model['signature']:
+            f.write(f"    <signature family='{sig_family}' model='{sig_model}'")
+            if sig_stepping:
+                f.write(f" stepping='{sig_stepping}'")
+            f.write("/>\n")
+        f.write(f"    <vendor name='{model['vendor']}'/>\n")
+
     for feature in sorted(model["features"]):
-        f.write("    <feature name='{}'/>\n".format(feature))
+        f.write(f"    <feature name='{feature}'/>\n")
     f.write("  </model>\n")
     f.write("</cpus>\n")
+
+
+def update_index(outdir, models):
+    index = os.path.join(outdir, "index.xml")
+    xml = lxml.etree.parse(index)
+
+    for vendor, files in models.items():
+        groups = xml.xpath(f"//arch[@name='x86']/group[@name='{vendor} CPU models']")
+        if not groups:
+            continue
+
+        group = groups[-1]
+        children = group.getchildren()
+        if children:
+            last = children[-1]
+            group_indent = last.tail
+            indent = f"{group_indent}  "
+            last.tail = indent
+        else:
+            group_indent = f"{group.tail}  "
+            indent = f"{group_indent}  "
+            group.text = f"{group_indent}  "
+
+        for file in files:
+            include = lxml.etree.SubElement(group, "include", filename=file)
+            include.tail = indent
+
+        group.getchildren()[-1].tail = group_indent
+
+    out = lxml.etree.tostring(xml, encoding="UTF-8")
+    out = out.decode("UTF-8").replace('"', "'")
+
+    with open(index, "w") as f:
+        f.write(out)
+        f.write("\n")
+
+
+def update_meson(outdir, models):
+    meson = os.path.join(outdir, "meson.build")
+
+    with open(meson, "r") as f:
+        lines = f.readlines()
+
+    start = None
+    end = None
+    for i in range(len(lines)):
+        if start is None and lines[i].startswith("cpumap_data ="):
+            start = i + 1
+
+        if start is not None and lines[i] == "]\n":
+            end = i
+            break
+
+    xmls = lines[start:end]
+    for files in models.values():
+        xmls.extend([f"  '{file}',\n" for file in files])
+
+    with open(meson, "w") as f:
+        f.writelines(lines[:start])
+        f.writelines(sorted(xmls, key=str.lower))
+        f.writelines(lines[end:])
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Synchronize x86 cpu models from QEMU i386 target.")
     parser.add_argument(
-        "cpufile",
-        help="Path to 'target/i386/cpu.c' file in the QEMU repository",
+        "qemu",
+        help="Path to QEMU source code",
         type=os.path.realpath)
     parser.add_argument(
         "outdir",
@@ -393,7 +728,12 @@ def main():
 
     args = parser.parse_args()
 
-    builtin_x86_defs = read_builtin_x86_defs(args.cpufile)
+    cpufile = os.path.join(args.qemu, 'target/i386/cpu.c')
+    if not os.path.isfile(cpufile):
+        parser.print_help()
+        exit("QEMU source directory not found")
+
+    builtin_x86_defs = read_builtin_x86_defs(cpufile)
 
     ast = lark.Lark(r"""
         list: value ( "," value )* ","?
@@ -412,12 +752,31 @@ def main():
 
     models = list()
     for model in models_json:
-        models.extend(expand_model(model))
+        models.extend(expand_model(args.outdir, model))
+
+    files = dict()
 
     for model in models:
-        name = os.path.join(args.outdir, "x86_{}.xml".format(model["name"]))
-        with open(name, "wt") as f:
-            output_model(f, model)
+        name = f"x86_{model['name']}.xml"
+        path = os.path.join(args.outdir, name)
+
+        if os.path.isfile(path):
+            # Ignore existing models as CPU models in libvirt should never
+            # change once released.
+            continue
+
+        vendor = model['vendor']
+        if vendor:
+            if vendor not in files:
+                files[vendor] = []
+            files[vendor].append(name)
+
+        extra = os.path.join(args.outdir, f"x86_{model['name']}.extra")
+        with open(path, "wt") as f:
+            output_model(f, extra, model)
+
+    update_index(args.outdir, files)
+    update_meson(args.outdir, files)
 
     features = set()
     for model in models:
@@ -425,15 +784,15 @@ def main():
 
     try:
         filename = os.path.join(args.outdir, "x86_features.xml")
-        dom = xml.etree.ElementTree.parse(filename)
+        dom = lxml.etree.parse(filename)
         known = [x.attrib["name"] for x in dom.getroot().iter("feature")]
         unknown = [x for x in features if x not in known and x is not None]
     except Exception as e:
         unknown = []
-        print("warning: Unable to read libvirt x86_features.xml: {}".format(e))
+        print(f"warning: Unable to read libvirt x86_features.xml: {e}")
 
     for x in unknown:
-        print("warning: Feature unknown to libvirt: {}".format(x))
+        print(f"warning: Feature unknown to libvirt: {x}")
 
 
 if __name__ == "__main__":

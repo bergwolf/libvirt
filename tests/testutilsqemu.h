@@ -16,18 +16,19 @@
 
 #pragma once
 
-#ifdef WITH_QEMU
+#include "capabilities.h"
+#include "virfilecache.h"
+#include "domain_conf.h"
+#include "qemu/qemu_capabilities.h"
+#include "qemu/qemu_conf.h"
 
-# include "capabilities.h"
-# include "virfilecache.h"
-# include "domain_conf.h"
-# include "qemu/qemu_capabilities.h"
-# include "qemu/qemu_conf.h"
+#include "testutils.h"
 
-# define TEST_QEMU_CAPS_PATH abs_srcdir "/qemucapabilitiesdata"
-# define TEST_TPM_ENV_VAR "VIR_TEST_MOCK_FAKE_TPM_VERSION"
-# define TPM_VER_1_2 "1.2"
-# define TPM_VER_2_0 "2.0"
+#define TEST_QEMU_CAPS_PATH abs_srcdir "/qemucapabilitiesdata"
+#define TEST_TPM_ENV_VAR "VIR_TEST_MOCK_FAKE_TPM_VERSION"
+#define TPM_VER_1_2 "1.2"
+#define TPM_VER_2_0 "2.0"
+#define TEST_NBDKIT_PATH "/fakebindir/nbdkit"
 
 enum {
     GIC_NONE = 0,
@@ -48,23 +49,26 @@ typedef enum {
     ARG_CAPS_VER,
     ARG_CAPS_VARIANT,
     ARG_CAPS_HOST_CPU_MODEL,
-    ARG_FD_GROUP, /* name, nfds, fd[0], ... fd[n-1] */
+    ARG_FD_GROUP, /* name, writable, nfds, fd[0], ... fd[n-1] */
+    ARG_NBDKIT_CAPS,
     ARG_END,
 } testQemuInfoArgName;
 
 typedef enum {
     FLAG_EXPECT_FAILURE     = 1 << 0,
     FLAG_EXPECT_PARSE_ERROR = 1 << 1,
-    FLAG_FIPS_HOST          = 1 << 2, /* simulate host with FIPS mode enabled */
-    FLAG_REAL_CAPS          = 1 << 3,
-    FLAG_SKIP_LEGACY_CPUS   = 1 << 4,
-    FLAG_SLIRP_HELPER       = 1 << 5,
+    FLAG_REAL_CAPS          = 1 << 2,
+    FLAG_SLIRP_HELPER       = 1 << 3,
+    FLAG_ALLOW_DUPLICATE_OUTPUT = 1 << 4, /* allow multiple tests with the same output file */
+    FLAG_ALLOW_MISSING_INPUT = 1 << 5,
 } testQemuInfoFlags;
 
 struct testQemuConf {
     GHashTable *capscache;
     GHashTable *capslatest;
     GHashTable *qapiSchemaCache;
+    GHashTable *duplicateTests; /* for checking duplicated invocations */
+    GHashTable *existingTestCases; /* for checking missing invocations */
 };
 
 typedef enum {
@@ -73,12 +77,14 @@ typedef enum {
     QEMU_CPU_DEF_POWER8,
     QEMU_CPU_DEF_POWER9,
     QEMU_CPU_DEF_POWER10,
+    QEMU_CPU_DEF_POWER11,
 } qemuTestCPUDef;
 
 struct testQemuArgs {
     bool newargs;
     virBitmap *fakeCapsAdd;
     virBitmap *fakeCapsDel;
+    virBitmap *fakeNbdkitCaps;
     char *capsver;
     char *capsarch;
     const char *capsvariant;
@@ -88,12 +94,17 @@ struct testQemuArgs {
     bool invalidarg;
 };
 
-struct testQemuInfo {
+struct _testQemuInfo {
     const char *name;
+    const char *suffix;
     char *infile;
     char *outfile;
+    char *out_xml_active;
+    char *out_xml_inactive;
     char *errfile;
+    virDomainDef *def; /* parsed domain definition */
     virQEMUCaps *qemuCaps;
+    qemuNbdkitCaps *nbdkitCaps;
     const char *migrateFrom;
     int migrateFd;
     unsigned int flags;
@@ -101,13 +112,21 @@ struct testQemuInfo {
     virArch arch;
     GHashTable *qmpSchema; /* borrowed pointer from the cache */
 
+    /* Some tests have a common prepare step for multiple cases, but
+     * the common setup needs to be invoked with each virTestRun to facilitate
+     * test skipping */
+    bool prepared;
+    bool prep_skip;
+
     struct testQemuArgs args;
     struct testQemuConf *conf;
+
+    virTestDummyFDContext *fdsubsts;
 };
 
-virCaps *testQemuCapsInit(void);
-virDomainXMLOption *testQemuXMLConfInit(void);
-
+typedef struct _testQemuInfo testQemuInfo;
+void testQemuInfoFree(testQemuInfo *info);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(testQemuInfo, testQemuInfoFree);
 
 virQEMUCaps *qemuTestParseCapabilitiesArch(virArch arch,
                                              const char *capsFile);
@@ -142,11 +161,9 @@ int testQemuCapsIterate(const char *suffix,
                         testQemuCapsIterateCallback callback,
                         void *opaque);
 
-void testQemuInfoSetArgs(struct testQemuInfo *info,
-                         struct testQemuConf *conf,
-                         ...);
-int testQemuInfoInitArgs(struct testQemuInfo *info);
-void testQemuInfoClear(struct testQemuInfo *info);
+void testQemuInfoSetArgs(testQemuInfo *info,
+                         va_list argptr);
+int testQemuInfoInitArgs(testQemuInfo *info);
 
 int testQemuPrepareHostBackendChardevOne(virDomainDeviceDef *dev,
                                          virDomainChrSourceDef *chardev,
@@ -160,4 +177,13 @@ testQemuGetRealCaps(const char *arch,
                     GHashTable *capsCache,
                     GHashTable *schemaCache,
                     GHashTable **schema);
-#endif
+
+int
+testQemuInsertRealCaps(virFileCache *cache,
+                       const char *arch,
+                       const char *version,
+                       const char *variant,
+                       GHashTable *capsLatestFiles,
+                       GHashTable *capsCache,
+                       GHashTable *schemaCache,
+                       GHashTable **schema);

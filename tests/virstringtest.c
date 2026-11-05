@@ -18,10 +18,13 @@
 
 #include <config.h>
 
+#include <limits.h>
+
 
 #include "testutils.h"
 #include "virlog.h"
 #include "virstring.h"
+#include "virutil.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
@@ -89,10 +92,10 @@ testStringSortCompare(const void *opaque G_GNUC_UNUSED)
     };
     size_t i;
 
-    qsort(randlist, G_N_ELEMENTS(randlist), sizeof(randlist[0]),
-          virStringSortCompare);
-    qsort(randrlist, G_N_ELEMENTS(randrlist), sizeof(randrlist[0]),
-          virStringSortRevCompare);
+    g_qsort_with_data(randlist, G_N_ELEMENTS(randlist),
+                      sizeof(randlist[0]), virStringSortCompare, NULL);
+    g_qsort_with_data(randrlist, G_N_ELEMENTS(randrlist),
+                      sizeof(randrlist[0]), virStringSortRevCompare, NULL);
 
     for (i = 0; i < G_N_ELEMENTS(randlist); i++) {
         if (STRNEQ(randlist[i], sortlist[i])) {
@@ -109,6 +112,51 @@ testStringSortCompare(const void *opaque G_GNUC_UNUSED)
 
     return 0;
 }
+
+
+#define TEST_STR "This is a static string with spaces"
+#define TEST_SPACES "   "
+
+static int
+testSkipSpacesBackwards(const void *opaque G_GNUC_UNUSED)
+{
+    const char *str = TEST_STR TEST_SPACES;
+    const char *eol = NULL;
+
+    virSkipSpacesBackwards(str, &eol);
+
+    if (STRNEQ(str, TEST_STR TEST_SPACES)) {
+        fprintf(stderr, "expected '" TEST_STR TEST_SPACES "' got '%s'\n", str);
+        return -1;
+    }
+
+    while (g_ascii_isspace(*eol))
+        eol++;
+
+    if (*eol != '\0') {
+        fprintf(stderr, "expected empty string, got '%s'\n", eol);
+        return -1;
+    }
+
+    eol = (char *)str + strlen(TEST_STR);
+
+    virSkipSpacesBackwards(str, &eol);
+
+    if (STRNEQ(str, TEST_STR TEST_SPACES)) {
+        fprintf(stderr, "expected '" TEST_STR TEST_SPACES "' got '%s'\n", str);
+        return -1;
+    }
+
+    if (STRNEQ(eol, TEST_SPACES)) {
+        fprintf(stderr, "expected empty string, got '%s'\n", eol);
+        return -1;
+    }
+
+    return 0;
+}
+
+#undef TEST_SPACES
+#undef TEST_STR
 
 
 struct stringSearchData {
@@ -258,7 +306,6 @@ testStringToLong(const void *opaque)
     const struct stringToLongData *data = opaque;
     int ret = 0;
     char *end;
-    long l;
     unsigned long ul;
     bool negative;
 
@@ -308,9 +355,6 @@ testStringToLong(const void *opaque)
 
     /* We hate adding new API with 'long', and prefer 'int' or 'long
      * long' instead, since platform-specific results are evil */
-    l = (sizeof(int) == sizeof(long)) ? data->si : data->ll;
-    TEST_ONE(data->str, data->suffix, long, l, "%ld",
-             l, (sizeof(int) == sizeof(long)) ? data->si_ret : data->ll_ret);
     ul = (sizeof(int) == sizeof(long)) ? data->ui : data->ull;
     TEST_ONE(data->str, data->suffix, unsigned long, ul, "%lu",
              ul, (sizeof(int) == sizeof(long)) ? data->ui_ret : data->ull_ret);
@@ -334,6 +378,38 @@ testStringToLong(const void *opaque)
 #undef TEST_ONE
 
     return ret;
+}
+
+
+struct stringToBytesData {
+    const char *str;
+    unsigned long long limit;
+    unsigned long long expect;
+    int expect_ret;
+};
+
+static int
+testStringToBytes(const void *opaque)
+{
+    const struct stringToBytesData *data = opaque;
+    unsigned long long value;
+    int ret;
+
+    ret = virStrToBytes(data->str, data->limit, &value);
+
+    if (ret != data->expect_ret) {
+        fprintf(stderr, "Expected return '%d', got '%d' for '%s'\n",
+                data->expect_ret, ret, data->str);
+        return -1;
+    }
+
+    if (ret == 0 && value != data->expect) {
+        fprintf(stderr, "Expected value '%llu', got '%llu' for '%s'\n",
+                data->expect, value, data->str);
+        return -1;
+    }
+
+    return 0;
 }
 
 
@@ -465,6 +541,9 @@ mymain(void)
     TEST_STREQ("hello", "hello");
 
     if (virTestRun("virStringSortCompare", testStringSortCompare, NULL) < 0)
+        ret = -1;
+
+    if (virTestRun("virSkipSpacesBackwards", testSkipSpacesBackwards, NULL) < 0)
         ret = -1;
 
 #define TEST_SEARCH(s, r, x, n, m, e) \
@@ -633,6 +712,47 @@ mymain(void)
                 0LL, -1, 1ULL, 0);
     TEST_STRTOL("-18446744073709551616", NULL, 0, -1, 0U, -1,
                 0LL, -1, 0ULL, -1);
+
+#define TEST_STRTOBYTES(str, limit, expect, expect_ret) \
+    do { \
+        struct stringToBytesData data = { \
+            str, limit, expect, expect_ret, \
+        }; \
+        if (virTestRun("virStrToBytes '" str "'", \
+                       testStringToBytes, &data) < 0) \
+            ret = -1; \
+    } while (0)
+
+    /* Plain byte counts, no suffix */
+    TEST_STRTOBYTES("0", ULLONG_MAX, 0, 0);
+    TEST_STRTOBYTES("1073741824", ULLONG_MAX, 1073741824, 0);
+
+    /* Binary suffixes, and their bare single-letter equivalents */
+    TEST_STRTOBYTES("10K", ULLONG_MAX, 10240, 0);
+    TEST_STRTOBYTES("10KiB", ULLONG_MAX, 10240, 0);
+    TEST_STRTOBYTES("1M", ULLONG_MAX, 1048576, 0);
+    TEST_STRTOBYTES("1G", ULLONG_MAX, 1073741824, 0);
+    TEST_STRTOBYTES("1GiB", ULLONG_MAX, 1073741824, 0);
+    TEST_STRTOBYTES("1T", ULLONG_MAX, 1099511627776ULL, 0);
+
+    /* Decimal (SI) suffixes */
+    TEST_STRTOBYTES("10KB", ULLONG_MAX, 10000, 0);
+    TEST_STRTOBYTES("1GB", ULLONG_MAX, 1000000000, 0);
+
+    /* Bytes, spelled out */
+    TEST_STRTOBYTES("42b", ULLONG_MAX, 42, 0);
+    TEST_STRTOBYTES("42byte", ULLONG_MAX, 42, 0);
+    TEST_STRTOBYTES("42bytes", ULLONG_MAX, 42, 0);
+
+    /* Unknown suffix */
+    TEST_STRTOBYTES("10Q", ULLONG_MAX, 0, -1);
+
+    /* Trailing garbage after a valid suffix */
+    TEST_STRTOBYTES("10Gextra", ULLONG_MAX, 0, -1);
+
+    /* Overflow */
+    TEST_STRTOBYTES("18446744073709551615", 1000, 0, -1);
+    TEST_STRTOBYTES("100E", ULLONG_MAX, 0, -1);
 
 #define TEST_STRTOD(str, end_ptr, res) \
     do { \

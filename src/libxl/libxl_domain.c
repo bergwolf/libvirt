@@ -160,8 +160,15 @@ libxlDomainDeviceDefPostParse(virDomainDeviceDef *dev,
 
         if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
             hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
-            pcisrc->backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT)
-            pcisrc->backend = VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN;
+            pcisrc->driver.name != VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_DEFAULT &&
+            pcisrc->driver.name != VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN) {
+
+            /* Xen only supports "Xen" style of hostdev */
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("XEN does not support device assignment mode '%1$s'"),
+                           virDeviceHostdevPCIDriverNameTypeToString(pcisrc->driver.name));
+            return -1;
+        }
     }
 
     if (dev->type == VIR_DOMAIN_DEVICE_VIDEO) {
@@ -259,8 +266,7 @@ libxlDomainDefPostParse(virDomainDef *def,
     }
 
     /* add implicit input devices */
-    if (xenDomainDefAddImplicitInputDevice(def) < 0)
-        return -1;
+    xenDomainDefAddImplicitInputDevice(def);
 
     /* For x86_64 HVM */
     if (def->os.type == VIR_DOMAIN_OSTYPE_HVM &&
@@ -271,6 +277,12 @@ libxlDomainDefPostParse(virDomainDef *def,
         /* if vnuma is effective enable acpi */
         if (virDomainNumaGetNodeCount(def->numa) > 0)
             def->features[VIR_DOMAIN_FEATURE_ACPI] = VIR_TRISTATE_SWITCH_ON;
+    }
+
+    if (def->os.loader &&
+        def->os.loader->path &&
+        !def->os.loader->type) {
+        def->os.loader->type = VIR_DOMAIN_LOADER_TYPE_ROM;
     }
 
     /* add implicit balloon device */
@@ -285,8 +297,7 @@ libxlDomainDefPostParse(virDomainDef *def,
 
     /* add implicit xenbus device */
     if (virDomainControllerFindByType(def, VIR_DOMAIN_CONTROLLER_TYPE_XENBUS) == -1)
-        if (virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_XENBUS, -1, -1) == NULL)
-            return -1;
+        virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_XENBUS, -1, -1);
 
     return 0;
 }
@@ -299,10 +310,12 @@ libxlDomainDefValidate(const virDomainDef *def,
     libxlDriverPrivate *driver = opaque;
     g_autoptr(libxlDriverConfig) cfg = libxlDriverConfigGet(driver);
     bool reqSecureBoot = false;
+    size_t i;
 
     if (!virCapabilitiesDomainSupported(cfg->caps, def->os.type,
                                         def->os.arch,
-                                        def->virtType))
+                                        def->virtType,
+                                        true))
         return -1;
 
     /* Xen+ovmf does not support secure boot */
@@ -322,6 +335,33 @@ libxlDomainDefValidate(const virDomainDef *def,
         return -1;
     }
 
+    for (i = 0; i < def->os.nacpiTables; i++) {
+        switch (def->os.acpiTables[i]->type) {
+        case VIR_DOMAIN_OS_ACPI_TABLE_TYPE_SLIC: /* Back compat for historical mistake,
+                                                  * functionally the same as 'rawset' */
+        case VIR_DOMAIN_OS_ACPI_TABLE_TYPE_RAWSET:
+            break;
+
+        case VIR_DOMAIN_OS_ACPI_TABLE_TYPE_RAW:
+        case VIR_DOMAIN_OS_ACPI_TABLE_TYPE_MSDM:
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("ACPI table type '%1$s' is not supported"),
+                           virDomainOsACPITableTypeToString(def->os.acpiTables[i]->type));
+            return -1;
+
+        default:
+        case VIR_DOMAIN_OS_ACPI_TABLE_TYPE_LAST:
+            virReportEnumRangeError(virDomainOsACPITable,
+                                    def->os.acpiTables[i]->type);
+            return -1;
+        }
+    }
+    if (def->os.nacpiTables > 1) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("Only a single ACPI table is supported"));
+        return -1;
+    }
+
     if (def->nsounds > 0) {
         virDomainSoundDef *snd = def->sounds[0];
 
@@ -336,6 +376,7 @@ libxlDomainDefValidate(const virDomainDef *def,
             case VIR_DOMAIN_SOUND_MODEL_ICH7:
             case VIR_DOMAIN_SOUND_MODEL_USB:
             case VIR_DOMAIN_SOUND_MODEL_ICH9:
+            case VIR_DOMAIN_SOUND_MODEL_VIRTIO:
             case VIR_DOMAIN_SOUND_MODEL_LAST:
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                         _("unsupported audio model %1$s"),
@@ -344,8 +385,43 @@ libxlDomainDefValidate(const virDomainDef *def,
         }
     }
 
+    for (i = 0; i < def->ndisks; i++) {
+        virDomainDiskDef *disk = def->disks[i];
+
+        if (disk->bus != VIR_DOMAIN_DISK_BUS_VIRTIO) {
+            if (disk->queues) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("queues attribute in disk driver element is only supported for virtio bus"));
+                return -1;
+            }
+
+            if (disk->queue_size) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                               _("queue_size attribute in disk driver is only supported for virtio bus"));
+                return -1;
+            }
+        }
+    }
+
     return 0;
 }
+
+static int
+libxlDomainDeviceDefValidate(const virDomainDeviceDef *dev,
+                             const virDomainDef *def,
+                             void *opaque G_GNUC_UNUSED,
+                             void *parseOpaque G_GNUC_UNUSED)
+{
+    if (dev->type == VIR_DOMAIN_DEVICE_NET && dev->data.net->filter) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("filterref is not supported in %1$s"),
+                       virDomainVirtTypeToString(def->virtType));
+        return -1;
+    }
+
+    return 0;
+}
+
 
 virDomainDefParserConfig libxlDomainDefParserConfig = {
     .macPrefix = { 0x00, 0x16, 0x3e },
@@ -353,6 +429,7 @@ virDomainDefParserConfig libxlDomainDefParserConfig = {
     .devicesPostParseCallback = libxlDomainDeviceDefPostParse,
     .domainPostParseCallback = libxlDomainDefPostParse,
     .domainValidateCallback = libxlDomainDefValidate,
+    .deviceValidateCallback = libxlDomainDeviceDefValidate,
 
     .features = VIR_DOMAIN_DEF_FEATURE_USER_ALIAS |
                 VIR_DOMAIN_DEF_FEATURE_FW_AUTOSELECT |
@@ -432,6 +509,7 @@ libxlDomainShutdownThread(void *opaque)
         case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE:
         case VIR_DOMAIN_LIFECYCLE_ACTION_COREDUMP_DESTROY:
         case VIR_DOMAIN_LIFECYCLE_ACTION_COREDUMP_RESTART:
+        case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE_RUNNING:
         case VIR_DOMAIN_LIFECYCLE_ACTION_LAST:
             goto endjob;
         }
@@ -452,6 +530,7 @@ libxlDomainShutdownThread(void *opaque)
             goto endjob;
         case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE:
         case VIR_DOMAIN_LIFECYCLE_ACTION_LAST:
+        case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE_RUNNING:
             goto endjob;
         case VIR_DOMAIN_LIFECYCLE_ACTION_COREDUMP_DESTROY:
             libxlDomainAutoCoreDump(driver, vm);
@@ -480,6 +559,7 @@ libxlDomainShutdownThread(void *opaque)
         case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE:
         case VIR_DOMAIN_LIFECYCLE_ACTION_COREDUMP_DESTROY:
         case VIR_DOMAIN_LIFECYCLE_ACTION_COREDUMP_RESTART:
+        case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE_RUNNING:
         case VIR_DOMAIN_LIFECYCLE_ACTION_LAST:
             goto endjob;
         }
@@ -742,7 +822,7 @@ libxlNetworkUnwindDevices(virDomainDef *def)
                 g_autoptr(virConnect) conn = virGetConnectNetwork();
 
                 if (conn)
-                    virDomainNetReleaseActualDevice(conn, def, net);
+                    virDomainNetReleaseActualDevice(conn, net);
                 else
                     VIR_WARN("Unable to release network device '%s'", NULLSTR(net->ifname));
             }
@@ -846,8 +926,7 @@ libxlDomainCleanup(libxlDriverPrivate *driver,
         priv->deathW = NULL;
     }
 
-    if (!!g_atomic_int_dec_and_test(&driver->nactive) && driver->inhibitCallback)
-        driver->inhibitCallback(false, driver->inhibitOpaque);
+    virInhibitorRelease(driver->inhibitor);
 
     /* Release auto-allocated graphics ports */
     for (i = 0; i < vm->def->ngraphics; i++) {
@@ -926,7 +1005,7 @@ libxlDomainFreeMem(libxl_ctx *ctx, libxl_domain_config *d_config)
 {
     uint64_t needed_mem;
     uint64_t free_mem;
-    uint64_t target_mem;
+    int64_t target_mem;
     int tries = 3;
     int wait_secs = 10;
 
@@ -986,26 +1065,62 @@ libxlNetworkPrepareDevices(virDomainDef *def)
         if (actualType == VIR_DOMAIN_NET_TYPE_HOSTDEV &&
             net->type == VIR_DOMAIN_NET_TYPE_NETWORK) {
             /* Each type='hostdev' network device must also have a
-             * corresponding entry in the hostdevs array. For netdevs
-             * that are hardcoded as type='hostdev', this is already
-             * done by the parser, but for those allocated from a
-             * network / determined at runtime, we need to do it
-             * separately.
+             * corresponding entry in the hostdevs array.
              */
-            virDomainHostdevDef *hostdev = virDomainNetGetActualHostdev(net);
-            virDomainHostdevSubsysPCI *pcisrc = &hostdev->source.subsys.u.pci;
-
-            if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
-                hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI)
-                pcisrc->backend = VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN;
-
-            if (virDomainHostdevInsert(def, hostdev) < 0)
-                return -1;
+            virDomainHostdevInsert(def, virDomainNetGetActualHostdev(net));
         }
     }
 
     return 0;
 }
+
+
+static int
+libxlHostdevPrepareDevices(virDomainDef *def)
+{
+    size_t i;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDef *hostdev = def->hostdevs[i];
+        virDomainHostdevSubsysPCI *pcisrc = &hostdev->source.subsys.u.pci;
+
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            pcisrc->driver.name == VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_DEFAULT) {
+
+
+            pcisrc->driver.name = VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN;
+
+            /* Q: Why do we set an explicit driver.name here even
+             * though Xen (currently) only supports one driver.name for
+             * PCI hostdev assignment?
+             *
+             * A: Setting the driver name *in the domain XML config*
+             * is optional (and actually pointless at the time of
+             * writing, since each hypervisor only supports a single
+             * type of PCI hostdev device assignment). But the
+             * hypervisor-agnostic virHostdevPrepareDomainDevices(),
+             * which is called immediately after this function in
+             * order to do any driver-related setup (e.g. bind the
+             * host device to a driver kernel driver), requires that
+             * the driver.name be explicitly set (otherwise it wouldn't
+             * know whether to bind to the Xen driver or VFIO driver,
+             * for example).
+             *
+             * NB: If there are ever multiple types of device
+             * assignment supported by Xen, DO NOT CHANGE the value of
+             * driver.name set above when the config is "default" to
+             * anything other than "xen", unless the guest ABI of the
+             * new type is compatible with that of current "xen"
+             * device assignment.
+             *
+             */
+        }
+    }
+
+    return 0;
+}
+
 
 static void
 libxlConsoleCallback(libxl_ctx *ctx, libxl_event *ev, void *for_callback)
@@ -1172,6 +1287,9 @@ libxlDomainStartPrepare(libxlDriverPrivate *driver,
         goto error;
 
     if (libxlNetworkPrepareDevices(vm->def) < 0)
+        goto error;
+
+    if (libxlHostdevPrepareDevices(vm->def) < 0)
         goto error;
 
     if (virHostdevPrepareDomainDevices(hostdev_mgr, LIBXL_DRIVER_INTERNAL_NAME,
@@ -1352,8 +1470,7 @@ libxlDomainStart(libxlDriverPrivate *driver,
         return -1;
     }
 
-    if (g_atomic_int_add(&driver->nactive, 1) == 0 && driver->inhibitCallback)
-        driver->inhibitCallback(true, driver->inhibitOpaque);
+    virInhibitorHold(driver->inhibitor);
 
     event = virDomainEventLifecycleNewFromObj(vm, VIR_DOMAIN_EVENT_STARTED,
                                               restore_fd < 0 ?
@@ -1409,6 +1526,10 @@ libxlDomainStartNew(libxlDriverPrivate *driver,
                      managed_save_path);
 
         vm->hasManagedSave = false;
+    } else {
+        /* Validate configuration if starting a new VM */
+        if (virDomainDefValidate(vm->def, 0, driver->xmlopt, NULL) < 0)
+            goto cleanup;
     }
 
     ret = libxlDomainStart(driver, vm, start_paused, restore_fd, restore_ver);

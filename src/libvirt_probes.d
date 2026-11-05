@@ -13,12 +13,12 @@ provider libvirt {
 	probe event_glib_remove_timeout_idle(int timer, void *ff, void *opaque);
 	probe event_glib_dispatch_timeout(int timer, void *cb, void *opaque);
 
-        # file: src/util/virobject.c
-        # prefix: object
-        probe object_new(void *obj, const char *klassname);
-        probe object_ref(void *obj);
-        probe object_unref(void *obj);
-        probe object_dispose(void *obj);
+    # file: src/util/virobject.c
+    # prefix: object
+    probe object_new(void *obj, const char *klassname);
+    probe object_ref(void *obj, const char *klassname, int refs);
+    probe object_unref(void *obj, const char *klassname, int refs);
+    probe object_dispose(void *obj, const char *klassname);
 
 	# file: src/rpc/virnetsocket.c
 	# prefix: rpc
@@ -54,7 +54,8 @@ provider libvirt {
 	# file: src/rpc/virnettlscontext.c
 	# prefix: rpc
 	probe rpc_tls_context_new(void *ctxt, const char *cacert, const char *cacrl,
-				  const char *cert, const char *key, int sanityCheckCert, int requireValidCert, int isServer);
+				  const char **cert, const char **keys,
+				  int sanityCheckCert, int requireValidCert, int isServer);
 	probe rpc_tls_context_dispose(void *ctxt);
 	probe rpc_tls_context_session_allow(void *ctxt, void *sess, const char *dname);
 	probe rpc_tls_context_session_deny(void *ctxt, void *sess, const char *dname);

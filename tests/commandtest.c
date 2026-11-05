@@ -908,9 +908,8 @@ static int test25(const void *unused G_GNUC_UNUSED)
         goto cleanup;
     }
 
-    if ((ngroups = virGetGroupList(virCommandGetUID(cmd), virCommandGetGID(cmd),
-                                   &groups)) < 0)
-        goto cleanup;
+    ngroups = virGetGroupList(virCommandGetUID(cmd), virCommandGetGID(cmd),
+                              &groups);
 
     /* Now, fork and try to exec a nonexistent binary. */
     pid = virFork();
@@ -1246,6 +1245,8 @@ mymain(void)
 
     setpgid(0, 0);
     ignore_value(setsid());
+
+    virCloseRangeInit();
 
     /* Our test expects particular fd values; to get that, we must not
      * leak fds that we inherited from a lazy parent.  At the same

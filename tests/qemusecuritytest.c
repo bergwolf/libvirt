@@ -31,7 +31,8 @@
 
 struct testData {
     virQEMUDriver *driver;
-    const char *file; /* file name to load VM def XML from; qemuxml2argvdata/ */
+    const char *file; /* file name to load VM def XML from; qemuxmlconfdata/ */
+    int expectError;
 };
 
 
@@ -46,7 +47,7 @@ prepareObjects(virQEMUDriver *driver,
     g_autofree char *domxml = NULL;
     g_autofree char *latestCapsFile = NULL;
 
-    filename = g_strdup_printf("%s/qemuxml2argvdata/%s.xml", abs_srcdir, xmlname);
+    filename = g_strdup_printf("%s/qemuxmlconfdata/%s.xml", abs_srcdir, xmlname);
 
     if (virTestLoadFile(filename, &domxml) < 0)
         return -1;
@@ -117,8 +118,26 @@ testDomain(const void *opaque)
     if (g_setenv(ENVVAR, "1", FALSE) == FALSE)
         return -1;
 
-    if (qemuSecuritySetAllLabel(data->driver, vm, NULL, false) < 0)
+    if (qemuSecuritySetAllLabel(data->driver, vm, NULL, false) < 0) {
+        if (data->expectError != VIR_ERR_OK) {
+            int errCode = virGetLastErrorCode();
+
+            if (errCode == data->expectError) {
+                /* expected failure */
+                ret = 0;
+            } else {
+                VIR_TEST_DEBUG("Unexpected error code %d, expected %d",
+                               errCode, data->expectError);
+            }
+        }
         goto cleanup;
+    }
+
+    if (data->expectError != VIR_ERR_OK) {
+        VIR_TEST_DEBUG("passed instead of expected error code %d",
+                       data->expectError);
+        goto cleanup;
+    }
 
     qemuSecurityRestoreAllLabel(data->driver, vm, false);
 
@@ -191,13 +210,19 @@ mymain(void)
 
     driver.securityManager = g_steal_pointer(&stack);
 
-
-#define DO_TEST_DOMAIN(f) \
+#define DO_TEST_DOMAIN_FULL(f, err) \
     do { \
-        struct testData data = {.driver = &driver, .file = f}; \
+        struct testData data = {.driver = &driver, .file = f, \
+            .expectError = err}; \
         if (virTestRun(f, testDomain, &data) < 0) \
             ret = -1; \
     } while (0)
+
+#define DO_TEST_DOMAIN(f) \
+    DO_TEST_DOMAIN_FULL(f, VIR_ERR_OK)
+
+#define DO_TEST_DOMAIN_ERROR_UNSUPPORTED(f) \
+    DO_TEST_DOMAIN_FULL(f, VIR_ERR_CONFIG_UNSUPPORTED)
 
     DO_TEST_DOMAIN("acpi-table");
     DO_TEST_DOMAIN("channel-unix-guestfwd");
@@ -207,7 +232,7 @@ mymain(void)
     DO_TEST_DOMAIN("disk-backing-chains-noindex");
     DO_TEST_DOMAIN("disk-cache");
     DO_TEST_DOMAIN("disk-cdrom");
-    DO_TEST_DOMAIN("disk-cdrom-bus-other");
+    DO_TEST_DOMAIN("disk-usb-device");
     DO_TEST_DOMAIN("disk-cdrom-network");
     DO_TEST_DOMAIN("disk-cdrom-tray");
     DO_TEST_DOMAIN("disk-copy_on_read");
@@ -219,10 +244,8 @@ mymain(void)
     DO_TEST_DOMAIN("disk-network-iscsi");
     DO_TEST_DOMAIN("disk-network-nbd");
     DO_TEST_DOMAIN("disk-network-rbd");
-    DO_TEST_DOMAIN("disk-network-sheepdog");
     DO_TEST_DOMAIN("disk-network-source-auth");
     DO_TEST_DOMAIN("disk-network-tlsx509-nbd");
-    DO_TEST_DOMAIN("disk-network-tlsx509-vxhs");
     DO_TEST_DOMAIN("disk-readonly-disk");
     DO_TEST_DOMAIN("disk-scsi");
     DO_TEST_DOMAIN("disk-scsi-device-auto");
@@ -251,6 +274,12 @@ mymain(void)
     DO_TEST_DOMAIN("x86_64-pc-headless");
     DO_TEST_DOMAIN("x86_64-q35-graphics");
     DO_TEST_DOMAIN("x86_64-q35-headless");
+    DO_TEST_DOMAIN("boot-complex");
+    /* Rerun the same test but now mimic that one disk is a dir
+     * instead of regular file. */
+    g_setenv(PATH_MIMIC_DIR, "/dev/HostVG/hdc", TRUE);
+    DO_TEST_DOMAIN_ERROR_UNSUPPORTED("boot-complex");
+    g_unsetenv(PATH_MIMIC_DIR);
 
  cleanup:
     qemuTestDriverFree(&driver);

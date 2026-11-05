@@ -4,7 +4,7 @@
 #
 # https://gitlab.com/libvirt/libvirt-ci
 
-FROM docker.io/library/debian:sid-slim
+FROM docker.io/amd64/debian:sid-slim
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -14,6 +14,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       augeas-lenses \
                       augeas-tools \
                       bash-completion \
+                      black \
                       ca-certificates \
                       ccache \
                       codespell \
@@ -25,38 +26,32 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       gettext \
                       git \
                       grep \
-                      iproute2 \
-                      iptables \
-                      kmod \
-                      libc-dev-bin \
+                      libclang-rt-dev \
+                      libnbd-dev \
                       libxml2-utils \
                       locales \
-                      lvm2 \
                       make \
                       meson \
-                      nfs-common \
                       ninja-build \
-                      numad \
-                      open-iscsi \
                       perl-base \
                       pkgconf \
-                      policykit-1 \
                       python3 \
                       python3-docutils \
+                      python3-pytest \
                       qemu-utils \
-                      scrub \
                       sed \
                       xsltproc && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen && \
-    dpkg-reconfigure locales
+    dpkg-reconfigure locales && \
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
 
-ENV CCACHE_WRAPPERSDIR "/usr/libexec/ccache-wrappers"
-ENV LANG "en_US.UTF-8"
-ENV MAKE "/usr/bin/make"
-ENV NINJA "/usr/bin/ninja"
-ENV PYTHON "/usr/bin/python3"
+ENV CCACHE_WRAPPERSDIR="/usr/libexec/ccache-wrappers"
+ENV LANG="en_US.UTF-8"
+ENV MAKE="/usr/bin/make"
+ENV NINJA="/usr/bin/ninja"
+ENV PYTHON="/usr/bin/python3"
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     dpkg --add-architecture ppc64el && \
@@ -74,11 +69,12 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       libcap-ng-dev:ppc64el \
                       libcurl4-gnutls-dev:ppc64el \
                       libdevmapper-dev:ppc64el \
-                      libfuse-dev:ppc64el \
+                      libfuse3-dev:ppc64el \
                       libglib2.0-dev:ppc64el \
                       libglusterfs-dev:ppc64el \
                       libgnutls28-dev:ppc64el \
                       libiscsi-dev:ppc64el \
+                      libjson-c-dev:ppc64el \
                       libnl-3-dev:ppc64el \
                       libnl-route-3-dev:ppc64el \
                       libnuma-dev:ppc64el \
@@ -89,13 +85,12 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       libreadline-dev:ppc64el \
                       libsanlock-dev:ppc64el \
                       libsasl2-dev:ppc64el \
-                      libselinux1-dev:ppc64el \
-                      libssh-gcrypt-dev:ppc64el \
+                      libselinux-dev:ppc64el \
+                      libssh-dev:ppc64el \
                       libssh2-1-dev:ppc64el \
                       libtirpc-dev:ppc64el \
                       libudev-dev:ppc64el \
                       libxml2-dev:ppc64el \
-                      libyajl-dev:ppc64el \
                       systemtap-sdt-dev:ppc64el && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
@@ -116,5 +111,5 @@ endian = 'little'\n" > /usr/local/share/meson/cross/powerpc64le-linux-gnu && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/powerpc64le-linux-gnu-cc && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/powerpc64le-linux-gnu-gcc
 
-ENV ABI "powerpc64le-linux-gnu"
-ENV MESON_OPTS "--cross-file=powerpc64le-linux-gnu"
+ENV ABI="powerpc64le-linux-gnu"
+ENV MESON_OPTS="--cross-file=powerpc64le-linux-gnu"

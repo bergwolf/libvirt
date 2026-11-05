@@ -1,11 +1,13 @@
 <domain type='vmware'>
   <name>Router</name>
   <uuid>564ddebe-e86f-d586-0854-a0879cc4be5a</uuid>
+  <hwuuid>564ddebe-e86f-d586-0854-a0879cc4be5a</hwuuid>
   <memory unit='KiB'>32768</memory>
   <currentMemory unit='KiB'>32768</currentMemory>
   <vcpu placement='static'>1</vcpu>
   <os>
     <type arch='i686'>hvm</type>
+    <nvram>[datastore] directory/Debian-System3.nvram</nvram>
   </os>
   <clock offset='utc'/>
   <on_poweroff>destroy</on_poweroff>
@@ -17,6 +19,7 @@
       <target dev='hda' bus='ide'/>
       <address type='drive' controller='0' bus='0' target='0' unit='0'/>
     </disk>
+    <controller type='scsi' index='0' model='lsilogic'/>
     <controller type='ide' index='0'/>
     <interface type='bridge'>
       <mac address='00:0c:29:c4:be:5a' type='generated'/>

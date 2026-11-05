@@ -58,11 +58,15 @@
 
 static int (*real_chown)(const char *path, uid_t uid, gid_t gid);
 static int (*real_open)(const char *path, int flags, ...);
+#if WITH___OPEN_2
+static int (*real___open_2)(const char *path, int flags);
+#endif
 static int (*real_close)(int fd);
 #ifdef WITH_SELINUX
 static int (*real_setfilecon_raw)(const char *path, const char *context);
 static int (*real_getfilecon_raw)(const char *path, char **context);
 #endif
+static bool (*real_virFileExists)(const char *file);
 
 
 /* Global mutex to avoid races */
@@ -111,12 +115,20 @@ init_syms(void)
         return;
 
     VIR_MOCK_REAL_INIT(chown);
+#if defined(__GLIBC__) && defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64
+    VIR_MOCK_REAL_INIT_ALIASED(open, "open64");
+#else
     VIR_MOCK_REAL_INIT(open);
+#endif
+#if WITH___OPEN_2
+    VIR_MOCK_REAL_INIT(__open_2);
+#endif
     VIR_MOCK_REAL_INIT(close);
 #ifdef WITH_SELINUX
     VIR_MOCK_REAL_INIT(setfilecon_raw);
     VIR_MOCK_REAL_INIT(getfilecon_raw);
 #endif
+    VIR_MOCK_REAL_INIT(virFileExists);
 
     /* Intentionally not calling init_hash() here */
 }
@@ -219,7 +231,8 @@ int virFileRemoveXAttr(const char *path,
 
 #define VIR_MOCK_STAT_HOOK \
     do { \
-        if (getenv(ENVVAR)) { \
+        if (g_getenv(ENVVAR)) { \
+            const char *mimicDir = g_getenv(PATH_MIMIC_DIR); \
             uint32_t *val; \
 \
             virMutexLock(&m); \
@@ -227,7 +240,11 @@ int virFileRemoveXAttr(const char *path,
 \
             memset(sb, 0, sizeof(*sb)); \
 \
-            sb->st_mode = S_IFREG | 0666; \
+            if (STREQ_NULLABLE(path, mimicDir)) { \
+                sb->st_mode = S_IFDIR | 0666; \
+            } else { \
+                sb->st_mode = S_IFREG | 0666; \
+            } \
             sb->st_size = 123456; \
             sb->st_ino = 1; \
 \
@@ -291,7 +308,7 @@ chown(const char *path, uid_t uid, gid_t gid)
 
     init_syms();
 
-    if (getenv(ENVVAR))
+    if (g_getenv(ENVVAR))
         ret = mock_chown(path, uid, gid);
     else
         ret = real_chown(path, uid, gid);
@@ -307,7 +324,7 @@ open(const char *path, int flags, ...)
 
     init_syms();
 
-    if (getenv(ENVVAR)) {
+    if (g_getenv(ENVVAR)) {
         ret = 42; /* Some dummy FD */
     } else if (flags & O_CREAT) {
         va_list ap;
@@ -324,6 +341,24 @@ open(const char *path, int flags, ...)
 }
 
 
+#if WITH___OPEN_2
+int
+__open_2(const char *path, int flags)
+{
+    int ret;
+
+    init_syms();
+
+    if (g_getenv(ENVVAR)) {
+        ret = 42; /* Some dummy FD */
+    } else {
+        ret = real___open_2(path, flags);
+    }
+
+    return ret;
+}
+#endif
+
 int
 close(int fd)
 {
@@ -331,7 +366,7 @@ close(int fd)
 
     init_syms();
 
-    if (fd == 42 && getenv(ENVVAR))
+    if (fd == 42 && g_getenv(ENVVAR))
         ret = 0;
     else
         ret = real_close(fd);
@@ -355,6 +390,27 @@ int virFileUnlock(int fd G_GNUC_UNUSED,
                   off_t len G_GNUC_UNUSED)
 {
     return 0;
+}
+
+
+bool virFileExists(const char *path)
+{
+    VIR_LOCK_GUARD lock = virLockGuardLock(&m);
+
+    if (g_getenv(ENVVAR) == NULL) {
+        init_syms();
+
+        return real_virFileExists(path);
+    }
+
+    init_hash();
+    if (virHashHasEntry(chown_paths, path))
+        return true;
+
+    if (virHashHasEntry(selinux_paths, path))
+        return true;
+
+    return false;
 }
 
 
@@ -589,7 +645,7 @@ setfilecon_raw(const char *path,
 
     init_syms();
 
-    if (getenv(ENVVAR))
+    if (g_getenv(ENVVAR))
         ret = mock_setfilecon_raw(path, context);
     else
         ret = real_setfilecon_raw(path, context);
@@ -606,7 +662,7 @@ getfilecon_raw(const char *path,
 
     init_syms();
 
-    if (getenv(ENVVAR))
+    if (g_getenv(ENVVAR))
         ret = mock_getfilecon_raw(path, context);
     else
         ret = real_getfilecon_raw(path, context);

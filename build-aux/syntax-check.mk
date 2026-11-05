@@ -1,13 +1,12 @@
 #
-# Rules for running syntax-check, derived from gnulib's
-# maint.mk
+# Rules for running syntax-check, derived from gnulib's top/maint.mk
 #
 # Specifically, all shared code should match gnulib commit
 #
-#   dd2503c8e73621e919e8e214a29c495ac89d8a92 (2022-05-21)
+#   d5191e456737661d4a0df5287f6c2064ab74dbbe (2024-02-15)
 #
 # Copyright (C) 2008-2019 Red Hat, Inc.
-# Copyright (C) 2001-2022 Free Software Foundation, Inc.
+# Copyright (C) 2001-2024 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -93,8 +92,8 @@ sc_prohibit_raw_virclassnew:
 
 # Avoid raw malloc and free, except in documentation comments.
 sc_prohibit_raw_allocation:
-	@prohibit='^.[^*].*\<((m|c|re)alloc|free) *\([^)]' \
-	halt='use VIR_ macros from viralloc.h instead of malloc/free' \
+	@prohibit='^.[^*].*\<((m|c|re)alloc|free|g_malloc|g_new) *\([^)]' \
+	halt='use g_new0/g_malloc0/g_free instead of malloc/free/g_malloc' \
 	  $(_sc_search_regexp)
 
 # Avoid functions that can lead to double-close bugs.
@@ -248,6 +247,19 @@ sc_prohibit_canonicalize_file_name:
 	halt='use virFileCanonicalizePath() instead of canonicalize_file_name()' \
 	  $(_sc_search_regexp)
 
+sc_prohibit_realpath:
+	@prohibit='\<realpath\(' \
+	exclude='exempt from syntax-check' \
+	halt='use virFileCanonicalizePath() instead of realpath()' \
+	  $(_sc_search_regexp)
+
+# qsort from glibc has unstable sort ordering for "equal" members
+sc_prohibit_qsort:
+	@prohibit='\<(qsort|qsort_r) *\(' \
+	exclude='exempt from syntax-check' \
+	halt='use g_qsort_with_data instead of qsort' \
+	  $(_sc_search_regexp)
+
 # Insist on correct types for [pug]id.
 sc_correct_id_types:
 	@prohibit='\<(int|long) *[pug]id\>' \
@@ -377,10 +389,27 @@ sc_prohibit_unsigned_pid:
 	halt='use signed type for pid values' \
 	  $(_sc_search_regexp)
 
+sc_prohibit_g_autofree_const:
+	@prohibit='\<g_auto(free|ptr)\>.* const.* \*[^*]' \
+	halt='‘g_autofree’ discards ‘const’ qualifier from pointer target type' \
+	  $(_sc_search_regexp)
+
+sc_prohibit_local_with_subshell:
+	@err=0; for f in $$($(VC_LIST_EXCEPT) | $(GREP) -E '\.sh(\.in)?$$'); do \
+	  lines=$$( $(AWK) \
+	  '/^\s*(local|export|declare|readonly)\s+.*=/ { nr=NR; c=1; next } \
+	  /^\s*$$/ { if (c) next } \
+	  /\$$\?/ { if (c) { print nr; c=0; } next } \
+	  { c=0 }' $$f ) ; \
+	  for l in $$lines; do echo $$f:$$l 1>&2; err=1; done ; \
+	done; \
+	test $$err -eq 0 || { msg="Declare and assign separately to avoid masking return values" $(_sc_say_and_exit) }
+
+
 # Many of the function names below came from this filter:
 # git grep -B2 '\<_('|grep -E '\.c- *[[:alpha:]_][[:alnum:]_]* ?\(.*[,;]$' \
 # |sed 's/.*\.c-  *//'|perl -pe 's/ ?\(.*//'|sort -u \
-# |grep -vE '^(qsort|if|close|assert|fputc|free|N_|vir.*GetName|.*Unlock|virNodeListDevices|virHashRemoveEntry|freeaddrinfo|.*[fF]ree|xdrmem_create|xmlXPathFreeObject|virUUIDFormat|openvzSetProgramSentinal|polkit_action_unref)$'
+# |grep -vE '^(if|close|assert|fputc|free|N_|vir.*GetName|.*Unlock|virNodeListDevices|virHashRemoveEntry|freeaddrinfo|.*[fF]ree|xdrmem_create|xmlXPathFreeObject|virUUIDFormat|openvzSetProgramSentinal|polkit_action_unref)$'
 
 msg_gen_function =
 msg_gen_function += VIR_ERROR
@@ -395,6 +424,8 @@ msg_gen_function += virReportError
 msg_gen_function += virReportErrorHelper
 msg_gen_function += virReportSystemError
 msg_gen_function += virLastErrorPrefixMessage
+msg_gen_function += vshError
+msg_gen_function += vshWarn
 
 # Uncomment the following and run "ninja test" to see diagnostics
 # that are not yet marked for translation, but that need to be rewritten
@@ -402,7 +433,6 @@ msg_gen_function += virLastErrorPrefixMessage
 # msg_gen_function += fprintf
 # msg_gen_function += testError
 # msg_gen_function += vshPrint
-# msg_gen_function += vshError
 
 space = $(null) $(null)
 func_re= ($(subst $(space),|,$(msg_gen_function)))
@@ -439,6 +469,22 @@ sc_prohibit_newline_at_end_of_diagnostic:
 	    | $(GREP) '\\n"' \
 	  && { echo 'newline at end of message(s)' 1>&2; \
 	    exit 1; } || :
+
+# Disallow translated messages on multiple lines, except when
+# they end with '\n'.
+sc_prohibit_error_message_on_multiple_lines:
+	@prohibit='[^N]_\(".*"$$' \
+    exclude='\\n"$$' \
+	halt='found error message on multiple lines' \
+	$(_sc_search_regexp)
+
+# Disallow VIR_WARN and other messagess on multiple lines, except when
+# they end with '\n'.
+sc_prohibit_warnings_on_multiple_lines:
+	@prohibit='VIR_WARN\("[^"]*"$$' \
+    exclude='\\n"$$' \
+	halt='found error message on multiple lines' \
+	$(_sc_search_regexp)
 
 # Look for diagnostics that lack a % in the format string, except that we
 # allow VIR_ERROR to do this, and ignore functions that take a single
@@ -573,15 +619,22 @@ sc_prohibit_python_without_env:
 
 # We're intentionally ignoring a few warnings
 #
+# E302: whitespace before ':'. This is something that is
+# desirable when indexing array slices and is used by the
+# 'black' formatting tool
+#
 # E501: Force breaking lines at < 80 characters results in
 # some really unnatural code formatting which harms
 # readability.
+#
+# W503: line break before binary operator, because this
+# is contrary to what 'black' formatting tool wants
 #
 # W504: Knuth code style requires the operators "or" and "and" etc
 # to be at the start of line in a multi-line conditional.
 # This the opposite to what is normal libvirt practice.
 #
-FLAKE8_IGNORE = E501,W504
+FLAKE8_IGNORE = E203,E501,W503,W504
 
 sc_flake8:
 	@if [ -n "$(FLAKE8)" ]; then \
@@ -591,6 +644,16 @@ sc_flake8:
 		echo "$$ALL_PY" | xargs $(FLAKE8) --ignore $(FLAKE8_IGNORE) --show-source; \
 	else \
 		echo 'skipping test $@: flake8 not installed' 1>&2; \
+	fi
+
+sc_black:
+	if [ -n "$(BLACK)" ]; then \
+		DOT_PY=$$($(VC_LIST_EXCEPT) | $(GREP) '\.py$$'); \
+		BANG_PY=$$($(VC_LIST_EXCEPT) | xargs grep -l '^#!/usr/bin/env python3$$'); \
+		ALL_PY=$$(printf "%s\n%s" "$$DOT_PY" "$$BANG_PY" | sort -u); \
+		echo "$$ALL_PY" | xargs --no-run-if-empty $(BLACK) --check; \
+	else \
+		echo 'skipping test $@: black not installed' 1>&2; \
 	fi
 
 # mymain() in test files should use return, not exit, for nicer output
@@ -1051,7 +1114,8 @@ sc_prohibit_stdio--_without_use:
 	@h='stdio--.h' re='\<((f(re)?|p)open|tmpfile) *\(' \
 	  $(_sc_header_without_use)
 
-_stddef_syms_re = NULL|offsetof|ptrdiff_t|size_t|wchar_t
+_stddef_syms_re = \
+  NULL|max_align_t|nullptr_t|offsetof|ptrdiff_t|size_t|unreachable|wchar_t
 # Prohibit the inclusion of stddef.h without an actual use.
 sc_prohibit_stddef_without_use:
 	@h='stddef.h' \
@@ -1103,7 +1167,7 @@ sc_prohibit_backup_files:
 sc_avoid_remote_reference_to_local_file:
 	@prohibit='<#' \
 	in_vc_files='\.rst$$' \
-	halt='use local reference within a file' \
+	halt='use `section`_ or `here <section_>`__ instead of `here <#section>`__' \
 	  $(_sc_search_regexp)
 
 # This Perl code is slightly obfuscated.  Not only is each "$" doubled
@@ -1193,15 +1257,6 @@ sc_prohibit_double_semicolon:
 	halt="Double semicolon detected" \
 	  $(_sc_search_regexp)
 
-_ptm1 = use "test C1 && test C2", not "test C1 -''a C2"
-_ptm2 = use "test C1 || test C2", not "test C1 -''o C2"
-# Using test's -a and -o operators is not portable.
-# We prefer test over [, since the latter is spelled [[ in configure.ac.
-sc_prohibit_test_minus_ao:
-	@prohibit='(\<test| \[+) .+ -[ao] ' \
-	halt='$(_ptm1); $(_ptm2)' \
-	  $(_sc_search_regexp)
-
 # Avoid a test bashism.
 sc_prohibit_test_double_equal:
 	@prohibit='(\<test| \[+) .+ == ' \
@@ -1250,9 +1305,10 @@ po_file ?= $(top_srcdir)/po/POTFILES
 # This is all generated files for RPC code.
 generated_files = \
   $(top_builddir)/src/*.[ch] \
-  $(top_builddir)/src/*/*.[ch]
+  $(top_builddir)/src/*/*.[ch] \
+  $(top_builddir)/src/*/*.policy.in
 
-_gl_translatable_string_re ?= \b(N?_|gettext *)\([^)"]*("|$$)
+_gl_translatable_string_re ?= (^<policyconfig>|\b(N?_|gettext *)\([^)"]*("|$$))
 
 # sc_po_check can fail if generated files are not built first
 sc_po_check:
@@ -1287,21 +1343,9 @@ sc_prohibit_path_max_allocation:
 	halt='Avoid stack allocations of size PATH_MAX' \
 	  $(_sc_search_regexp)
 
-ifneq ($(_gl-Makefile),)
-syntax-check: sc_spacing-check \
-	sc_prohibit-duplicate-header sc_mock-noinline sc_group-qemu-caps \
-        sc_header-ifdef
-	@if ! cppi --version >/dev/null 2>&1; then \
-		echo "*****************************************************" >&2; \
-		echo "* cppi not installed, some checks have been skipped *" >&2; \
-		echo "*****************************************************" >&2; \
-	fi; \
-	if [ -z "$(FLAKE8)" ]; then \
-		echo "*****************************************************" >&2; \
-		echo "* flake8 not installed, sc_flake8 has been skipped  *" >&2; \
-		echo "*****************************************************" >&2; \
-	fi
-endif
+sc_unportable_grep_q:
+	@prohibit='grep ''-q' halt="unportable 'grep ""-q', use >/dev/null instead" \
+	  $(_sc_search_regexp)
 
 # Don't include duplicate header in the source (either *.c or *.h)
 sc_prohibit-duplicate-header:
@@ -1313,9 +1357,9 @@ sc_spacing-check:
 	$(PERL) $(top_srcdir)/build-aux/check-spacing.pl || \
 	  { echo 'incorrect formatting' 1>&2; exit 1; }
 
-sc_mock-noinline:
+sc_mockable-attribute:
 	$(AM_V_GEN)$(VC_LIST_EXCEPT) | $(GREP) '\.[ch]$$' | $(RUNUTF8) \
-	$(PYTHON) $(top_srcdir)/scripts/mock-noinline.py
+	$(PYTHON) $(top_srcdir)/scripts/mockable-attribute.py
 
 sc_header-ifdef:
 	$(AM_V_GEN)$(VC_LIST_EXCEPT) | $(GREP) '\.[h]$$' | $(RUNUTF8) xargs \
@@ -1331,6 +1375,28 @@ sc_prohibit_enum_impl_with_vir_prefix_in_virsh:
 	halt='avoid "vir" prefix for enums in virsh' \
 	  $(_sc_search_regexp)
 
+sc_rst_since:
+	@prohibit=':since:`[^`]+$|:since:`[^`]+[.,;]`|:since:`[^`]+` [.,;]' \
+	halt='format :since: correctly' \
+	  $(_sc_search_regexp)
+
+sc_prohibit_inline_functions:
+	@prohibit='\binline\b' \
+	in_vc_files='\.c$$' \
+	exclude='exempt from syntax-check' \
+	halt='avoid inline functions in .c files' \
+	  $(_sc_search_regexp)
+
+# glib's G_REGEX_OPTIMIZE instructs the PCRE library to use JIT optimization
+# of the regexes, which requires executable memory to work. Security mechanisms
+# such as SELinux may disallow it. glib gracefully falls back to un-optimized
+# code. This check serves as a warning to not rely on G_REGEX_OPTIMIZE.
+# Currently we avoid use of G_REGEX_OPTIMIZE anywhere.
+sc_G_REGEX_OPTIMIZE:
+	@prohibit='G_REGEX_OPTIMIZE' \
+	exclude='see sc_G_REGEX_OPTIMIZE' \
+	halt='Optimizations may not work everywhere. Read the warning in build-aux/syntax-check.mk' \
+	  $(_sc_search_regexp)
 
 ## ---------- ##
 ## Exceptions ##
@@ -1341,7 +1407,7 @@ exclude_file_name_regexp--sc_avoid_strcase = ^tools/(vsh\.h|nss/libvirt_nss_(lea
 exclude_file_name_regexp--sc_avoid_write = ^src/libvirt-stream\.c$$
 
 exclude_file_name_regexp--sc_gettext_init = \
-	^((tests|examples)/|tools/virt-login-shell.c)
+	^((tests|examples)/|tools/virt-login-shell\.c$$|scripts/rpcgen/tests/test_demo\.c$$)
 
 exclude_file_name_regexp--sc_copyright_usage = \
   ^COPYING(|\.LESSER)$$
@@ -1370,7 +1436,7 @@ exclude_file_name_regexp--sc_prohibit_close = \
   (\.p[yl]$$|\.spec\.in$$|^docs/|^(src/util/vir(file|event)\.c|src/libvirt-stream\.c|tests/(vir.+mock\.c|commandhelper\.c|qemusecuritymock\.c)|tools/nss/libvirt_nss_(leases|macs)\.c)|tools/virt-qemu-qmp-proxy$$)
 
 exclude_file_name_regexp--sc_prohibit_empty_lines_at_EOF = \
-  (^tests/(nodedevmdevctl|viracpi|virhostcpu|virpcitest|virstoragetest)data/|docs/js/.*\.js|docs/fonts/.*\.woff|\.diff|tests/virconfdata/no-newline\.conf$$)
+  ((^tests/(nodedevmdevctl|viracpi|virhostcpu|virpcitest|virstoragetest|qemunbdkit|virshtest)data/|docs/js/.*\.js|docs/fonts/.*\.woff|\.diff|tests/virconfdata/no-newline\.conf$$)|\.bin)
 
 exclude_file_name_regexp--sc_prohibit_fork_wrappers = \
   (^(src/(util/(vircommand|virdaemon)|lxc/lxc_controller)|tests/testutils)\.c$$)
@@ -1386,14 +1452,20 @@ exclude_file_name_regexp--sc_prohibit_raw_virclassnew = \
 exclude_file_name_regexp--sc_prohibit_newline_at_end_of_diagnostic = \
   ^src/rpc/gendispatch\.pl$$
 
+exclude_file_name_regexp--sc_prohibit_error_message_on_multiple_lines = \
+  ^(build-aux/syntax-check\.mk|docs/coding-style.rst)
+
 exclude_file_name_regexp--sc_prohibit_nonreentrant = \
   ^((po|tests|examples)/|docs/.*(py|js|html\.in|.rst)|run.in$$|tools/wireshark/util/genxdrstub\.pl|tools/virt-login-shell\.c$$)
 
 exclude_file_name_regexp--sc_prohibit_canonicalize_file_name = \
   ^(build-aux/syntax-check\.mk|tests/virfilemock\.c)$$
 
+exclude_file_name_regexp--sc_prohibit_realpath = \
+  ^(build-aux/syntax-check\.mk|src/cpu_map/sync_qemu_features_i386\.py|tests/virfilemock\.c)$$
+
 exclude_file_name_regexp--sc_prohibit_raw_allocation = \
-  ^(docs/advanced-tests\.rst|src/util/viralloc\.[ch]|examples/.*|tests/(securityselinuxhelper|(vircgroup|nss)mock|commandhelper)\.c|tools/wireshark/src/packet-libvirt\.c|tools/nss/libvirt_nss(_leases|_macs)?\.c)$$
+  ^(docs/advanced-tests\.rst|src/util/viralloc\.[ch]|examples/.*|tests/(securityselinuxhelper|(vircgroup|nss)mock|commandhelper)\.c|tools/wireshark/src/packet-libvirt\.c|tools/nss/libvirt_nss(_leases|_log|_macs)?\.[ch])$$
 
 exclude_file_name_regexp--sc_prohibit_readlink = \
   ^src/(util/virutil|lxc/lxc_container)\.c$$
@@ -1412,13 +1484,13 @@ exclude_file_name_regexp--sc_prohibit_xmlURI = ^src/util/viruri\.c$$
 exclude_file_name_regexp--sc_prohibit_return_as_function = \.py$$
 
 exclude_file_name_regexp--sc_require_config_h = \
-	^(examples/|tools/virsh-edit\.c$$|tests/virmockstathelpers.c)
+	^(examples/c/.*/.*\.c|tools/virsh-edit\.c|tests/virmockstathelpers\.c|scripts/rpcgen/tests/(test_)?demo\.c)$$
 
 exclude_file_name_regexp--sc_require_config_h_first = \
-	^(examples/|tools/virsh-edit\.c$$|tests/virmockstathelpers.c)
+	^(examples/|tools/virsh-edit\.c$$|tests/virmockstathelpers\.c$$|scripts/rpcgen/tests/test_demo\.c$$)
 
 exclude_file_name_regexp--sc_trailing_blank = \
-  /sysinfodata/.*\.data|/virhostcpudata/.*\.cpuinfo$$
+  /sysinfodata/.*\.data|/virhostcpudata/.*\.cpuinfo|tests/virshtestdata/.*|docs/fonts|scripts/rpcgen/tests/.*\.bin|tests/viracpidata/.*|tests/virpcitestdata/*|tests/virstoragetestdata/images/.*\.qcow2$$
 
 exclude_file_name_regexp--sc_unmarked_diagnostics = \
   ^(scripts/apibuild.py|tests/virt-aa-helper-test|docs/js/.*\.js)$$
@@ -1447,7 +1519,7 @@ exclude_file_name_regexp--sc_prohibit_mixed_case_abbreviations = \
   ^src/(vbox/vbox_CAPI.*.h|esx/esx_vi.(c|h)|esx/esx_storage_backend_iscsi.c)$$
 
 exclude_file_name_regexp--sc_prohibit_empty_first_line = \
-  ^tests/vmwareverdata/fusion-5.0.3.txt$$
+  ^tests/vmwareverdata/fusion-5.0.3.txt|scripts/rpcgen/tests/demo\.c|^tests/virshtestdata/.*$$
 
 exclude_file_name_regexp--sc_prohibit_useless_translation = \
   ^tests/virpolkittest.c
@@ -1476,6 +1548,20 @@ exclude_file_name_regexp--sc_prohibit_strcmp = \
 exclude_file_name_regexp--sc_prohibit_select = \
   ^build-aux/syntax-check\.mk|src/util/vireventglibwatch\.c|tests/meson\.build$$
 
+exclude_file_name_regexp--sc_header-ifdef = \
+  ^scripts/rpcgen/tests/demo\.[ch]$$
+
+exclude_file_name_regexp--sc_black = \
+  ^tools/|src/|tests/|ci/|run\.in|scripts/[^/]*\.py
+
+exclude_file_name_regexp--sc_spacing-check = \
+  ^scripts/rpcgen/tests/test_demo\.[ch]$$
+
+exclude_file_name_regexp--sc_prohibit_inline_functions = \
+  ^src/storage_file/storage_source.*.c$$
+
+exclude_file_name_regexp--sc_G_REGEX_OPTIMIZE = \
+	^build-aux/syntax-check\.mk$$
 
 ## -------------- ##
 ## Implementation ##

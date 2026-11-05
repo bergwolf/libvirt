@@ -180,7 +180,7 @@ main(int argc, char **argv)
 
     struct option opt[] = {
         { "help", no_argument, NULL, 'h' },
-        { "version", optional_argument, NULL, 'V' },
+        { "version", no_argument, NULL, 'V' },
         { NULL, 0, NULL, 0 },
     };
     if (virInitialize() < 0) {
@@ -253,15 +253,14 @@ main(int argc, char **argv)
     if (!name)
         goto cleanup;
 
-    homedir = virGetUserDirectoryByUID(uid);
+    homedir = virGetUserHomeDirectoryByUID(uid);
     if (!homedir)
         goto cleanup;
 
     if (!(conf = virConfReadFile(login_shell_path, 0)))
         goto cleanup;
 
-    if ((ngroups = virGetGroupList(uid, gid, &groups)) < 0)
-        goto cleanup;
+    ngroups = virGetGroupList(uid, gid, &groups);
 
     if (virLoginShellAllowedUser(conf, name, groups, ngroups) < 0)
         goto cleanup;
@@ -358,7 +357,7 @@ main(int argc, char **argv)
     /* We're duping the string because the clearenv()
      * call will shortly release the pointer we get
      * back from getenv() right here */
-    term = g_strdup(getenv("TERM"));
+    term = g_strdup(g_getenv("TERM"));
 
     /* A fork is required to create new process in correct pid namespace.  */
     if ((cpid = virFork()) < 0)

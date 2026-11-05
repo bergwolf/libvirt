@@ -24,6 +24,8 @@
 
 #include <config.h>
 
+#include "datatypes.h"
+#include "driver.h"
 #include "internal.h"
 #include "virerror.h"
 #include "virconf.h"
@@ -334,33 +336,37 @@ xenParseEventsActions(virConf *conf, virDomainDef *def)
     g_autofree char *on_poweroff = NULL;
     g_autofree char *on_reboot = NULL;
     g_autofree char *on_crash = NULL;
+    int tmp;
 
     if (xenConfigGetString(conf, "on_poweroff", &on_poweroff, "destroy") < 0)
         return -1;
 
-    if ((def->onPoweroff = virDomainLifecycleActionTypeFromString(on_poweroff)) < 0) {
+    if ((tmp = virDomainLifecycleActionTypeFromString(on_poweroff)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("unexpected value %1$s for on_poweroff"), on_poweroff);
         return -1;
     }
+    def->onPoweroff =  tmp;
 
     if (xenConfigGetString(conf, "on_reboot", &on_reboot, "restart") < 0)
         return -1;
 
-    if ((def->onReboot = virDomainLifecycleActionTypeFromString(on_reboot)) < 0) {
+    if ((tmp = virDomainLifecycleActionTypeFromString(on_reboot)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("unexpected value %1$s for on_reboot"), on_reboot);
         return -1;
     }
+    def->onReboot = tmp;
 
     if (xenConfigGetString(conf, "on_crash", &on_crash, "restart") < 0)
         return -1;
 
-    if ((def->onCrash = virDomainLifecycleActionTypeFromString(on_crash)) < 0) {
+    if ((tmp = virDomainLifecycleActionTypeFromString(on_crash)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("unexpected value %1$s for on_crash"), on_crash);
         return -1;
     }
+    def->onCrash = tmp;
 
     return 0;
 }
@@ -443,9 +449,7 @@ xenParsePCI(char *entry)
         }
     }
 
-    if (!(hostdev = virDomainHostdevDefNew()))
-       return NULL;
-
+    hostdev = virDomainHostdevDefNew(NULL);
     hostdev->managed = false;
     hostdev->writeFiltering = filtered;
     hostdev->source.subsys.type = VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI;
@@ -802,20 +806,20 @@ static virDomainChrDef *
 xenParseSxprChar(const char *value,
                  const char *tty)
 {
-    const char *prefix;
+    g_autofree char *prefix = NULL;
     char *tmp;
     virDomainChrDef *def;
 
     if (!(def = virDomainChrDefNew(NULL)))
         return NULL;
 
-    prefix = value;
+    prefix = g_strdup(value);
 
     if (g_path_is_absolute(value)) {
         def->source->type = VIR_DOMAIN_CHR_TYPE_DEV;
         def->source->data.file.path = g_strdup(value);
     } else {
-        if ((tmp = strchr(value, ':')) != NULL) {
+        if ((tmp = strchr(prefix, ':')) != NULL) {
             *tmp = '\0';
             value = tmp + 1;
         }
@@ -1019,7 +1023,7 @@ xenParseCharDev(virConf *conf, virDomainDef *def, const char *nativeFormat)
 static int
 xenParseVifBridge(virDomainNetDef *net, const char *bridge)
 {
-    char *vlanstr;
+    const char *vlanstr;
     unsigned int tag;
 
     if ((vlanstr = strchr(bridge, '.'))) {
@@ -1144,7 +1148,7 @@ xenParseVif(char *entry, const char *vif_typename)
 
     for (keyval = keyvals; keyval && *keyval; keyval++) {
         const char *key = *keyval;
-        char *val = strchr(key, '=');
+        const char *val = strchr(key, '=');
 
         virSkipSpaces(&key);
 
@@ -1387,8 +1391,11 @@ xenParseGeneralMeta(virConf *conf, virDomainDef *def, virCaps *caps)
     }
 
     if (!(capsdata = virCapabilitiesDomainDataLookup(caps, def->os.type,
-            VIR_ARCH_NONE, def->virtType, NULL, NULL)))
+                                                     VIR_ARCH_NONE,
+                                                     def->virtType, NULL,
+                                                     NULL, true))) {
         goto out;
+    }
 
     def->os.arch = capsdata->arch;
     def->os.machine = g_strdup(capsdata->machinetype);
@@ -1583,8 +1590,7 @@ xenMakeIPList(virNetDevIPInfo *guestIP)
 }
 
 static int
-xenFormatNet(virConnectPtr conn,
-             virConfValue *list,
+xenFormatNet(virConfValue *list,
              virDomainNetDef *net,
              int hvm,
              const char *vif_typename)
@@ -1646,13 +1652,19 @@ xenFormatNet(virConnectPtr conn,
 
     case VIR_DOMAIN_NET_TYPE_NETWORK:
     {
-        virNetworkPtr network = virNetworkLookupByName(conn, net->data.network.name);
+        g_autoptr(virConnect) conn = NULL;
+        virNetworkPtr network;
         char *bridge;
-        if (!network) {
+
+        if (!(conn = virGetConnectNetwork()))
+            return -1;
+
+        if (!(network = virNetworkLookupByName(conn, net->data.network.name))) {
             virReportError(VIR_ERR_NO_NETWORK, "%s",
                            net->data.network.name);
             return -1;
         }
+
         bridge = virNetworkGetBridgeName(network);
         virObjectUnref(network);
         if (!bridge) {
@@ -2020,10 +2032,8 @@ xenFormatCPUAllocation(virConf *conf, virDomainDef *def)
     if (xenConfigSetInt(conf, "vcpus", virDomainDefGetVcpus(def)) < 0)
         return -1;
 
-    if ((def->cpumask != NULL) &&
-        ((cpus = virBitmapFormat(def->cpumask)) == NULL)) {
-        return -1;
-    }
+    if (def->cpumask != NULL)
+        cpus = virBitmapFormat(def->cpumask);
 
     if (cpus &&
         xenConfigSetString(conf, "cpus", cpus) < 0)
@@ -2087,7 +2097,7 @@ xenFormatHypervisorFeatures(virConf *conf, virDomainDef *def)
     }
 
     for (i = 0; i < def->clock.ntimers; i++) {
-        switch ((virDomainTimerNameType)def->clock.timers[i]->name) {
+        switch (def->clock.timers[i]->name) {
         case VIR_DOMAIN_TIMER_NAME_TSC:
             switch (def->clock.timers[i]->mode) {
             case VIR_DOMAIN_TIMER_MODE_NATIVE:
@@ -2301,7 +2311,6 @@ xenFormatSound(virConf *conf, virDomainDef *def)
 
 static int
 xenFormatVif(virConf *conf,
-             virConnectPtr conn,
              virDomainDef *def,
              const char *vif_typename)
 {
@@ -2314,8 +2323,7 @@ xenFormatVif(virConf *conf,
     netVal->list = NULL;
 
     for (i = 0; i < def->nnets; i++) {
-        if (xenFormatNet(conn, netVal, def->nets[i],
-                         hvm, vif_typename) < 0)
+        if (xenFormatNet(netVal, def->nets[i], hvm, vif_typename) < 0)
             return -1;
     }
 
@@ -2333,7 +2341,6 @@ xenFormatVif(virConf *conf,
 int
 xenFormatConfigCommon(virConf *conf,
                       virDomainDef *def,
-                      virConnectPtr conn,
                       const char *nativeFormat)
 {
     if (xenFormatGeneralMeta(conf, def) < 0)
@@ -2361,10 +2368,10 @@ xenFormatConfigCommon(virConf *conf,
         return -1;
 
     if (STREQ(nativeFormat, XEN_CONFIG_FORMAT_XL)) {
-        if (xenFormatVif(conf, conn, def, "vif") < 0)
+        if (xenFormatVif(conf, def, "vif") < 0)
             return -1;
     } else if (STREQ(nativeFormat, XEN_CONFIG_FORMAT_XM)) {
-        if (xenFormatVif(conf, conn, def, "netfront") < 0)
+        if (xenFormatVif(conf, def, "netfront") < 0)
             return -1;
     } else {
         virReportError(VIR_ERR_INVALID_ARG,
@@ -2385,7 +2392,7 @@ xenFormatConfigCommon(virConf *conf,
 }
 
 
-int
+void
 xenDomainDefAddImplicitInputDevice(virDomainDef *def)
 {
     virDomainInputBus implicitInputBus = VIR_DOMAIN_INPUT_BUS_XEN;
@@ -2393,15 +2400,6 @@ xenDomainDefAddImplicitInputDevice(virDomainDef *def)
     if (def->os.type == VIR_DOMAIN_OSTYPE_HVM)
         implicitInputBus = VIR_DOMAIN_INPUT_BUS_PS2;
 
-    if (virDomainDefMaybeAddInput(def,
-                                  VIR_DOMAIN_INPUT_TYPE_MOUSE,
-                                  implicitInputBus) < 0)
-        return -1;
-
-    if (virDomainDefMaybeAddInput(def,
-                                  VIR_DOMAIN_INPUT_TYPE_KBD,
-                                  implicitInputBus) < 0)
-        return -1;
-
-    return 0;
+    virDomainDefMaybeAddInput(def, VIR_DOMAIN_INPUT_TYPE_MOUSE, implicitInputBus);
+    virDomainDefMaybeAddInput(def, VIR_DOMAIN_INPUT_TYPE_KBD, implicitInputBus);
 }

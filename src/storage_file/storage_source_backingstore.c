@@ -42,7 +42,9 @@ virStorageSourceParseBackingURI(virStorageSource *src,
 {
     g_autoptr(virURI) uri = NULL;
     const char *path = NULL;
+    int transport = 0;
     g_auto(GStrv) scheme = NULL;
+    int protocol;
 
     if (!(uri = virURIParse(uristr))) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -58,19 +60,22 @@ virStorageSourceParseBackingURI(virStorageSource *src,
         return -1;
 
     if (!scheme[0] ||
-        (src->protocol = virStorageNetProtocolTypeFromString(scheme[0])) < 0) {
+        (protocol = virStorageNetProtocolTypeFromString(scheme[0])) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("invalid backing protocol '%1$s'"),
                        NULLSTR(scheme[0]));
         return -1;
     }
+    src->protocol = protocol;
 
-    if (scheme[1] &&
-        (src->hosts->transport = virStorageNetHostTransportTypeFromString(scheme[1])) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("invalid protocol transport type '%1$s'"),
-                       scheme[1]);
-        return -1;
+    if (scheme[1]) {
+        if ((transport = virStorageNetHostTransportTypeFromString(scheme[1])) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("invalid protocol transport type '%1$s'"),
+                           scheme[1]);
+            return -1;
+        }
+        src->hosts->transport = transport;
     }
 
     if (uri->query) {
@@ -103,27 +108,9 @@ virStorageSourceParseBackingURI(virStorageSource *src,
     src->path = g_strdup(path);
 
     if (src->protocol == VIR_STORAGE_NET_PROTOCOL_GLUSTER) {
-        char *tmp;
-
-        if (!src->path) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("missing volume name and path for gluster volume"));
+        if (virStorageSourceNetworkProtocolPathSplit(src->path, src->protocol,
+                                                     NULL, NULL, NULL) < 0)
             return -1;
-        }
-
-        if (!(tmp = strchr(src->path, '/')) ||
-            tmp == src->path) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("missing volume name or file name in gluster source path '%1$s'"),
-                           src->path);
-            return -1;
-        }
-
-        src->volume = src->path;
-
-        src->path = g_strdup(tmp + 1);
-
-        tmp[0] = '\0';
     }
 
     src->hosts->port = uri->port;
@@ -203,13 +190,6 @@ virStorageSourceParseRBDColonString(const char *rbdstr,
     /* snapshot name */
     if ((p = strchr(src->path, '@'))) {
         src->snapshot = g_strdup(p + 1);
-        *p = '\0';
-    }
-
-    /* pool vs. image name */
-    if ((p = strchr(src->path, '/'))) {
-        src->volume = g_steal_pointer(&src->path);
-        src->path = g_strdup(p + 1);
         *p = '\0';
     }
 
@@ -367,7 +347,8 @@ virStorageSourceParseBackingColon(virStorageSource *src,
                                   const char *path)
 {
     const char *p;
-    g_autofree char *protocol = NULL;
+    g_autofree char *protocol_str = NULL;
+    int protocol;
 
     if (!(p = strchr(path, ':'))) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -376,16 +357,18 @@ virStorageSourceParseBackingColon(virStorageSource *src,
         return -1;
     }
 
-    protocol = g_strndup(path, p - path);
+    protocol_str = g_strndup(path, p - path);
 
-    if ((src->protocol = virStorageNetProtocolTypeFromString(protocol)) < 0) {
+    if ((protocol = virStorageNetProtocolTypeFromString(protocol_str)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("invalid backing protocol '%1$s'"),
-                       protocol);
+                       protocol_str);
         return -1;
     }
 
-    switch ((virStorageNetProtocol) src->protocol) {
+    src->protocol = protocol;
+
+    switch (src->protocol) {
     case VIR_STORAGE_NET_PROTOCOL_NBD:
         if (virStorageSourceParseNBDColonString(path, src) < 0)
             return -1;
@@ -401,7 +384,7 @@ virStorageSourceParseBackingColon(virStorageSource *src,
     case VIR_STORAGE_NET_PROTOCOL_NONE:
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("backing store parser is not implemented for protocol %1$s"),
-                       protocol);
+                       protocol_str);
         return -1;
 
     case VIR_STORAGE_NET_PROTOCOL_HTTP:
@@ -416,7 +399,7 @@ virStorageSourceParseBackingColon(virStorageSource *src,
     case VIR_STORAGE_NET_PROTOCOL_NFS:
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("malformed backing store path for protocol %1$s"),
-                       protocol);
+                       protocol_str);
         return -1;
     }
 
@@ -441,8 +424,7 @@ virStorageSourceParseBackingJSONPath(virStorageSource *src,
 
     if (!(path = virJSONValueObjectGetString(json, "filename"))) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing 'filename' field in JSON backing volume "
-                         "definition"));
+                       _("missing 'filename' field in JSON backing volume definition"));
         return -1;
     }
 
@@ -597,8 +579,7 @@ virStorageSourceParseBackingJSONInetSocketAddress(virStorageNetHostDef *host,
 
     if (!json) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing remote server specification in JSON "
-                         "backing volume definition"));
+                       _("missing remote server specification in JSON backing volume definition"));
         return -1;
     }
 
@@ -607,8 +588,7 @@ virStorageSourceParseBackingJSONInetSocketAddress(virStorageNetHostDef *host,
 
     if (!hostname) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing hostname for tcp backing server in "
-                         "JSON backing volume definition"));
+                       _("missing hostname for tcp backing server in JSON backing volume definition"));
         return -1;
     }
 
@@ -631,15 +611,13 @@ virStorageSourceParseBackingJSONSocketAddress(virStorageNetHostDef *host,
 
     if (!json) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing remote server specification in JSON "
-                         "backing volume definition"));
+                       _("missing remote server specification in JSON backing volume definition"));
         return -1;
     }
 
     if (!(type = virJSONValueObjectGetString(json, "type"))) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing socket address type in "
-                         "JSON backing volume definition"));
+                       _("missing socket address type in JSON backing volume definition"));
         return -1;
     }
 
@@ -657,8 +635,7 @@ virStorageSourceParseBackingJSONSocketAddress(virStorageNetHostDef *host,
 
         if (!socket) {
             virReportError(VIR_ERR_INVALID_ARG, "%s",
-                           _("missing socket path for udp backing server in "
-                             "JSON backing volume definition"));
+                           _("missing socket path for udp backing server in JSON backing volume definition"));
             return -1;
         }
 
@@ -694,22 +671,19 @@ virStorageSourceParseBackingJSONGluster(virStorageSource *src,
 
     if (!volume || !path || !server) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing 'volume', 'path' or 'server' attribute in "
-                         "JSON backing definition for gluster volume"));
+                       _("missing 'volume', 'path' or 'server' attribute in JSON backing definition for gluster volume"));
         return -1;
     }
 
     src->type = VIR_STORAGE_TYPE_NETWORK;
     src->protocol = VIR_STORAGE_NET_PROTOCOL_GLUSTER;
 
-    src->volume = g_strdup(volume);
-    src->path = g_strdup(path);
+    src->path = g_strdup_printf("%s/%s", volume, path);
 
     nservers = virJSONValueArraySize(server);
     if (nservers == 0) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("at least 1 server is necessary in "
-                         "JSON backing definition for gluster volume"));
+                       _("at least 1 server is necessary in JSON backing definition for gluster volume"));
 
         return -1;
     }
@@ -809,8 +783,7 @@ virStorageSourceParseBackingJSONNbd(virStorageSource *src,
 
     if (!path && !host && !server) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing host specification of NBD server in JSON "
-                         "backing volume definition"));
+                       _("missing host specification of NBD server in JSON backing volume definition"));
         return -1;
     }
 
@@ -899,8 +872,7 @@ virStorageSourceParseBackingJSONSSH(virStorageSource *src,
 
     if (!(host || server) || !path) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing host/server or path of SSH JSON backing "
-                         "volume definition"));
+                       _("missing host/server or path of SSH JSON backing volume definition"));
         return -1;
     }
 
@@ -957,13 +929,11 @@ virStorageSourceParseBackingJSONRBD(virStorageSource *src,
 
     if (!pool || !image) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing pool or image name in ceph backing volume "
-                         "JSON specification"));
+                       _("missing pool or image name in ceph backing volume JSON specification"));
         return -1;
     }
 
-    src->volume = g_strdup(pool);
-    src->path = g_strdup(image);
+    src->path = g_strdup_printf("%s/%s", pool, image);
     src->snapshot = g_strdup(snapshot);
     src->configFile = g_strdup(conf);
 
@@ -1034,8 +1004,7 @@ virStorageSourceParseBackingJSONVxHS(virStorageSource *src,
 
     if (!vdisk_id || !server) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("missing 'vdisk-id' or 'server' attribute in "
-                         "JSON backing definition for VxHS volume"));
+                       _("missing 'vdisk-id' or 'server' attribute in JSON backing definition for VxHS volume"));
         return -1;
     }
 

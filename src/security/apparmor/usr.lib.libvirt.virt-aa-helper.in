@@ -1,5 +1,8 @@
 #include <tunables/global>
 
+@{hextet}=[0-9a-f][0-9a-f][0-9a-f][0-9a-f]
+@{UUID}=@{hextet}@{hextet}-@{hextet}-@{hextet}-@{hextet}-@{hextet}@{hextet}@{hextet}
+
 profile virt-aa-helper @libexecdir@/virt-aa-helper {
   #include <abstractions/base>
   #include <abstractions/openssl>
@@ -35,16 +38,17 @@ profile virt-aa-helper @libexecdir@/virt-aa-helper {
   deny /dev/dm-* r,
   deny /dev/drbd[0-9]* r,
   deny /dev/dasd* r,
+  deny /dev/etherd/e*.* r,
   deny /dev/nvme* r,
   deny /dev/zd[0-9]* r,
   deny /dev/mapper/ r,
   deny /dev/mapper/* r,
 
   @libexecdir@/virt-aa-helper mr,
-  /{usr/,}sbin/apparmor_parser Ux,
+  /{usr/,}{s,}bin/apparmor_parser Ux,
 
   @sysconfdir@/apparmor.d/libvirt/* r,
-  @sysconfdir@/apparmor.d/libvirt/libvirt-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]* rw,
+  @sysconfdir@/apparmor.d/libvirt/libvirt-@{UUID}* rw,
 
   # for backingstore -- allow access to non-hidden files in @{HOME} as well
   # as storage pools
@@ -71,5 +75,5 @@ profile virt-aa-helper @libexecdir@/virt-aa-helper {
   /**.[iI][sS][oO] r,
   /**/disk{,.*} r,
 
-  #include <local/usr.lib.libvirt.virt-aa-helper>
+  include if exists <local/usr.lib.libvirt.virt-aa-helper>
 }

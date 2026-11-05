@@ -33,7 +33,7 @@ typedef enum {
 
 int virFirewallDGetVersion(unsigned long long *version);
 int virFirewallDGetBackend(void);
-int virFirewallDIsRegistered(void);
+int virFirewallDIsRegistered(void) ATTRIBUTE_MOCKABLE;
 int virFirewallDGetZones(char ***zones, size_t *nzones);
 int virFirewallDGetPolicies(char ***policies, size_t *npolicies);
 bool virFirewallDZoneExists(const char *match);
@@ -45,5 +45,7 @@ int virFirewallDApplyRule(virFirewallLayer layer,
 
 int virFirewallDInterfaceSetZone(const char *iface,
                                  const char *zone);
+
+void virFirewallDInterfaceUnsetZone(const char *iface);
 
 void virFirewallDSynchronize(void);

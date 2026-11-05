@@ -97,6 +97,7 @@ def->os
                                         sata[0..3]:[0..29] -> <controller>:<unit> with 1 bus per controller
                                         ide[0..1]:[0..1]        -> <bus>:<unit> with 1 controller
                                         floppy[0..1]            -> <unit> with 1 controller and 1 bus per controller
+                                        nvme[0..3]:[0..14]     -> <controller>:<namespace> with 1 bus per controller
 
 def->disks[0]...
 
@@ -307,6 +308,19 @@ def->disks[0]...
 ->shared
 ->slotnum
 
+
+## disks: nvme hard drive ######################################################
+
+                                        nvme[0...3].present = "true"                  # defaults to "false"
+                                        nvme[0...3]:[0...14].present = "true"                # defaults to "false"
+# Limits are taken from https://configmax.broadcom.com/guest?vmwareproduct=vSphere&release=vSphere%208.0&categories=1-0
+...
+->type = _DISK_TYPE_FILE
+->device = _DISK_DEVICE_DISK
+->bus = _DISK_BUS_NVME
+->src = <value>.vmdk              <=>   nvme0:0.fileName = "<value>.vmdk"
+->dst = nvme<controller>n<namespace>
+->cachemode                       <=>   nvme0:0.writeThrough = "<value>"        # defaults to false, true -> _DISK_CACHE_WRITETHRU, false _DISK_CACHE_DEFAULT
 
 
 ################################################################################
@@ -570,9 +584,21 @@ VIR_ENUM_IMPL(virVMXControllerModelSCSI,
 );
 
 static int virVMXParseVNC(virConf *conf, virDomainGraphicsDef **def);
-static int virVMXParseSCSIController(virConf *conf, int controller, bool *present,
-                                     int *virtualDev);
-static int virVMXParseSATAController(virConf *conf, int controller, bool *present);
+static int
+virVMXParseSCSIController(virDomainDef *def,
+                          virConf *conf,
+                          int controllerIdx,
+                          bool *present);
+static int
+virVMXParseSATAController(virDomainDef *def,
+                          virConf *conf,
+                          int controllerIdx,
+                          bool *present);
+static int
+virVMXParseNVMEController(virDomainDef *def,
+                          virConf *conf,
+                          int controllerIdx,
+                          bool *present);
 static int virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt,
                            virConf *conf, int device, int busType,
                            int controllerOrBus, int unit, virDomainDiskDef **def,
@@ -584,6 +610,7 @@ static int virVMXParseSerial(virVMXContext *ctx, virConf *conf, int port,
 static int virVMXParseParallel(virVMXContext *ctx, virConf *conf, int port,
                                virDomainChrDef **def);
 static int virVMXParseSVGA(virConf *conf, virDomainVideoDef **def);
+static int virVMXParseTPM(virConf *conf, virDomainTPMDef **def);
 
 static int virVMXFormatVNC(virDomainGraphicsDef *def, virBuffer *buffer);
 static int virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDef *def,
@@ -613,7 +640,8 @@ virVMXDomainDefPostParse(virDomainDef *def,
     virCaps *caps = opaque;
     if (!virCapabilitiesDomainSupported(caps, def->os.type,
                                         def->os.arch,
-                                        def->virtType))
+                                        def->virtType,
+                                        true))
         return -1;
 
     return 0;
@@ -793,7 +821,7 @@ virVMXConvertToUTF8(const char *encoding, const char *string)
         goto cleanup;
     }
 
-    result = (char *)g_steal_pointer(&utf8->content);
+    result = (char *)xmlBufferDetach(utf8);
 
  cleanup:
     xmlCharEncCloseFunc(handler);
@@ -930,6 +958,34 @@ virVMXGetConfigBoolean(virConf *conf, const char *name, bool *boolean_,
 }
 
 
+static int
+virVMXPCISlotNumber(virConf *conf,
+                    const char *name,
+                    virDomainDeviceInfo *info)
+{
+    long long slotNumber = -1;
+
+    if (virVMXGetConfigLong(conf, name, &slotNumber, -1, true) < 0)
+        return -1;
+
+    if (slotNumber == -1) {
+        /* missing */
+        return 0;
+    }
+
+    /* The slot number encodes PCI address as FFF.BBBBB.DDDDD, for instance:
+     *   1216 = 0x4c0 = 001.00110.00000b
+     * which gives bus = 6, slot = 0, function = 1.
+     */
+    info->type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI;
+    info->addr.pci.domain = 0;
+    info->addr.pci.bus = (slotNumber >> 5) & 0x1f;
+    info->addr.pci.slot = slotNumber & 0x1f;
+    info->addr.pci.function = (slotNumber >> 10) & 0x7;
+
+    return 0;
+}
+
 
 static int
 virVMXSCSIDiskNameToControllerAndUnit(const char *name, int *controller, int *unit)
@@ -938,8 +994,7 @@ virVMXSCSIDiskNameToControllerAndUnit(const char *name, int *controller, int *un
 
     if (! STRPREFIX(name, "sd")) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Expecting domain XML attribute 'dev' of entry "
-                         "'devices/disk/target' to start with 'sd'"));
+                       _("Expecting domain XML attribute 'dev' of entry 'devices/disk/target' to start with 'sd'"));
         return -1;
     }
 
@@ -977,8 +1032,7 @@ virVMXIDEDiskNameToBusAndUnit(const char *name, int *bus, int *unit)
 
     if (! STRPREFIX(name, "hd")) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Expecting domain XML attribute 'dev' of entry "
-                         "'devices/disk/target' to start with 'hd'"));
+                       _("Expecting domain XML attribute 'dev' of entry 'devices/disk/target' to start with 'hd'"));
         return -1;
     }
 
@@ -1012,8 +1066,7 @@ virVMXFloppyDiskNameToUnit(const char *name, int *unit)
 
     if (! STRPREFIX(name, "fd")) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Expecting domain XML attribute 'dev' of entry "
-                         "'devices/disk/target' to start with 'fd'"));
+                       _("Expecting domain XML attribute 'dev' of entry 'devices/disk/target' to start with 'fd'"));
         return -1;
     }
 
@@ -1044,10 +1097,8 @@ virVMXVerifyDiskAddress(virDomainXMLOption *xmlopt,
                         virDomainDiskDef *disk,
                         virDomainDef *vmdef)
 {
-    virDomainDiskDef def;
+    virDomainDiskDef def = { 0 };
     virDomainDeviceDriveAddress *drive;
-
-    memset(&def, 0, sizeof(def));
 
     if (disk->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DRIVE) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
@@ -1391,11 +1442,11 @@ virVMXParseConfig(virVMXContext *ctx,
     char *sched_cpu_shares = NULL;
     char *guestOS = NULL;
     bool smbios_reflecthost = false;
+    bool uefi_secureboot = false;
     int controller;
     int bus;
     int port;
     bool present;
-    int scsi_virtualDev[4] = { -1, -1, -1, -1 };
     int unit;
     bool hgfs_disabled = true;
     long long sharedFolder_maxNum = 0;
@@ -1403,13 +1454,15 @@ virVMXParseConfig(virVMXContext *ctx,
     long long coresPerSocket = 0;
     virCPUDef *cpu = NULL;
     char *firmware = NULL;
-    size_t saved_ndisks = 0;
+    g_autofree char *nvram = NULL;
 
     if (ctx->parseFileName == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("virVMXContext has no parseFileName function set"));
         return NULL;
     }
+
+    VIR_DEBUG("VMX config:\n%s", vmx);
 
     conf = virConfReadString(vmx, VIR_CONF_FLAG_VMX_FORMAT);
 
@@ -1476,10 +1529,18 @@ virVMXParseConfig(virVMXContext *ctx,
         def->scsiBusMaxUnit = SCSI_SUPER_WIDE_BUS_MAX_CONT_UNIT;
     }
 
-    /* vmx:uuid.bios -> def:uuid */
+    /* vmx:uuid.bios -> def:hwuuid */
     /* FIXME: Need to handle 'uuid.action = "create"' */
-    if (virVMXGetConfigUUID(conf, "uuid.bios", def->uuid, true) < 0)
+    if (virVMXGetConfigUUID(conf, "uuid.bios", def->hw_uuid, true) < 0)
         goto cleanup;
+
+    /* vmx:vc.uuid -> def:uuid */
+    if (virVMXGetConfigUUID(conf, "vc.uuid", def->uuid, true) < 0)
+        goto cleanup;
+
+    /* Fallback to legacy behaviour if there is no vc.uuid */
+    if (!virUUIDIsValid(def->uuid))
+        memcpy(def->uuid, def->hw_uuid, VIR_UUID_BUFLEN);
 
     /* vmx:displayName -> def:name */
     if (virVMXGetConfigString(conf, "displayName", &def->name, true) < 0)
@@ -1507,8 +1568,7 @@ virVMXParseConfig(virVMXContext *ctx,
     if (def->description != NULL) {
         if (virVMXUnescapeHexPipe(def->description) < 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("VMX entry 'annotation' contains invalid escape "
-                             "sequence"));
+                           _("VMX entry 'annotation' contains invalid escape sequence"));
             goto cleanup;
         }
     }
@@ -1585,11 +1645,11 @@ virVMXParseConfig(virVMXContext *ctx,
         cpu->sockets = numvcpus / coresPerSocket;
         if (cpu->sockets <= 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("VMX entry 'cpuid.coresPerSocket' smaller than "
-                             "'numvcpus'"));
+                           _("VMX entry 'cpuid.coresPerSocket' smaller than 'numvcpus'"));
             goto cleanup;
         }
         cpu->dies = 1;
+        cpu->clusters = 1;
         cpu->cores = coresPerSocket;
         cpu->threads = 1;
 
@@ -1716,8 +1776,7 @@ virVMXParseConfig(virVMXContext *ctx,
 
     /* def:disks (scsi) */
     for (controller = 0; controller < 4; ++controller) {
-        if (virVMXParseSCSIController(conf, controller, &present,
-                                      &scsi_virtualDev[controller]) < 0) {
+        if (virVMXParseSCSIController(def, conf, controller, &present) < 0) {
             goto cleanup;
         }
 
@@ -1755,21 +1814,9 @@ virVMXParseConfig(virVMXContext *ctx,
         }
     }
 
-    /* add all the SCSI controllers we've seen, up until the last one that is
-     * currently used by a disk */
-    if (def->ndisks != 0) {
-        virDomainDeviceInfo *info = &def->disks[def->ndisks - 1]->info;
-        for (controller = 0; controller <= info->addr.drive.controller; controller++) {
-            if (!virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SCSI,
-                                           controller, scsi_virtualDev[controller]))
-                goto cleanup;
-        }
-        saved_ndisks = def->ndisks;
-    }
-
     /* def:disks (sata) */
     for (controller = 0; controller < 4; ++controller) {
-        if (virVMXParseSATAController(conf, controller, &present) < 0) {
+        if (virVMXParseSATAController(def, conf, controller, &present) < 0) {
             goto cleanup;
         }
 
@@ -1796,17 +1843,6 @@ virVMXParseConfig(virVMXContext *ctx,
                 continue;
 
             VIR_APPEND_ELEMENT(def->disks, def->ndisks, disk);
-        }
-    }
-
-    /* add all the SATA controllers we've seen, up until the last one that is
-     * currently used by a disk */
-    if (def->ndisks - saved_ndisks != 0) {
-        virDomainDeviceInfo *info = &def->disks[def->ndisks - 1]->info;
-        for (controller = 0; controller <= info->addr.drive.controller; controller++) {
-            if (!virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SATA,
-                                           controller, -1))
-                goto cleanup;
         }
     }
 
@@ -1849,6 +1885,30 @@ virVMXParseConfig(virVMXContext *ctx,
             continue;
 
         VIR_APPEND_ELEMENT(def->disks, def->ndisks, disk);
+    }
+
+    /* def:disks (nvme) */
+    for (controller = 0; controller < 4; ++controller) {
+        if (virVMXParseNVMEController(def, conf, controller, &present) < 0)
+            goto cleanup;
+
+        if (!present)
+            continue;
+
+        for (unit = 0; unit < 15; unit++) {
+            g_autoptr(virDomainDiskDef) disk = NULL;
+
+            if (virVMXParseDisk(ctx, xmlopt, conf, VIR_DOMAIN_DISK_DEVICE_DISK,
+                                VIR_DOMAIN_DISK_BUS_NVME, controller, unit,
+                                &disk, def) < 0) {
+                goto cleanup;
+            }
+
+            if (!disk)
+                continue;
+
+            VIR_APPEND_ELEMENT(def->disks, def->ndisks, disk);
+        }
     }
 
     /* def:fss */
@@ -1904,6 +1964,15 @@ virVMXParseConfig(virVMXContext *ctx,
         goto cleanup;
 
     def->nvideos = 1;
+
+    /* def:tpms */
+    {
+        virDomainTPMDef *tpm = NULL;
+        if (virVMXParseTPM(conf, &tpm) < 0)
+            goto cleanup;
+        if (tpm)
+            VIR_APPEND_ELEMENT(def->tpms, def->ntpms, tpm);
+    }
 
     /* def:sounds */
     /* FIXME */
@@ -1968,6 +2037,43 @@ virVMXParseConfig(virVMXContext *ctx,
         }
     }
 
+    /* vmx:uefi.secureBoot.enabled */
+    if (virVMXGetConfigBoolean(conf, "uefi.secureBoot.enabled",
+                               &uefi_secureboot, false, true) < 0) {
+        goto cleanup;
+    }
+    if (uefi_secureboot &&
+        def->os.firmware == VIR_DOMAIN_OS_DEF_FIRMWARE_EFI) {
+        int *features = def->os.firmwareFeatures;
+
+        if (!features) {
+            features = g_new0(int, VIR_DOMAIN_OS_DEF_FIRMWARE_FEATURE_LAST);
+            def->os.firmwareFeatures = features;
+        }
+        /* Just set both to true, as VMware doesn't have any concept
+         * of the two features separately.
+         */
+        features[VIR_DOMAIN_OS_DEF_FIRMWARE_FEATURE_SECURE_BOOT] =
+            features[VIR_DOMAIN_OS_DEF_FIRMWARE_FEATURE_ENROLLED_KEYS] =
+            VIR_TRISTATE_BOOL_YES;
+    }
+
+    /* vmx:nvram */
+    if (virVMXGetConfigString(conf, "nvram", &nvram, true) < 0) {
+        goto cleanup;
+    }
+
+    if (nvram != NULL) {
+        g_autoptr(virStorageSource) n = virStorageSourceNew();
+
+        def->os.loader = virDomainLoaderDefNew();
+
+        n->type = VIR_STORAGE_TYPE_FILE;
+        if (ctx->parseFileName(nvram, ctx->opaque, &(n->path), false) < 0)
+            goto cleanup;
+        def->os.loader->nvram = g_steal_pointer(&n);
+    }
+
     if (virDomainDefPostParse(def, VIR_DOMAIN_DEF_PARSE_ABI_UPDATE,
                               xmlopt, NULL) < 0)
         goto cleanup;
@@ -2029,8 +2135,7 @@ virVMXParseVNC(virConf *conf, virDomainGraphicsDef **def)
     VIR_FREE(listenAddr);
 
     if (port < 0) {
-        VIR_WARN("VNC is enabled but VMX entry 'RemoteDisplay.vnc.port' "
-                  "is missing, the VNC port is unknown");
+        VIR_WARN("VNC is enabled but VMX entry 'RemoteDisplay.vnc.port' is missing, the VNC port is unknown");
 
         (*def)->data.vnc.port = 0;
         (*def)->data.vnc.autoport = true;
@@ -2054,30 +2159,30 @@ virVMXParseVNC(virConf *conf, virDomainGraphicsDef **def)
 
 
 static int
-virVMXParseSCSIController(virConf *conf, int controller, bool *present,
-                          int *virtualDev)
+virVMXParseSCSIController(virDomainDef *def,
+                          virConf *conf,
+                          int controllerIdx,
+                          bool *present)
 {
+    virDomainControllerDef *controllerDef = NULL;
     int result = -1;
     char present_name[32];
     char virtualDev_name[32];
     char *virtualDev_string = NULL;
     char *tmp;
+    int virtualDev = -1;
+    g_autofree char *pciSlotNumberName = NULL;
 
-    if (virtualDev == NULL || *virtualDev != -1) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("Invalid argument"));
-        return -1;
-    }
-
-    if (controller < 0 || controller > 3) {
+    if (controllerIdx < 0 || controllerIdx > 3) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("SCSI controller index %1$d out of [0..3] range"),
-                       controller);
+                       controllerIdx);
         return -1;
     }
 
-    g_snprintf(present_name, sizeof(present_name), "scsi%d.present", controller);
+    g_snprintf(present_name, sizeof(present_name), "scsi%d.present", controllerIdx);
     g_snprintf(virtualDev_name, sizeof(virtualDev_name), "scsi%d.virtualDev",
-               controller);
+               controllerIdx);
 
     if (virVMXGetConfigBoolean(conf, present_name, present, false, true) < 0)
         goto cleanup;
@@ -2098,13 +2203,13 @@ virVMXParseSCSIController(virConf *conf, int controller, bool *present,
         for (; *tmp != '\0'; ++tmp)
             *tmp = g_ascii_tolower(*tmp);
 
-        *virtualDev = virVMXControllerModelSCSITypeFromString(virtualDev_string);
+        virtualDev = virVMXControllerModelSCSITypeFromString(virtualDev_string);
 
-        if (*virtualDev == -1 ||
-            (*virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_BUSLOGIC &&
-             *virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSILOGIC &&
-             *virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSISAS1068 &&
-             *virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_VMPVSCSI)) {
+        if (virtualDev == -1 ||
+            (virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_BUSLOGIC &&
+             virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSILOGIC &&
+             virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSISAS1068 &&
+             virtualDev != VIR_DOMAIN_CONTROLLER_MODEL_SCSI_VMPVSCSI)) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("Expecting VMX entry '%1$s' to be 'buslogic' or 'lsilogic' or 'lsisas1068' or 'pvscsi' but found '%2$s'"),
                            virtualDev_name, virtualDev_string);
@@ -2112,8 +2217,15 @@ virVMXParseSCSIController(virConf *conf, int controller, bool *present,
         }
     }
 
-    result = 0;
+    controllerDef = virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SCSI,
+                                              controllerIdx, virtualDev);
 
+    pciSlotNumberName = g_strdup_printf("scsi%d.pciSlotNumber", controllerIdx);
+
+    if (virVMXPCISlotNumber(conf, pciSlotNumberName, &controllerDef->info) < 0)
+        goto cleanup;
+
+    result = 0;
  cleanup:
     VIR_FREE(virtualDev_string);
 
@@ -2123,25 +2235,204 @@ virVMXParseSCSIController(virConf *conf, int controller, bool *present,
 
 
 static int
-virVMXParseSATAController(virConf *conf, int controller, bool *present)
+virVMXParseSATAController(virDomainDef *def,
+                          virConf *conf,
+                          int controllerIdx,
+                          bool *present)
 {
+    virDomainControllerDef *controllerDef = NULL;
+    g_autofree char *pciSlotNumberName = NULL;
     char present_name[32];
 
-    if (controller < 0 || controller > 3) {
+    if (controllerIdx < 0 || controllerIdx > 3) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("SATA controller index %1$d out of [0..3] range"),
-                       controller);
+                       controllerIdx);
         return -1;
     }
 
-    g_snprintf(present_name, sizeof(present_name), "sata%d.present", controller);
+    g_snprintf(present_name, sizeof(present_name), "sata%d.present", controllerIdx);
 
     if (virVMXGetConfigBoolean(conf, present_name, present, false, true) < 0)
+        return -1;
+
+    if (!*present)
+        return 0;
+
+    controllerDef = virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SATA,
+                                              controllerIdx, -1);
+
+    pciSlotNumberName = g_strdup_printf("sata%d.pciSlotNumber", controllerIdx);
+
+    if (virVMXPCISlotNumber(conf, pciSlotNumberName, &controllerDef->info) < 0)
         return -1;
 
     return 0;
 }
 
+
+static int
+virVMXParseNVMEController(virDomainDef *def,
+                          virConf *conf,
+                          int controllerIdx,
+                          bool *present)
+{
+    virDomainControllerDef *controllerDef = NULL;
+    g_autofree char *pciSlotNumberName = NULL;
+    char present_name[32];
+
+    if (controllerIdx < 0 || controllerIdx > 3) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("NVMe controller index %1$d out of [0..3] range"),
+                       controllerIdx);
+        return -1;
+    }
+
+    g_snprintf(present_name, sizeof(present_name), "nvme%d.present", controllerIdx);
+
+    if (virVMXGetConfigBoolean(conf, present_name, present, false, true) < 0)
+        return -1;
+
+    if (!*present)
+        return 0;
+
+    controllerDef = virDomainDefAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_NVME,
+                                              controllerIdx, -1);
+
+    pciSlotNumberName = g_strdup_printf("nvme%d.pciSlotNumber", controllerIdx);
+
+    if (virVMXPCISlotNumber(conf, pciSlotNumberName, &controllerDef->info) < 0)
+        return -1;
+
+    return 0;
+}
+
+
+static int
+virVMXGenerateDiskTarget(virDomainDiskDef *def,
+                         virDomainDef *vmdef,
+                         int controllerOrBus,
+                         int unit)
+{
+    const char *prefix = NULL;
+    unsigned int idx = 0;
+    unsigned int nvme_ctrl = 0;
+
+    switch (def->bus) {
+    case VIR_DOMAIN_DISK_BUS_SCSI:
+        if (controllerOrBus < 0 || controllerOrBus > 3) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("SCSI controller index %1$d out of [0..3] range"),
+                           controllerOrBus);
+            return -1;
+        }
+
+        if (unit < 0 || unit >= vmdef->scsiBusMaxUnit || unit == 7) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("SCSI unit index %1$d out of [0..6,8..%2$u] range"),
+                           unit, vmdef->scsiBusMaxUnit);
+            return -1;
+        }
+
+        idx = controllerOrBus * (vmdef->scsiBusMaxUnit - 1) + (unit < 7 ? unit : unit - 1);
+        prefix = "sd";
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_SATA:
+        if (controllerOrBus < 0 || controllerOrBus > 3) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("SATA controller index %1$d out of [0..3] range"),
+                           controllerOrBus);
+            return -1;
+        }
+
+        if (unit < 0 || unit >= 30) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("SATA unit index %1$d out of [0..29] range"),
+                           unit);
+            return -1;
+        }
+
+        idx = controllerOrBus * 30 + unit;
+        prefix = "sd";
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_IDE:
+        if (controllerOrBus < 0 || controllerOrBus > 1) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("IDE bus index %1$d out of [0..1] range"),
+                           controllerOrBus);
+            return -1;
+        }
+
+        if (unit < 0 || unit > 1) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("IDE unit index %1$d out of [0..1] range"), unit);
+            return -1;
+        }
+        idx = controllerOrBus * 2 + unit;
+        prefix = "hd";
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_FDC:
+        if (controllerOrBus != 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("FDC controller index %1$d out of [0] range"),
+                           controllerOrBus);
+            return -1;
+        }
+
+        if (unit < 0 || unit > 1) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("FDC unit index %1$d out of [0..1] range"),
+                           unit);
+            return -1;
+        }
+
+        idx = unit;
+        prefix = "fd";
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_NVME:
+        if (controllerOrBus < 0 || controllerOrBus > 3) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("NVMe controller index %1$d out of [0..3] range"),
+                           controllerOrBus);
+            return -1;
+        }
+
+        if (unit < 0 || unit > 14) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("NVMe NSID %1$d out of [0..14] range"),
+                           unit);
+            return -1;
+        }
+
+        prefix = "nvme";
+        nvme_ctrl = controllerOrBus;
+        idx = unit;
+        break;
+
+    case VIR_DOMAIN_DISK_BUS_VIRTIO:
+    case VIR_DOMAIN_DISK_BUS_XEN:
+    case VIR_DOMAIN_DISK_BUS_USB:
+    case VIR_DOMAIN_DISK_BUS_UML:
+    case VIR_DOMAIN_DISK_BUS_SD:
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("Unsupported bus type '%1$s' for device type '%2$s'"),
+                       virDomainDiskBusTypeToString(def->bus),
+                       virDomainDiskDeviceTypeToString(def->device));
+        return -1;
+
+    case VIR_DOMAIN_DISK_BUS_NONE:
+    case VIR_DOMAIN_DISK_BUS_LAST:
+        virReportEnumRangeError(virDomainDiskBus, def->bus);
+        return -1;
+    }
+
+    def->dst = virIndexToDiskName(nvme_ctrl, idx, prefix);
+    return 0;
+}
 
 
 static int
@@ -2215,60 +2506,13 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt, virConf *conf,
     if (device == VIR_DOMAIN_DISK_DEVICE_DISK ||
         device == VIR_DOMAIN_DISK_DEVICE_CDROM) {
         if (busType == VIR_DOMAIN_DISK_BUS_SCSI) {
-            if (controllerOrBus < 0 || controllerOrBus > 3) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("SCSI controller index %1$d out of [0..3] range"),
-                               controllerOrBus);
-                goto cleanup;
-            }
-
-            if (unit < 0 || unit > vmdef->scsiBusMaxUnit || unit == 7) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("SCSI unit index %1$d out of [0..6,8..%2$u] range"),
-                               unit, vmdef->scsiBusMaxUnit);
-                goto cleanup;
-            }
-
             prefix = g_strdup_printf("scsi%d:%d", controllerOrBus, unit);
-
-            (*def)->dst =
-               virIndexToDiskName
-                 (controllerOrBus * 15 + (unit < 7 ? unit : unit - 1), "sd");
         } else if (busType == VIR_DOMAIN_DISK_BUS_SATA) {
-            if (controllerOrBus < 0 || controllerOrBus > 3) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("SATA controller index %1$d out of [0..3] range"),
-                               controllerOrBus);
-                goto cleanup;
-            }
-
-            if (unit < 0 || unit >= 30) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("SATA unit index %1$d out of [0..29] range"),
-                               unit);
-                goto cleanup;
-            }
-
             prefix = g_strdup_printf("sata%d:%d", controllerOrBus, unit);
-
-            (*def)->dst = virIndexToDiskName(controllerOrBus * 30 + unit, "sd");
         } else if (busType == VIR_DOMAIN_DISK_BUS_IDE) {
-            if (controllerOrBus < 0 || controllerOrBus > 1) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("IDE bus index %1$d out of [0..1] range"),
-                               controllerOrBus);
-                goto cleanup;
-            }
-
-            if (unit < 0 || unit > 1) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("IDE unit index %1$d out of [0..1] range"), unit);
-                goto cleanup;
-            }
-
             prefix = g_strdup_printf("ide%d:%d", controllerOrBus, unit);
-
-            (*def)->dst = virIndexToDiskName(controllerOrBus * 2 + unit, "hd");
+        } else if (busType == VIR_DOMAIN_DISK_BUS_NVME) {
+            prefix = g_strdup_printf("nvme%d:%d", controllerOrBus, unit);
         } else {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("Unsupported bus type '%1$s' for device type '%2$s'"),
@@ -2278,23 +2522,7 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt, virConf *conf,
         }
     } else if (device == VIR_DOMAIN_DISK_DEVICE_FLOPPY) {
         if (busType == VIR_DOMAIN_DISK_BUS_FDC) {
-            if (controllerOrBus != 0) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("FDC controller index %1$d out of [0] range"),
-                               controllerOrBus);
-                goto cleanup;
-            }
-
-            if (unit < 0 || unit > 1) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("FDC unit index %1$d out of [0..1] range"),
-                               unit);
-                goto cleanup;
-            }
-
             prefix = g_strdup_printf("floppy%d", unit);
-
-            (*def)->dst = virIndexToDiskName(unit, "fd");
         } else {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("Unsupported bus type '%1$s' for device type '%2$s'"),
@@ -2308,6 +2536,9 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt, virConf *conf,
                        virDomainDiskDeviceTypeToString(device));
         goto cleanup;
     }
+
+    if (virVMXGenerateDiskTarget(*def, vmdef, controllerOrBus, unit) < 0)
+        goto cleanup;
 
     VMX_BUILD_NAME(present);
     VMX_BUILD_NAME(startConnected);
@@ -2490,7 +2721,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOption *xmlopt, virConf *conf,
                  */
                 goto ignore;
             }
-        } else if (fileName && STREQ(fileName, "emptyBackingString")) {
+        } else if (fileName && (STREQ(fileName, "") ||
+                                STREQ(fileName, "emptyBackingString"))) {
             if (deviceType && STRCASENEQ(deviceType, "cdrom-image")) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("Expecting VMX entry '%1$s' to be 'cdrom-image' but found '%2$s'"),
@@ -2698,6 +2930,8 @@ virVMXParseEthernet(virConf *conf, int controller, virDomainNetDef **def)
 
     int netmodel = VIR_DOMAIN_NET_MODEL_UNKNOWN;
 
+    g_autofree char *pciSlotNumberName = NULL;
+
     if (def == NULL || *def != NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("Invalid argument"));
         return -1;
@@ -2855,17 +3089,17 @@ virVMXParseEthernet(virConf *conf, int controller, virDomainNetDef **def)
         if (virVMXGetConfigString(conf,
                                   portgroupId_name,
                                   &(*def)->data.vds.portgroup_id,
-                                  false) < 0 ||
+                                  true) < 0 ||
             virVMXGetConfigLong(conf,
                                 portId_name,
                                 &(*def)->data.vds.port_id,
                                 0,
-                                false) < 0 ||
+                                true) < 0 ||
             virVMXGetConfigLong(conf,
                                 connectionId_name,
                                 &(*def)->data.vds.connection_id,
                                 0,
-                                false) < 0)
+                                true) < 0)
             goto cleanup;
     } else if (connectionType == NULL && networkName == NULL) {
         (*def)->type = VIR_DOMAIN_NET_TYPE_NULL;
@@ -2891,6 +3125,11 @@ virVMXParseEthernet(virConf *conf, int controller, virDomainNetDef **def)
                        connectionType_name);
         goto cleanup;
     }
+
+    pciSlotNumberName = g_strdup_printf("ethernet%d.pciSlotNumber", controller);
+
+    if (virVMXPCISlotNumber(conf, pciSlotNumberName, &(*def)->info) < 0)
+        goto cleanup;
 
     (*def)->model = netmodel;
     result = 0;
@@ -3020,14 +3259,21 @@ virVMXParseSerial(virVMXContext *ctx, virConf *conf, int port,
         (*def)->target.port = port;
         (*def)->source->type = VIR_DOMAIN_CHR_TYPE_TCP;
 
-        if (!(parsedUri = virURIParse(fileName)))
-            goto cleanup;
+        if (!(parsedUri = virURIParse(fileName))) {
+            /*
+             * Ignore anything we cannot parse since there are many variations
+             * that could lead to unusable or non-representable serial ports
+             * which are very commonly seen and the main consumer of this driver
+             * (virt-v2v) ignores them anyway, so let's at least not error out.
+             */
+            virResetLastError();
+            (*def)->source->type = VIR_DOMAIN_CHR_TYPE_NULL;
+            return 0;
+        }
 
         if (parsedUri->port == 0) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("VMX entry '%1$s' doesn't contain a port part"),
-                           fileName_name);
-            goto cleanup;
+            (*def)->source->type = VIR_DOMAIN_CHR_TYPE_NULL;
+            return 0;
         }
 
         (*def)->source->data.tcp.host = g_strdup(parsedUri->server);
@@ -3218,6 +3464,27 @@ virVMXParseSVGA(virConf *conf, virDomainVideoDef **def)
     return result;
 }
 
+static int
+virVMXParseTPM(virConf *conf, virDomainTPMDef **def)
+{
+    bool vtpm_present = false;
+
+    /* vmx:vtpm.present */
+    if (virVMXGetConfigBoolean(conf, "vtpm.present", &vtpm_present,
+                               false, true) < 0) {
+        return -1;
+    }
+
+    if (!vtpm_present)
+        return 0;
+
+    *def = g_new0(virDomainTPMDef, 1);
+    (*def)->type = VIR_DOMAIN_TPM_TYPE_EMULATOR;
+    (*def)->model = VIR_DOMAIN_TPM_MODEL_CRB;
+    (*def)->data.emulator.version = VIR_DOMAIN_TPM_VERSION_2_0;
+
+    return 0;
+}
 
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -3231,7 +3498,7 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
     char *vmx = NULL;
     size_t i;
     int sched_cpu_affinity_length;
-    unsigned char zero[VIR_UUID_BUFLEN];
+    unsigned char zero[VIR_UUID_BUFLEN] = { 0 };
     g_auto(virBuffer) buffer = VIR_BUFFER_INITIALIZER;
     char *preliminaryDisplayName = NULL;
     char *displayName = NULL;
@@ -3248,8 +3515,6 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
                        _("virVMXContext has no formatFileName function set"));
         return NULL;
     }
-
-    memset(zero, 0, VIR_UUID_BUFLEN);
 
     if (def->virtType != VIR_DOMAIN_VIRT_VMWARE) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -3352,15 +3617,13 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
     /* def:maxvcpus -> vmx:numvcpus */
     if (virDomainDefHasVcpusOffline(def)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("No support for domain XML entry 'vcpu' attribute "
-                         "'current'"));
+                       _("No support for domain XML entry 'vcpu' attribute 'current'"));
         goto cleanup;
     }
     maxvcpus = virDomainDefGetVcpusMax(def);
     if (maxvcpus == 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Expecting domain XML entry 'vcpu' to be greater "
-                         "than 0"));
+                       _("Expecting domain XML entry 'vcpu' to be greater than 0"));
         goto cleanup;
     }
 
@@ -3385,6 +3648,12 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
         if (def->cpu->dies != 1) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                            _("Only 1 die per socket is supported"));
+            goto cleanup;
+        }
+
+        if (def->cpu->clusters != 1) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("Only 1 cluster per die is supported"));
             goto cleanup;
         }
 
@@ -3550,6 +3819,39 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
             goto cleanup;
     }
 
+    /* def:vTPM */
+    if (def->ntpms > 0) {
+        /* Validate TPM requirements */
+        if (def->ntpms > 1) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("VMware only supports a single TPM device"));
+            goto cleanup;
+        }
+
+        if (virtualHW_version < 14) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("vTPM requires virtual hardware version 14 or higher"));
+            goto cleanup;
+        }
+
+        if (def->os.firmware != VIR_DOMAIN_OS_DEF_FIRMWARE_EFI) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("vTPM requires EFI firmware"));
+            goto cleanup;
+        }
+
+        /* VMware vTPM specifically requires TPM 2.0 */
+        if (def->tpms[0]->model != VIR_DOMAIN_TPM_MODEL_CRB ||
+            def->tpms[0]->type != VIR_DOMAIN_TPM_TYPE_EMULATOR ||
+            def->tpms[0]->data.emulator.version != VIR_DOMAIN_TPM_VERSION_2_0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("VMware driver only supports TPM 2.0 with the CRB model"));
+            goto cleanup;
+        }
+
+        virBufferAddLit(&buffer, "vtpm.present = \"TRUE\"\n");
+    }
+
     /* def:inputs */
     /* FIXME */
 
@@ -3586,6 +3888,16 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOption *xmlopt, virDomainDef 
     /* vmx:firmware */
     if (def->os.firmware == VIR_DOMAIN_OS_DEF_FIRMWARE_EFI)
         virBufferAddLit(&buffer, "firmware = \"efi\"\n");
+
+    /* vmx:nvram */
+    if (def->os.loader && def->os.loader->nvram && def->os.loader->nvram->path) {
+        g_autofree char *nvramPath = NULL;
+
+        nvramPath = ctx->formatFileName(def->os.loader->nvram->path, ctx->opaque);
+        if (nvramPath != NULL) {
+            virBufferAsprintf(&buffer, "nvram = \"%s\"\n", nvramPath);
+        }
+    }
 
     if (virtualHW_version >= 7) {
         if (hasSCSI) {
@@ -3637,8 +3949,7 @@ virVMXFormatVNC(virDomainGraphicsDef *def, virBuffer *buffer)
     virBufferAddLit(buffer, "RemoteDisplay.vnc.enabled = \"true\"\n");
 
     if (def->data.vnc.autoport) {
-        VIR_WARN("VNC autoport is enabled, but the automatically assigned "
-                  "VNC port cannot be read back");
+        VIR_WARN("VNC autoport is enabled, but the automatically assigned VNC port cannot be read back");
     } else {
         if (def->data.vnc.port < 5900 || def->data.vnc.port > 5964) {
             VIR_WARN("VNC port %d it out of [5900..5964] range",
@@ -3984,14 +4295,22 @@ virVMXFormatEthernet(virDomainNetDef *def, int controller,
                           uuid[5], uuid[6], uuid[7], uuid[8], uuid[9], uuid[10],
                           uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
 
-        virBufferAsprintf(buffer, "ethernet%d.dvs.portId = \"%lld\"\n",
-                          controller, def->data.vds.port_id);
+        if (def->data.vds.port_id) {
+            virBufferAsprintf(buffer, "ethernet%d.dvs.portId = \"%lld\"\n",
+                              controller, def->data.vds.port_id);
+        }
 
-        virBufferAsprintf(buffer, "ethernet%d.dvs.", controller);
-        virBufferEscapeString(buffer, "portgroupId = \"%s\"\n", def->data.vds.portgroup_id);
+        if (def->data.vds.portgroup_id) {
+            virBufferAsprintf(buffer, "ethernet%d.dvs.", controller);
+            virBufferEscapeString(buffer, "portgroupId = \"%s\"\n",
+                                  def->data.vds.portgroup_id);
+        }
 
-        virBufferAsprintf(buffer, "ethernet%d.dvs.connectionId = \"%lld\"\n",
-                          controller, def->data.vds.connection_id);
+        if (def->data.vds.connection_id) {
+            virBufferAsprintf(buffer, "ethernet%d.dvs.connectionId = \"%lld\"\n",
+                              controller, def->data.vds.connection_id);
+        }
+
         break;
     }
 
@@ -4072,7 +4391,6 @@ virVMXFormatEthernet(virDomainNetDef *def, int controller,
 }
 
 
-
 static int
 virVMXFormatSerial(virVMXContext *ctx, virDomainChrDef *def,
                    virBuffer *buffer)
@@ -4145,10 +4463,9 @@ virVMXFormatSerial(virVMXContext *ctx, virDomainChrDef *def,
             break;
 
           default:
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("Unsupported character device TCP protocol '%1$s'"),
-                           virDomainChrTcpProtocolTypeToString(
-                               def->source->data.tcp.protocol));
+          case VIR_DOMAIN_CHR_TCP_PROTOCOL_LAST:
+            virReportEnumRangeError(virDomainChrTcpProtocol,
+                                    def->source->data.tcp.protocol);
             return -1;
         }
 

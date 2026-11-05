@@ -7,10 +7,12 @@ Bhyve driver
 .. contents::
 
 Bhyve is a FreeBSD hypervisor. It first appeared in FreeBSD 10.0. However, it's
-recommended to keep tracking FreeBSD 10-STABLE to make sure all new features of
-bhyve are supported. In order to enable bhyve on your FreeBSD host, you'll need
-to load the ``vmm`` kernel module. Additionally, ``if_tap`` and ``if_bridge``
-modules should be loaded for networking support. Also, :since:`since 3.2.0` the
+recommended to use the
+`latest supported release <https://www.freebsd.org/releases/>`__
+to make sure all new features of bhyve are supported.
+In order to enable bhyve on your FreeBSD host, you'll need
+to load the ``vmm`` kernel module. Additionally, ``if_tap``, ``if_bridge``,
+and ``pf`` modules should be loaded for networking support. Also, :since:`since 3.2.0` the
 ``virt-host-validate(1)`` supports the bhyve host validation and could be used
 like this:
 
@@ -19,6 +21,7 @@ like this:
    $ virt-host-validate bhyve
     BHYVE: Checking for vmm module                                              : PASS
     BHYVE: Checking for if_tap module                                           : PASS
+    BHYVE: Checking for pf module                                               : PASS
     BHYVE: Checking for if_bridge module                                        : PASS
     BHYVE: Checking for nmdm module                                             : PASS
    $
@@ -29,14 +32,34 @@ Additional information on bhyve could be obtained on
 Connections to the Bhyve driver
 -------------------------------
 
-The libvirt bhyve driver is a single-instance privileged driver. Some sample
-connection URIs are:
+The libvirt bhyve driver is a multi-instance driver, providing a single system
+wide privileged driver (the "system" instance), and per-user unprivileged
+drivers (the "session" instance). The URI driver protocol is "bhyve". Some
+example connection URIs for the libvirt driver are:
 
 ::
+
+   bhyve:///session                    (local access to per-user instance)
+   bhyve+unix:///session               (local access to per-user instance)
 
    bhyve:///system                     (local access)
    bhyve+unix:///system                (local access)
    bhyve+ssh://root@example.com/system (remote access, SSH tunnelled)
+
+The per-user instance connection is supported :since:`since 12.9.0`. It requires
+bhyve monitor mode support (``bhyve -M``) and the ``--get-vm-pid`` option
+support in ``bhyvectl(8)``. At the moment these features are only available on
+FreeBSD -CURRENT.
+
+Session mode
+------------
+
+The per-user instance has some limitations and requirements:
+
+* User needs permission to access ``/dev/vmmctl``.
+* It supports only UEFI boot; ``bhyveload``, ``grub-bhyve`` and other external
+  loaders are not supported.
+* Memory and block I/O tuning are not supported.
 
 Example guest domain XML configurations
 ---------------------------------------
@@ -195,6 +218,42 @@ This is an example to boot into Fedora 25 installation:
 Please refer to the `Using UEFI bootrom, VNC, and USB tablet`_ section for a
 more detailed explanation.
 
+Example config (FreeBSD/arm64 guest)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+:since:`Since 12.0.0`, it is possible to run arm64 guests on arm64 hosts.
+
+::
+
+  <domain type='bhyve'>
+    <name>freebsd-15.0R</name>
+    <memory unit='G'>2</memory>
+    <vcpu>2</vcpu>
+    <os>
+      <type>hvm</type>
+      <loader readonly="yes" type="pflash">/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin</loader>
+    </os>
+    <on_poweroff>destroy</on_poweroff>
+    <on_reboot>restart</on_reboot>
+    <on_crash>destroy</on_crash>
+    <devices>
+      <disk type='file' device='disk'>
+        <driver name='file' type='raw'/>
+        <source file='/home/novel/FreeBSD-15.0-RELEASE-arm64-aarch64-ufs.raw'/>
+        <target dev='vda' bus='virtio'/>
+      </disk>
+      <interface type='network'>
+        <source network='default'/>
+        <model type='virtio'/>
+      </interface>
+      <serial type="nmdm">
+        <source master="/dev/nmdmFreeBSDA" slave="/dev/nmdmFreeBSDB"/>
+      </serial>
+    </devices>
+  </domain>
+
+This example uses the bhyve u-boot loader which can be installed
+from the ``u-boot-bhyve-arm64`` package or the ``sysutils/u-boot-bhyve-arm64`` port.
+
 Guest usage / management
 ------------------------
 
@@ -268,7 +327,7 @@ these commands manually, most likely you might want to tweak them.
 Using ZFS volumes
 ~~~~~~~~~~~~~~~~~
 
-It's possible to use ZFS volumes as disk devices :since:`since 1.2.8` . An
+It's possible to use ZFS volumes as disk devices :since:`since 1.2.8`. An
 example of domain XML device entry for that will look like:
 
 ::
@@ -307,7 +366,7 @@ not have spaces or they will be tokenized incorrectly.
 Using UEFI bootrom, VNC, and USB tablet
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:since:`Since 3.2.0` , in addition to
+:since:`Since 3.2.0`, in addition to
 `Using grub2-bhyve or Alternative Bootloaders`_, non-FreeBSD
 guests could be also booted using an UEFI boot ROM, provided both guest OS and
 installed ``bhyve(1)`` version support UEFI. To use that, ``loader`` should be
@@ -326,6 +385,26 @@ specified in the ``os`` section:
 This uses the UEFI firmware provided by the
 `sysutils/bhyve-firmware <https://www.freshports.org/sysutils/bhyve-firmware/>`__
 FreeBSD port.
+
+:since:`Since 11.4.0`, it's possible to configure an NVRAM file:
+
+::
+
+    <os>
+      <type>hvm</type>
+      <loader readonly="yes" type="pflash">/usr/local/share/uefi-firmware/BHYVE_UEFI.fd</loader>
+      <nvram template='/usr/local/share/edk2-bhyve/BHYVE_UEFI_VARS.fd'>/var/lib/libvirt/bhyve/nvram/myvm.fd</nvram>
+    </os>
+
+Alternatively, it's also possible to let the driver automatically configure
+the firmware and NVRAM:
+
+::
+
+    <os firmware='efi'>
+      <type>hvm</type>
+      <nvram/>
+    </os>
 
 VNC and the tablet input device could be configured this way:
 
@@ -349,7 +428,7 @@ Please note that the tablet device requires to have a USB controller of the
 ``nec-xhci`` model. Currently, only a single controller of this type and a
 single tablet are supported per domain.
 
-:since:`Since 3.5.0` , it's possible to configure how the video device is
+:since:`Since 3.5.0`, it's possible to configure how the video device is
 exposed to the guest using the ``vgaconf`` attribute:
 
 ::
@@ -371,11 +450,11 @@ exposed to the guest using the ``vgaconf`` attribute:
 
 If not specified, bhyve's default mode for ``vgaconf`` will be used. Please
 refer to the
-`bhyve(8) <https://www.freebsd.org/cgi/man.cgi?query=bhyve&sektion=8&manpath=FreeBSD+12-current>`__
+`bhyve(8) <https://www.freebsd.org/cgi/man.cgi?query=bhyve&sektion=8>`__
 manual page and the `bhyve wiki <https://wiki.freebsd.org/bhyve>`__ for more
 details on using the ``vgaconf`` option.
 
-:since:`Since 3.7.0` , it's possible to use ``autoport`` to let libvirt allocate
+:since:`Since 3.7.0`, it's possible to use ``autoport`` to let libvirt allocate
 VNC port automatically (instead of explicitly specifying it with the ``port``
 attribute):
 
@@ -383,7 +462,7 @@ attribute):
 
        <graphics type='vnc' autoport='yes'>
 
-:since:`Since 6.8.0` , it's possible to set framebuffer resolution using the
+:since:`Since 6.8.0`, it's possible to set framebuffer resolution using the
 ``resolution`` sub-element:
 
 ::
@@ -394,7 +473,7 @@ attribute):
         </model>
       </video>
 
-:since:`Since 6.8.0` , VNC server can be configured to use password based
+:since:`Since 6.8.0`, VNC server can be configured to use password based
 authentication:
 
 ::
@@ -407,6 +486,16 @@ Note: VNC password authentication is known to be cryptographically weak.
 Additionally, the password is passed as a command line argument in clear text.
 Make sure you understand the risks associated with this feature before using it.
 
+:since:`Since 11.10.0`, the guest can be configured to wait for an incoming
+VNC connection before booting:
+
+::
+
+    <graphics type='vnc' port='5904' wait='yes'>
+      <listen type='address' address='127.0.0.1'/>
+    </graphics>
+
+
 Clock configuration
 ~~~~~~~~~~~~~~~~~~~
 
@@ -414,7 +503,7 @@ Originally bhyve supported only localtime for RTC. Support for UTC time was
 introduced in `FreeBSD changeset
 r284894 <https://svnweb.freebsd.org/changeset/base/284894>`__ for *10-STABLE*
 and in `changeset r279225 <https://svnweb.freebsd.org/changeset/base/279225>`__
-for *-CURRENT*. It's possible to use this in libvirt :since:`since 1.2.18` ,
+for *-CURRENT*. It's possible to use this in libvirt :since:`since 1.2.18`,
 just place the following to domain XML:
 
 ::
@@ -443,8 +532,8 @@ e1000 NIC
 
 As of `FreeBSD changeset
 r302504 <https://svnweb.freebsd.org/changeset/base/302504>`__ bhyve supports
-Intel e1000 network adapter emulation. It's supported in libvirt :since:`since
-3.1.0` and could be used as follows:
+Intel e1000 network adapter emulation. It's supported in libvirt
+:since:`since 3.1.0` and could be used as follows:
 
 ::
 
@@ -460,7 +549,7 @@ Sound device
 
 As of `FreeBSD changeset
 r349355 <https://svnweb.freebsd.org/changeset/base/349355>`__ bhyve supports
-sound device emulation. It's supported in libvirt :since:`since 6.7.0` .
+sound device emulation. It's supported in libvirt :since:`since 6.7.0`.
 
 ::
 
@@ -484,7 +573,7 @@ Virtio-9p filesystem
 As of `FreeBSD changeset
 r366413 <https://svnweb.freebsd.org/changeset/base/366413>`__ bhyve supports
 sharing arbitrary directory tree between the guest and the host. It's supported
-in libvirt :since:`since 6.9.0` .
+in libvirt :since:`since 6.9.0`.
 
 ::
 
@@ -506,7 +595,7 @@ In the Linux guest, this could be mounted using:
 Wiring guest memory
 ~~~~~~~~~~~~~~~~~~~
 
-:since:`Since 4.4.0` , it's possible to specify that guest memory should be
+:since:`Since 4.4.0`, it's possible to specify that guest memory should be
 wired and cannot be swapped out as follows:
 
 ::
@@ -522,7 +611,7 @@ wired and cannot be swapped out as follows:
 CPU topology
 ~~~~~~~~~~~~
 
-:since:`Since 4.5.0` , it's possible to specify guest CPU topology, if bhyve
+:since:`Since 4.5.0`, it's possible to specify guest CPU topology, if bhyve
 supports that. Support for specifying guest CPU topology was added to bhyve in
 `FreeBSD changeset r332298 <https://svnweb.freebsd.org/changeset/base/332298>`__
 for *-CURRENT*. Example:
@@ -540,7 +629,7 @@ for *-CURRENT*. Example:
 Ignoring unknown MSRs reads and writes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:since:`Since 5.1.0` , it's possible to make bhyve ignore accesses to
+:since:`Since 5.1.0`, it's possible to make bhyve ignore accesses to
 unimplemented Model Specific Registers (MSRs). Example:
 
 ::
@@ -558,7 +647,7 @@ unimplemented Model Specific Registers (MSRs). Example:
 Pass-through of arbitrary bhyve commands
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:since:`Since 5.1.0` , it's possible to pass additional command-line arguments
+:since:`Since 5.1.0`, it's possible to pass additional command-line arguments
 to the bhyve process when starting the domain using the ``<bhyve:commandline>``
 element under ``domain``. To supply an argument, use the element ``<bhyve:arg>``
 with the attribute ``value`` set to additional argument to be added. The arg
@@ -582,3 +671,250 @@ Note that these extensions are for testing and development purposes only. They
 are **unsupported**, using them may result in inconsistent state, and upgrading
 either bhyve or libvirtd maybe break behavior of a domain that was relying on a
 specific commands pass-through.
+
+Random number generator device
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:since:`Since 11.3.0` it's possible to use the virtio random number generator devices.
+
+Example:
+
+::
+
+   ...
+     <rng model='virtio'>
+       <backend model='random'/>
+     </rng>
+   ...
+
+TCP console
+~~~~~~~~~~~
+:since:`Since 11.6.0` it's possible to configure TCP console.
+
+Example:
+
+::
+
+   ...
+     <serial type='tcp'>
+       <source mode='bind' host='127.0.0.1' service='12345'/>
+       <target type='serial' port='0'/>
+     </serial>
+   ...
+
+Note: there's no direct way to check if the actual ``bhyve`` binary supports
+the TCP console. Thus, libvirt always assumes it's supported. Please
+refer to the ``bhyve(1)`` manual page to make sure.
+
+NVMe device
+~~~~~~~~~~~
+:since:`Since 11.9.0`, it's possible to use NVMe device.
+
+Example:
+
+::
+
+   ...
+     <disk type='file'>
+       <driver name='file' type='raw'/>
+       <source file='/tmp/freebsd.img'/>
+       <target dev='nvme0n1' bus='nvme'/>
+     </disk>
+    ...
+
+As ``bhyve(1)`` uses one NVMe device per PCI address, it's modeled in a way
+that there is one device per controller. That is, if using more than one
+NVMe device, for device name users should increment controller number rather
+than namespace number, i.e.: ``nvme0n1``, ``nvme1n1``, etc.
+
+Device passthrough
+~~~~~~~~~~~~~~~~~~
+:since:`Since 11.10.0`, it is possible to passthrough PCI devices.
+
+Example:
+
+::
+
+  ...
+    <hostdev mode='subsystem' type='pci' managed='no'>
+      <source>
+        <address domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
+      </source>
+    </hostdev>
+  ...
+
+Using passthrough devices requires wiring guest memory, see `Wiring guest memory`_.
+
+Note: currently, the `nodedev <drvnodedev.html>`_ driver is not supported
+on FreeBSD.
+Users must configure the device for passthrough manually either by
+using ``devctl(8)`` or by setting ``pptdevs`` in ``loader.conf(5)``.
+Please refer to the ``vmm(4)`` manual page for more details.
+
+SLIRP networking
+~~~~~~~~~~~~~~~~
+:since:`Since 12.0.0`, it is possible to use SLIRP networking.
+
+Example:
+
+::
+
+  ...
+    <interface type='user'>
+      <model type='e1000'/>
+    </interface>
+  ...
+
+Then the guest will have external network connectivity without
+any configuration on the host.
+
+.. note::
+   This configuration requires SLIRP open mode support by ``bhyve``.
+   It was introduced in FreeBSD -CURRENT in this commit:
+   https://cgit.FreeBSD.org/src/commit/?id=0e62ebd20172f67283bac9526c2aaeaffeb41b45.
+   Unfortunately, there is no (easy) way to probe its support in libvirt,
+   so please consult the ``bhyve(8)`` manual page to make sure it is available.
+
+virtio-scsi
+~~~~~~~~~~~
+:since:`Since 12.0.0`, it is possible to use ``virtio-scsi`` devices.
+It uses CAM Target layer (CTL) as a source.
+
+Example:
+
+::
+
+  ...
+    <disk type='ctl'>
+      <source dev='/dev/cam/ctl'/>
+      <target dev='sda' bus='scsi'/>
+    </disk>
+  ...
+
+Please refer to ``cam(4)``, ``ctl(4)``, and ``ctld(8)`` manual pages
+for more details on CAM and CTL.
+
+NUMA domains configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:since:`Since 12.2.0`, it is possible to configure NUMA domains
+for the guest.
+
+Example:
+
+::
+
+  <domain type='bhyve'>
+    ...
+    <memory unit='KiB'>4194304</memory>
+    <vcpu>8</vcpu>
+    ...
+    <cpu>
+      <numa>
+        <cell id='0' cpus='0-3' memory='2097152' unit='KiB'/>
+        <cell id='1' cpus='4-7' memory='2097152' unit='KiB'/>
+      </numa>
+    </cpu>
+  </domain>
+
+Every NUMA domain must have `memory` and `cpus` specified.
+Bhyve allows configuring up to 8 NUMA domains.
+
+Virtio-console device
+~~~~~~~~~~~~~~~~~~~~~
+
+:since:`Since 12.4.0`, it is possible to use the virtio console device.
+Example::
+
+  <devices>
+    <channel type='unix'>
+      <source mode='bind' path='/var/run/libvirt/bhyve/bhyve.agent'/>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+      <address type='virtio-serial' controller='0' bus='0' port='1'/>
+    </channel>
+  </devices>
+
+Bhyve supports up to 16 ports per console.
+
+Resource tuning and limiting
+----------------------------
+The libvirt bhyve driver supports tuning and limiting resources such as
+CPU, memory, and I/O.
+
+For managing the memory and I/O limits, the bhyve driver uses the
+`rctl(4) <https://man.freebsd.org/cgi/man.cgi?query=rctl&sektion=4>`__
+framework.
+
+As of `FreeBSD 15.0-RELEASE`, rctl is not enabled by default.
+Please refer to the manual page above and the
+`FreeBSD Handbook <https://docs.freebsd.org/en/books/handbook/book/#security-rctl>`__
+on how to enable it.
+
+CPU tuning does not require any additional configuration.
+
+vCPU pinning
+~~~~~~~~~~~~
+Pinning domain vCPUs to the specific host CPUs is supported :since:`since 12.1.0`.
+
+Example:
+
+::
+
+  <domain type='bhyve'>
+    ...
+    <vcpu>2</vcpu>
+    <cputune>
+      <vcpupin vcpu="0" cpuset="1-4,^2"/>
+      <vcpupin vcpu="1" cpuset="0,4"/>
+    </cputune>
+    ...
+  </domain>
+
+Block I/O tuning
+~~~~~~~~~~~~~~~~
+Block I/O tuning is supported :since:`since 12.3.0`. Sample configuration::
+
+  <blkiotune>
+    <device>
+      <path>*</path>
+      <read_iops_sec>20000</read_iops_sec>
+      <write_iops_sec>20000</write_iops_sec>
+      <read_bytes_sec>10000</read_bytes_sec>
+      <write_bytes_sec>10000</write_bytes_sec>
+    </device>
+  </blkiotune>
+
+The ``*`` path here means that the limits are applied to the domain
+as a whole. Currently, it is not possible to apply limits to the
+individual devices of the domain.
+
+Memory limitation
+~~~~~~~~~~~~~~~~~
+Setting a memory hard limit for a domain is supported :since:`since 12.4.0`.
+Example::
+
+  <memtune>
+    <hard_limit unit='M'>512</hard_limit>
+  </memtune>
+
+Please refer to the `format domain <formatdomain.html#memory-tuning>`__ page
+for considerations on setting ``hard_limit``.
+
+Currently, other memory tuning options (``soft_limit``, ``swap_hard_limit``,
+and ``min_guarantee``) are not supported.
+
+Guest-specific considerations
+-----------------------------
+
+Windows
+~~~~~~~
+
+For Windows guests, it is recommended to have the LPC controller on slot 31.
+As the libvirt driver allocates slot 1 for the LPC controller by default,
+the address must be specified explicitly:
+
+::
+
+    <controller type='isa' index='0'>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x1f' function='0x0'/>
+    </controller>

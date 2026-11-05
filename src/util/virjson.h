@@ -241,10 +241,10 @@ virJSONValueObjectRemoveKey(virJSONValue *object,
                             virJSONValue **value)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
-void
-virJSONValueObjectReplaceValue(virJSONValue *object,
-                               const char *key,
-                               virJSONValue **newval)
+int
+virJSONValueObjectReplaceKey(virJSONValue *object,
+                             const char *key,
+                             virJSONValue **value)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
 
 int
@@ -277,6 +277,8 @@ virJSONValueCopy(const virJSONValue *in);
 char *
 virJSONStringReformat(const char *jsonstr,
                       bool pretty);
+char *
+virJSONStringPrettifyBlanks(const char *jsonstr);
 
 virJSONValue *
 virJSONValueObjectDeflatten(virJSONValue *json);

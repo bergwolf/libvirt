@@ -35,6 +35,8 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 
 #if defined(WITH_BSD_NSS)
@@ -71,7 +73,8 @@ sortAddr(leaseAddress *tmpAddress,
          size_t ntmpAddress)
 {
     if (tmpAddress)
-        qsort(tmpAddress, ntmpAddress, sizeof(*tmpAddress), leaseAddressSorter);
+        qsort(tmpAddress, ntmpAddress, /* exempt from syntax-check */
+              sizeof(*tmpAddress), leaseAddressSorter);
 }
 
 
@@ -118,6 +121,12 @@ findLease(const char *name,
     *naddress = 0;
     *found = false;
 
+#if defined(LIBVIRT_NSS_GUEST)
+    DEBUG("NSS module: libvirt_guest");
+#else
+    DEBUG("NSS module: libvirt");
+#endif
+
     if (af != AF_UNSPEC && af != AF_INET && af != AF_INET6) {
         errno = EAFNOSUPPORT;
         goto cleanup;
@@ -131,30 +140,29 @@ findLease(const char *name,
 
     DEBUG("Dir: %s", leaseDir);
     while ((entry = readdir(dir)) != NULL) {
-        char *path;
+        g_autofree char *path = NULL;
         size_t dlen = strlen(entry->d_name);
 
         if (dlen >= 7 && !strcmp(entry->d_name + dlen - 7, ".status")) {
             char **tmpLease;
-            if (asprintf(&path, "%s/%s", leaseDir, entry->d_name) < 0)
-                goto cleanup;
 
             tmpLease = realloc(leaseFiles, sizeof(char *) * (nleaseFiles + 1));
             if (!tmpLease)
                 goto cleanup;
             leaseFiles = tmpLease;
-            leaseFiles[nleaseFiles++] = path;
+
+            if (asprintf(&path, "%s/%s", leaseDir, entry->d_name) < 0)
+                goto cleanup;
+
+            leaseFiles[nleaseFiles++] = g_steal_pointer(&path);
 #if defined(LIBVIRT_NSS_GUEST)
         } else if (dlen >= 5 && !strcmp(entry->d_name + dlen - 5, ".macs")) {
             if (asprintf(&path, "%s/%s", leaseDir, entry->d_name) < 0)
                 goto cleanup;
 
             DEBUG("Processing %s", path);
-            if (findMACs(path, name, &macs, &nmacs) < 0) {
-                free(path);
+            if (findMACs(path, name, &macs, &nmacs) < 0)
                 goto cleanup;
-            }
-            free(path);
 #endif /* LIBVIRT_NSS_GUEST */
         }
 
@@ -172,7 +180,7 @@ findLease(const char *name,
 #endif
 
     if ((now = time(NULL)) == (time_t)-1) {
-        DEBUG("Failed to get time");
+        ERROR("Failed to get time");
         goto cleanup;
     }
 
@@ -227,7 +235,7 @@ NSS_NAME(gethostbyname2)(const char *name, int af, struct hostent *result,
                                     errnop, herrnop, NULL, NULL);
 }
 
-static inline void *
+static void *
 move_and_align(void *buf, size_t len, size_t *idx)
 {
     char *buffer = buf;
@@ -246,9 +254,8 @@ NSS_NAME(gethostbyname3)(const char *name, int af, struct hostent *result,
                          char *buffer, size_t buflen, int *errnop,
                          int *herrnop, int32_t *ttlp, char **canonp)
 {
-    enum nss_status ret = NSS_STATUS_UNAVAIL;
     char *r_name, **r_aliases, *r_addr, *r_addr_next, **r_addr_list;
-    leaseAddress *addr = NULL;
+    g_autofree leaseAddress *addr = NULL;
     size_t naddr, i;
     bool found = false;
     size_t nameLen, need, idx = 0;
@@ -301,8 +308,7 @@ NSS_NAME(gethostbyname3)(const char *name, int af, struct hostent *result,
     if (buflen < need) {
         *errnop = ENOMEM;
         *herrnop = TRY_AGAIN;
-        ret = NSS_STATUS_TRYAGAIN;
-        goto cleanup;
+        return NSS_STATUS_TRYAGAIN;
     }
 
     /* First, append name */
@@ -352,10 +358,7 @@ NSS_NAME(gethostbyname3)(const char *name, int af, struct hostent *result,
     *herrnop = NETDB_SUCCESS;
     h_errno = 0;
 
-    ret = NSS_STATUS_SUCCESS;
- cleanup:
-    free(addr);
-    return ret;
+    return NSS_STATUS_SUCCESS;
 }
 
 #ifdef WITH_STRUCT_GAIH_ADDRTUPLE
@@ -364,8 +367,7 @@ NSS_NAME(gethostbyname4)(const char *name, struct gaih_addrtuple **pat,
                          char *buffer, size_t buflen, int *errnop,
                          int *herrnop, int32_t *ttlp)
 {
-    enum nss_status ret = NSS_STATUS_UNAVAIL;
-    leaseAddress *addr = NULL;
+    g_autofree leaseAddress *addr = NULL;
     size_t naddr, i;
     bool found = false;
     int r;
@@ -407,8 +409,7 @@ NSS_NAME(gethostbyname4)(const char *name, struct gaih_addrtuple **pat,
     if (buflen < need) {
         *errnop = ENOMEM;
         *herrnop = TRY_AGAIN;
-        ret = NSS_STATUS_TRYAGAIN;
-        goto cleanup;
+        return NSS_STATUS_TRYAGAIN;
     }
 
     /* First, append name */
@@ -446,10 +447,7 @@ NSS_NAME(gethostbyname4)(const char *name, struct gaih_addrtuple **pat,
     /* Explicitly reset all error variables */
     *errnop = 0;
     *herrnop = NETDB_SUCCESS;
-    ret = NSS_STATUS_SUCCESS;
- cleanup:
-    free(addr);
-    return ret;
+    return NSS_STATUS_SUCCESS;
 }
 #endif /* WITH_STRUCT_GAIH_ADDRTUPLE */
 
@@ -464,61 +462,78 @@ ns_mtab methods[] = {
 };
 
 static void
-aiforaf(const char *name, int af, struct addrinfo *pai, struct addrinfo **aip)
+aiforaf(const char *name,
+        int af,
+        struct addrinfo *pai,
+        struct addrinfo **aip)
 {
-    int ret;
     struct hostent resolved;
-    char buf[1024] = { 0 };
-    int err, herr;
-    struct addrinfo hints, *res0, *res;
+    int err;
     char **addrList;
+    g_autofree char *buf = NULL;
+    const size_t buf_size = 1024;
+    int herr;
 
-    if ((ret = NSS_NAME(gethostbyname2)(name, af, &resolved,
-                                        buf, sizeof(buf),
-                                        &err, &herr)) != NS_SUCCESS)
+    if (!(buf = calloc(buf_size, sizeof(*buf))))
+        return;
+
+    if (NSS_NAME(gethostbyname2)(name, af, &resolved,
+                                 buf, buf_size,
+                                 &err, &herr) != NS_SUCCESS)
         return;
 
     addrList = resolved.h_addr_list;
     while (*addrList) {
-        union {
-            struct sockaddr sa;
-            struct sockaddr_in sin;
-            struct sockaddr_in6 sin6;
-        } sa;
-        socklen_t salen;
         void *address = *addrList;
         char host[NI_MAXHOST];
-        char port[NI_MAXSERV];
+        struct addrinfo *res0;
+        struct addrinfo *res;
 
-        memset(&sa, 0, sizeof(sa));
-        if (resolved.h_addrtype == AF_INET) {
-            sa.sin.sin_family = AF_INET;
-            memcpy(&sa.sin.sin_addr.s_addr,
-                   address,
-                   FAMILY_ADDRESS_SIZE(AF_INET));
-            salen = sizeof(sa.sin);
-        } else {
-            sa.sin6.sin6_family = AF_INET6;
-            memcpy(&sa.sin6.sin6_addr.s6_addr,
-                   address,
-                   FAMILY_ADDRESS_SIZE(AF_INET6));
-            salen = sizeof(sa.sin6);
-        }
+        do  {
+            union {
+                struct sockaddr sa;
+                struct sockaddr_in sin;
+                struct sockaddr_in6 sin6;
+            } sa = { 0 };
+            socklen_t salen;
 
-        if ((err = getnameinfo(&sa.sa, salen,
-                               host, sizeof(host),
-                               port, sizeof(port),
-                               NI_NUMERICHOST | NI_NUMERICSERV)) != 0) {
+            if (resolved.h_addrtype == AF_INET) {
+                sa.sin.sin_family = AF_INET;
+                memcpy(&sa.sin.sin_addr.s_addr,
+                       address,
+                       FAMILY_ADDRESS_SIZE(AF_INET));
+                salen = sizeof(sa.sin);
+            } else {
+                sa.sin6.sin6_family = AF_INET6;
+                memcpy(&sa.sin6.sin6_addr.s6_addr,
+                       address,
+                       FAMILY_ADDRESS_SIZE(AF_INET6));
+                salen = sizeof(sa.sin6);
+            }
+
+            err = getnameinfo(&sa.sa, salen,
+                              host, sizeof(host),
+                              NULL, 0,
+                              NI_NUMERICHOST | NI_NUMERICSERV);
+        } while (false);
+
+        if (err != 0) {
             ERROR("Cannot convert socket address to string: %s",
                   gai_strerror(err));
             continue;
         }
 
-        hints = *pai;
-        hints.ai_flags = AI_NUMERICHOST;
-        hints.ai_family = af;
+        do {
+            struct addrinfo hints;
 
-        if (getaddrinfo(host, NULL, &hints, &res0)) {
+            hints = *pai;
+            hints.ai_flags = AI_NUMERICHOST;
+            hints.ai_family = af;
+
+            err = getaddrinfo(host, NULL, &hints, &res0);
+        } while (false);
+
+        if (err != 0) {
             addrList++;
             continue;
         }
@@ -539,14 +554,13 @@ _nss_compat_getaddrinfo(void *retval,
                         void *mdata __attribute__((unused)),
                         va_list ap)
 {
-    struct addrinfo sentinel, *cur, *ai;
+    struct addrinfo sentinel = { 0 };
+    struct addrinfo *cur = &sentinel;
+    struct addrinfo *ai;
     const char *name;
 
     name  = va_arg(ap, char *);
     ai = va_arg(ap, struct addrinfo *);
-
-    memset(&sentinel, 0, sizeof(sentinel));
-    cur = &sentinel;
 
     if ((ai->ai_family == AF_UNSPEC) || (ai->ai_family == AF_INET6))
         aiforaf(name, AF_INET6, ai, &cur);

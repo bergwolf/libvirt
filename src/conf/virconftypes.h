@@ -1,5 +1,5 @@
 /*
- * virconftypes.h: struct typedefs to avoid circular inclusion
+ * virconftypes.h: struct and enum type definitions to avoid circular inclusion
  *
  * Copyright (C) 2006-2019 Red Hat, Inc.
  * Copyright (C) 2006-2008 Daniel P. Berrange
@@ -52,6 +52,8 @@ typedef struct _virCapsHostMemBW virCapsHostMemBW;
 
 typedef struct _virCapsHostMemBWNode virCapsHostMemBWNode;
 
+typedef struct _virCapsHostEnergy virCapsHostEnergy;
+
 typedef struct _virCapsHostNUMA virCapsHostNUMA;
 
 typedef struct _virCapsHostNUMACell virCapsHostNUMACell;
@@ -66,6 +68,8 @@ typedef struct _virCapsHostSecModelLabel virCapsHostSecModelLabel;
 
 typedef struct _virCapsStoragePool virCapsStoragePool;
 
+typedef struct _virDeviceHostdevPCIDriverInfo virDeviceHostdevPCIDriverInfo;
+
 typedef struct _virDomainABIStability virDomainABIStability;
 
 typedef struct _virDomainActualNetDef virDomainActualNetDef;
@@ -77,6 +81,10 @@ typedef struct _virDomainBIOSDef virDomainBIOSDef;
 typedef struct _virDomainBlkiotune virDomainBlkiotune;
 
 typedef struct _virDomainBlockIoTuneInfo virDomainBlockIoTuneInfo;
+
+typedef struct _virDomainBlockIoTuneInfo  virDomainThrottleGroupDef;
+
+typedef struct _virDomainThrottleFilterDef  virDomainThrottleFilterDef;
 
 typedef struct _virDomainCheckpointDef virDomainCheckpointDef;
 
@@ -136,6 +144,8 @@ typedef struct _virDomainHubDef virDomainHubDef;
 
 typedef struct _virDomainHugePage virDomainHugePage;
 
+typedef struct _virDomainHypervFeatures virDomainHypervFeatures;
+
 typedef struct _virDomainIOMMUDef virDomainIOMMUDef;
 
 typedef struct _virDomainIOThreadIDDef virDomainIOThreadIDDef;
@@ -155,6 +165,8 @@ typedef struct _virDomainKeyWrapDef virDomainKeyWrapDef;
 typedef struct _virDomainLeaseDef virDomainLeaseDef;
 
 typedef struct _virDomainLoaderDef virDomainLoaderDef;
+
+typedef struct _virDomainVarstoreDef virDomainVarstoreDef;
 
 typedef struct _virDomainMemballoonDef virDomainMemballoonDef;
 
@@ -208,7 +220,13 @@ typedef struct _virDomainResctrlMonDef virDomainResctrlMonDef;
 
 typedef struct _virDomainResourceDef virDomainResourceDef;
 
+typedef struct _virDomainSEVCommonDef virDomainSEVCommonDef;
+
 typedef struct _virDomainSEVDef virDomainSEVDef;
+
+typedef struct _virDomainSEVSNPDef virDomainSEVSNPDef;
+
+typedef struct _virDomainTDXDef virDomainTDXDef;
 
 typedef struct _virDomainSecDef virDomainSecDef;
 
@@ -227,6 +245,8 @@ typedef struct _virDomainSoundDef virDomainSoundDef;
 typedef struct _virDomainAudioDef virDomainAudioDef;
 
 typedef struct _virDomainTPMDef virDomainTPMDef;
+
+typedef struct _virDomainTPMEmulatorDef virDomainTPMEmulatorDef;
 
 typedef struct _virDomainThreadSchedParam virDomainThreadSchedParam;
 
@@ -254,6 +274,8 @@ typedef struct _virDomainVsockDef virDomainVsockDef;
 
 typedef struct _virDomainCryptoDef virDomainCryptoDef;
 
+typedef struct _virDomainPstoreDef virDomainPstoreDef;
+
 typedef struct _virDomainWatchdogDef virDomainWatchdogDef;
 
 typedef struct _virDomainXMLOption virDomainXMLOption;
@@ -261,3 +283,42 @@ typedef struct _virDomainXMLOption virDomainXMLOption;
 typedef struct _virDomainXMLPrivateDataCallbacks virDomainXMLPrivateDataCallbacks;
 
 typedef struct _virDomainXenbusControllerOpts virDomainXenbusControllerOpts;
+
+typedef struct _virDomainNVMeControllerOpts virDomainNVMeControllerOpts;
+
+typedef enum {
+    VIR_DOMAIN_DISK_IO_DEFAULT = 0,
+    VIR_DOMAIN_DISK_IO_NATIVE,
+    VIR_DOMAIN_DISK_IO_THREADS,
+    VIR_DOMAIN_DISK_IO_URING,
+
+    VIR_DOMAIN_DISK_IO_LAST
+} virDomainDiskIo;
+
+typedef enum {
+    VIR_DOMAIN_DISK_CACHE_DEFAULT = 0,
+    VIR_DOMAIN_DISK_CACHE_DISABLE,
+    VIR_DOMAIN_DISK_CACHE_WRITETHRU,
+    VIR_DOMAIN_DISK_CACHE_WRITEBACK,
+    VIR_DOMAIN_DISK_CACHE_DIRECTSYNC,
+    VIR_DOMAIN_DISK_CACHE_UNSAFE,
+
+    VIR_DOMAIN_DISK_CACHE_LAST
+} virDomainDiskCache;
+
+typedef enum {
+    VIR_DOMAIN_DISK_DISCARD_DEFAULT = 0,
+    VIR_DOMAIN_DISK_DISCARD_UNMAP,
+    VIR_DOMAIN_DISK_DISCARD_IGNORE,
+
+    VIR_DOMAIN_DISK_DISCARD_LAST
+} virDomainDiskDiscard;
+
+typedef enum {
+    VIR_DOMAIN_DISK_DETECT_ZEROES_DEFAULT = 0,
+    VIR_DOMAIN_DISK_DETECT_ZEROES_OFF,
+    VIR_DOMAIN_DISK_DETECT_ZEROES_ON,
+    VIR_DOMAIN_DISK_DETECT_ZEROES_UNMAP,
+
+    VIR_DOMAIN_DISK_DETECT_ZEROES_LAST
+} virDomainDiskDetectZeroes;

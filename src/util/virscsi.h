@@ -34,7 +34,7 @@ char *virSCSIDeviceGetSgName(const char *sysfs_prefix,
                              const char *adapter,
                              unsigned int bus,
                              unsigned int target,
-                             unsigned long long unit) G_NO_INLINE;
+                             unsigned long long unit) ATTRIBUTE_MOCKABLE;
 char *virSCSIDeviceGetDevName(const char *sysfs_prefix,
                               const char *adapter,
                               unsigned int bus,
@@ -50,9 +50,9 @@ virSCSIDevice *virSCSIDeviceNew(const char *sysfs_prefix,
                                   bool shareable);
 
 void virSCSIDeviceFree(virSCSIDevice *dev);
-int virSCSIDeviceSetUsedBy(virSCSIDevice *dev,
-                           const char *drvname,
-                           const char *domname);
+void virSCSIDeviceSetUsedBy(virSCSIDevice *dev,
+                            const char *drvname,
+                            const char *domname);
 bool virSCSIDeviceIsAvailable(virSCSIDevice *dev);
 const char *virSCSIDeviceGetName(virSCSIDevice *dev);
 const char *virSCSIDeviceGetPath(virSCSIDevice *dev);

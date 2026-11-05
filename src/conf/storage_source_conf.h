@@ -24,6 +24,7 @@
 #include "storage_encryption_conf.h"
 #include "virbitmap.h"
 #include "virconftypes.h"
+#include "virdomainfd.h"
 #include "virenum.h"
 #include "virobject.h"
 #include "virpci.h"
@@ -43,6 +44,8 @@ typedef enum {
     VIR_STORAGE_TYPE_VOLUME,
     VIR_STORAGE_TYPE_NVME,
     VIR_STORAGE_TYPE_VHOST_USER,
+    VIR_STORAGE_TYPE_VHOST_VDPA,
+    VIR_STORAGE_TYPE_CTL,
 
     VIR_STORAGE_TYPE_LAST
 } virStorageType;
@@ -87,6 +90,7 @@ VIR_ENUM_DECL(virStorageFileFormat);
 typedef enum {
     VIR_STORAGE_FILE_FEATURE_LAZY_REFCOUNTS = 0,
     VIR_STORAGE_FILE_FEATURE_EXTENDED_L2,
+    VIR_STORAGE_FILE_FEATURE_DATA_FILE,
 
     VIR_STORAGE_FILE_FEATURE_LAST
 } virStorageFileFeature;
@@ -139,6 +143,7 @@ typedef enum {
     VIR_STORAGE_NET_HOST_TRANS_TCP,
     VIR_STORAGE_NET_HOST_TRANS_UNIX,
     VIR_STORAGE_NET_HOST_TRANS_RDMA,
+    VIR_STORAGE_NET_HOST_TRANS_FD,
 
     VIR_STORAGE_NET_HOST_TRANS_LAST
 } virStorageNetHostTransport;
@@ -150,8 +155,11 @@ typedef struct _virStorageNetHostDef virStorageNetHostDef;
 struct _virStorageNetHostDef {
     char *name;
     unsigned int port;
-    int transport; /* virStorageNetHostTransport */
+    virStorageNetHostTransport transport;
     char *socket;  /* path to unix socket */
+
+    char *fdgroup;
+    char *qemu_fdname; /* name used with 'getfd' to pass to qemu - internal */
 };
 
 
@@ -200,7 +208,7 @@ struct _virStorageSourcePoolDef {
     int voltype; /* virStorageVolType, internal only */
     int pooltype; /* virStoragePoolType from storage_conf.h, internal only */
     virStorageType actualtype; /* internal only */
-    int mode; /* virStorageSourcePoolMode, currently makes sense only for iscsi pool */
+    virStorageSourcePoolMode mode; /* currently makes sense only for iscsi pool */
 };
 
 
@@ -228,6 +236,8 @@ typedef struct _virStoragePRDef virStoragePRDef;
 struct _virStoragePRDef {
     virTristateBool managed;
     char *path;
+
+    virTristateBool migration;
 
     /* manager object alias */
     char *mgralias;
@@ -257,27 +267,8 @@ struct _virStorageSourceSlice {
     char *nodename;
 };
 
-
-struct _virStorageSourceFDTuple {
-    GObject parent;
-    int *fds;
-    size_t nfds;
-    int *testfds; /* populated by tests to ensure stable FDs */
-
-    bool writable;
-    bool tryRestoreLabel;
-
-    /* connection this FD tuple is associated with for auto-closing */
-    virConnect *conn;
-
-    /* original selinux label when we relabel the image */
-    char *selinuxLabel;
-};
-G_DECLARE_FINAL_TYPE(virStorageSourceFDTuple, vir_storage_source_fd_tuple, VIR, STORAGE_SOURCE_FD_TUPLE, GObject);
-
-virStorageSourceFDTuple *
-virStorageSourceFDTupleNew(void);
-
+void
+virStorageSourceSliceFree(virStorageSourceSlice *slice);
 
 typedef struct _virStorageSource virStorageSource;
 
@@ -293,12 +284,12 @@ struct _virStorageSource {
     virStorageType type;
     char *path;
     char *fdgroup; /* name of group of file descriptors the user wishes to use instead of 'path' */
-    int protocol; /* virStorageNetProtocol */
-    char *volume; /* volume name for remote storage */
+    virStorageNetProtocol protocol;
     char *snapshot; /* for storage systems supporting internal snapshots */
     char *configFile; /* some storage systems use config file as part of
                          the source definition */
     char *query; /* query string for HTTP based protocols */
+    char *vdpadev;
     size_t nhosts;
     virStorageNetHostDef *hosts;
     size_t ncookies;
@@ -335,6 +326,8 @@ struct _virStorageSource {
 
     virStoragePerms *perms;
     virStorageTimestamps *timestamps;
+
+    /* Cached, unreliable. Refresh before use. */
     unsigned long long capacity; /* in bytes, 0 if unknown */
     unsigned long long allocation; /* in bytes, 0 if unknown */
     unsigned long long physical; /* in bytes, 0 if unknown */
@@ -355,6 +348,9 @@ struct _virStorageSource {
     /* backing chain of the storage source */
     virStorageSource *backingStore;
 
+    /* qcow2 data file source */
+    virStorageSource *dataFileStore;
+
     /* metadata for storage driver access to remote and local volumes */
     void *drv;
 
@@ -365,11 +361,12 @@ struct _virStorageSource {
     /* Name of the child backing store recorded in metadata of the
      * current file.  */
     char *backingStoreRaw;
+    char *dataFileRaw;
     virStorageFileFormat backingStoreRawFormat;
 
     /* metadata that allows identifying given storage source */
-    char *nodeformat;  /* name of the format handler object */
-    char *nodestorage; /* name of the storage object */
+    char *nodenameformat;  /* name of the format handler object */
+    char *nodenamestorage; /* name of the storage object */
 
     /* An optional setting to enable usage of TLS for the storage source */
     virTristateBool haveTLS;
@@ -383,6 +380,7 @@ struct _virStorageSource {
      * certificate directory with listen and verify bools. */
     char *tlsAlias;
     char *tlsCertdir;
+    char *tlsPriority;
 
     /* TLS hostname override */
     char *tlsHostname;
@@ -395,20 +393,23 @@ struct _virStorageSource {
     /* Libvirt currently stores the following properties in virDomainDiskDef.
      * These instances are currently just copies from the parent definition and
      * are not mapped back to the XML */
-    int iomode; /* enum virDomainDiskIo */
-    int cachemode; /* enum virDomainDiskCache */
-    int discard; /* enum virDomainDiskDiscard */
-    int detect_zeroes; /* enum virDomainDiskDetectZeroes */
+    virDomainDiskIo iomode;
+    virDomainDiskCache cachemode;
+    virDomainDiskDiscard discard;
+    virDomainDiskDetectZeroes detect_zeroes;
+    virTristateSwitch discard_no_unref;
 
     bool floppyimg; /* set to true if the storage source is going to be used
                        as a source for floppy drive */
 
     bool hostcdrom; /* backing device is a cdrom */
 
-    /* passthrough variables for the ssh driver which we don't handle properly */
-    /* these must not be used apart from formatting the output JSON in the qemu driver */
+    /* ssh variables */
     char *ssh_user;
     bool ssh_host_key_check_disabled;
+    char *ssh_known_hosts_file;
+    char *ssh_keyfile;
+    char *ssh_agent;
 
     /* nfs_user and nfs_group store the strings passed in by the user for NFS params.
      * nfs_uid and nfs_gid represent the converted/looked up ID numbers which are used
@@ -423,7 +424,22 @@ struct _virStorageSource {
      * one event for it */
     bool thresholdEventWithIndex;
 
-    virStorageSourceFDTuple *fdtuple;
+    virDomainFDTuple *fdtuple;
+
+    /* Setting 'seclabelSkipRemember' to true will cause the security driver to
+     * not remember the security label even if it otherwise were to be
+     * remembered. This is needed in cases such as incoming migration for
+     * shared images where the existing security label may no longer be the
+     * correct. The security driver otherwise doesn't have enough information
+     * to do this decision.
+     */
+    bool seclabelSkipRemember;
+
+    /* Last instance of hypervisor originated I/O error message and timestamp.
+     * The error stored here is not designed to be stable. The message
+     * is also not copied via virStorageSourceCopy */
+    char *ioerror_timestamp;
+    char *ioerror_message;
 };
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virStorageSource, virObjectUnref);
@@ -476,9 +492,6 @@ virStorageSourceGetSecurityLabelDef(virStorageSource *src,
                                     const char *model);
 
 void
-virStorageNetHostDefClear(virStorageNetHostDef *def);
-
-void
 virStorageNetHostDefFree(size_t nhosts,
                          virStorageNetHostDef *hosts);
 
@@ -493,6 +506,7 @@ virStorageSourceInitChainElement(virStorageSource *newelem,
 
 void
 virStorageSourcePoolDefFree(virStorageSourcePoolDef *def);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(virStorageSourcePoolDef, virStorageSourcePoolDefFree);
 
 void
 virStorageSourceClear(virStorageSource *def);
@@ -568,3 +582,10 @@ void
 virStorageSourceInitiatorClear(virStorageSourceInitiatorDef *initiator);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virStorageAuthDef, virStorageAuthDefFree);
+
+int
+virStorageSourceNetworkProtocolPathSplit(const char *path,
+                                         virStorageNetProtocol protocol,
+                                         char **pool,
+                                         char **namespace,
+                                         char **image);

@@ -241,7 +241,7 @@ virStorageBackendRBDOpenRADOSConn(virStorageBackendRBDState *ptr,
             goto cleanup;
 
         if (virStorageBackendRBDRADOSConfSet(ptr->cluster,
-                                             "auth_supported", "cephx") < 0)
+                                             "auth_client_required", "cephx") < 0)
             goto cleanup;
     } else {
         VIR_DEBUG("Not using cephx authorization");
@@ -250,8 +250,9 @@ virStorageBackendRBDOpenRADOSConn(virStorageBackendRBDState *ptr,
                            _("failed to create the RADOS cluster"));
             goto cleanup;
         }
+
         if (virStorageBackendRBDRADOSConfSet(ptr->cluster,
-                                             "auth_supported", "none") < 0)
+                                             "auth_client_required", "none") < 0)
             goto cleanup;
     }
 
@@ -331,8 +332,8 @@ virStorageBackendRBDOpenRADOSConn(virStorageBackendRBDState *ptr,
         }
 
         virUUIDFormat(def->uuid, uuidstr);
-        VIR_WARN("Storage Pool name='%s' uuid='%s' is tainted by custom "
-                 "config_opts from XML", def->name, uuidstr);
+        VIR_WARN("Storage Pool name='%s' uuid='%s' is tainted by custom config_opts from XML",
+                 def->name, uuidstr);
     }
 
     ptr->starttime = time(0);
@@ -503,7 +504,7 @@ volStorageBackendRBDGetFlags(rbd_image_t image G_GNUC_UNUSED,
     return 0;
 }
 
-static int
+static bool
 volStorageBackendRBDUseFastDiff(uint64_t features G_GNUC_UNUSED,
                                 uint64_t feature_flags G_GNUC_UNUSED)
 {
@@ -515,7 +516,8 @@ virStorageBackendRBDSetAllocation(virStorageVolDef *vol G_GNUC_UNUSED,
                                   rbd_image_t *image G_GNUC_UNUSED,
                                   rbd_image_info_t *info G_GNUC_UNUSED)
 {
-    return false;
+    virReportUnsupportedError();
+    return -1;
 }
 #endif
 
@@ -1441,9 +1443,21 @@ virStorageBackendRBDVolWipe(virStoragePoolObj *pool,
 }
 
 
+static int
+virStorageBackendRBDCheckPool(virStoragePoolObj *pool,
+                              bool *active)
+{
+    /* Return previous state remembered by the status XML. If the pool is not
+     * available we will fail to refresh it and end up in the same situation. */
+    *active = virStoragePoolObjIsActive(pool);
+    return 0;
+}
+
+
 virStorageBackend virStorageBackendRBD = {
     .type = VIR_STORAGE_POOL_RBD,
 
+    .checkPool = virStorageBackendRBDCheckPool,
     .refreshPool = virStorageBackendRBDRefreshPool,
     .createVol = virStorageBackendRBDCreateVol,
     .buildVol = virStorageBackendRBDBuildVol,

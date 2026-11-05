@@ -78,7 +78,7 @@ tryLoadOne(const char *dir, bool setAppHome, bool ignoreMissing,
            unsigned int *version)
 {
     int result = -1;
-    char *name = NULL;
+    g_autofree char *name = NULL;
     PFNVBOXGETXPCOMCFUNCTIONS pfnGetFunctions;
 
     if (dir != NULL) {
@@ -88,7 +88,6 @@ tryLoadOne(const char *dir, bool setAppHome, bool ignoreMissing,
             if (!ignoreMissing)
                 VIR_ERROR(_("Library '%1$s' doesn't exist"), name);
 
-            VIR_FREE(name);
             return -1;
         }
     } else {
@@ -152,8 +151,6 @@ tryLoadOne(const char *dir, bool setAppHome, bool ignoreMissing,
         g_clear_pointer(&hVBoxXPCOMC, dlclose);
     }
 
-    VIR_FREE(name);
-
     return result;
 }
 
@@ -184,7 +181,7 @@ VBoxCGlueInit(unsigned int *version)
         "/usr/local/lib/VirtualBox",
         "/Applications/VirtualBox.app/Contents/MacOS"
     };
-    const char *home = getenv("VBOX_APP_HOME");
+    const char *home = g_getenv("VBOX_APP_HOME");
 
     /* If the user specifies the location, try only that. */
     if (home != NULL) {

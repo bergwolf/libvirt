@@ -1,8 +1,8 @@
 project(
   'libvirt', 'c',
-  version: '9.5.0',
+  version: '12.10.0',
   license: 'LGPLv2+',
-  meson_version: '>= 0.56.0',
+  meson_version: '>= 0.57.0',
   default_options: [
     'buildtype=debugoptimized',
     'b_pie=true',
@@ -14,6 +14,10 @@ project(
 if meson.version().version_compare('>=0.64.0')
   fs = import('fs')
 endif
+
+i18n = import('i18n')
+
+po_dir = meson.project_source_root() / 'po'
 
 # figure out if we are building from git
 
@@ -78,7 +82,7 @@ endif
 
 runstatedir = get_option('runstatedir')
 if runstatedir == ''
-  runstatedir = localstatedir / 'run'
+  runstatedir = '/run'
 endif
 
 initconfdir = get_option('initconfdir')
@@ -95,6 +99,16 @@ if initconfdir == ''
   endif
 endif
 
+unitdir = get_option('unitdir')
+if unitdir == ''
+  unitdir = prefix / 'lib' / 'systemd' / 'system'
+endif
+
+sysusersdir = get_option('sysusersdir')
+if sysusersdir == ''
+  sysusersdir = prefix / 'lib' / 'sysusers.d'
+endif
+
 bindir = prefix / get_option('bindir')
 datadir = prefix / get_option('datadir')
 includedir = prefix / get_option('includedir')
@@ -104,6 +118,8 @@ localedir = prefix / get_option('localedir')
 mandir = prefix / get_option('mandir')
 sbindir = prefix / get_option('sbindir')
 sharedstatedir = prefix / get_option('sharedstatedir')
+polkitactionsdir = datadir / 'polkit-1' / 'actions'
+polkitrulesdir = datadir / 'polkit-1' / 'rules.d'
 
 docdir = get_option('docdir')
 if docdir == ''
@@ -112,6 +128,16 @@ endif
 
 confdir = sysconfdir / meson.project_name()
 pkgdatadir = datadir / meson.project_name()
+
+sshconfdir = get_option('sshconfdir')
+if sshconfdir == ''
+  sshconfdir = sysconfdir / 'ssh' / 'ssh_config.d'
+endif
+
+connection_driver_install_dir = libdir / 'libvirt' / 'connection-driver'
+storage_backend_install_dir = libdir / 'libvirt' / 'storage-backend'
+storage_file_install_dir = libdir / 'libvirt' / 'storage-file'
+lock_driver_install_dir = libdir / 'libvirt' / 'lock-driver'
 
 
 # generate configmake.h header
@@ -148,23 +174,6 @@ endif
 
 if packager_version != ''
   conf.set_quoted('PACKAGER_VERSION', packager_version)
-endif
-
-
-# test options
-
-if get_option('expensive_tests').auto()
-  use_expensive_tests = not git
-else
-  use_expensive_tests = get_option('expensive_tests').enabled()
-endif
-
-coverage_flags = []
-if get_option('test_coverage')
-  coverage_flags = [
-    '-fprofile-arcs',
-    '-ftest-coverage',
-  ]
 endif
 
 
@@ -223,6 +232,59 @@ libvirt_revision = arr_version[2].to_int()
 libvirt_lib_version = '@0@.@1@.@2@'.format(libvirt_so_version, libvirt_age, libvirt_revision)
 
 
+# Where we look for daemons and admin binaries during configure
+
+libvirt_sbin_path = []
+
+if host_machine.system() != 'windows'
+  libvirt_sbin_path += [
+    '/sbin',
+    '/usr/sbin',
+    '/usr/local/sbin',
+  ]
+endif
+
+
+# required programs check
+
+required_programs = [
+  'perl',
+  'python3',
+  'xmllint',
+  'xsltproc',
+]
+
+foreach name : required_programs
+  prog = find_program(name, dirs: libvirt_sbin_path)
+  varname = name.underscorify()
+  set_variable('@0@_prog'.format(varname), prog)
+endforeach
+
+# optional programs
+
+optional_programs = [
+  'augparse',
+  'black',
+  'flake8',
+  'pdwtags',
+  'pytest',
+]
+
+missing_optional_programs = []
+foreach name : optional_programs
+  prog = find_program(name, required: false, dirs: libvirt_sbin_path)
+  varname = name.underscorify()
+  if prog.found()
+    prog_path = prog.full_path()
+  else
+    prog_path = name
+    missing_optional_programs += [ name ]
+  endif
+
+  set_variable('@0@_prog'.format(varname), prog)
+endforeach
+
+
 # check compile flags
 
 cc = meson.get_compiler('c')
@@ -247,8 +309,12 @@ alloc_max = run_command(
   check: true,
 )
 
+stack_frame_size = 2048
+
 # sanitizer instrumentation may enlarge stack frames
-stack_frame_size = get_option('b_sanitize') == 'none' ? 4096 : 32768
+if get_option('b_sanitize') != 'none'
+  stack_frame_size = 32768
+endif
 
 # array_bounds=2 check triggers false positive on some GCC
 # versions when using sanitizers. Seen on Fedora 34 with
@@ -322,7 +388,6 @@ cc_flags += [
   '-Wimplicit-int',
   '-Wincompatible-pointer-types',
   '-Winit-self',
-  '-Winline',
   '-Wint-conversion',
   '-Wint-in-bool-context',
   '-Wint-to-pointer-cast',
@@ -446,26 +511,34 @@ if cc.get_id() == 'clang'
     cc_flags += [ '-fsemantic-interposition' ]
 endif
 
+if get_option('b_sanitize') != 'none'
+  # This is needed because of xdrproc_t. It's declared as a pointer to a
+  # function with variable arguments. But for catching type related problems at
+  # compile time, our rpcgen generates functions with proper types, say:
+  #
+  #    bool_t xdr_TestEnum(XDR *, TestEnum *);
+  #
+  # But passing xdr_TestEnum as a callback where xdrproc_t type is expected is
+  # undefined behavior. Yet, we want the comfort of compile time checks, so
+  # just disable the sanitizer warning for now. It's a big hammer though.
+  cc_flags += [ '-fno-sanitize=function' ]
+endif
+
 supported_cc_flags = []
 if get_option('warning_level') == '2'
   supported_cc_flags = cc.get_supported_arguments(cc_flags)
 
-  # on aarch64 error: -fstack-protector not supported for this target
-  if host_machine.cpu_family() != 'aarch64'
-    if host_machine.system() in [ 'linux', 'freebsd', 'windows' ]
-      # we prefer -fstack-protector-strong but fallback to -fstack-protector-all
-      fstack_cflags = cc.first_supported_argument([
-        '-fstack-protector-strong',
-        '-fstack-protector-all',
-      ])
-      supported_cc_flags += fstack_cflags
+  # we prefer -fstack-protector-strong but fallback to -fstack-protector-all
+  fstack_cflags = cc.first_supported_argument([
+    '-fstack-protector-strong',
+    '-fstack-protector-all',
+  ])
+  supported_cc_flags += fstack_cflags
 
-      # When building with mingw using -fstack-protector requires libssp library
-      # which is included by using -fstack-protector with linker.
-      if fstack_cflags.length() == 1 and host_machine.system() == 'windows'
-        add_project_link_arguments(fstack_cflags, language: 'c')
-      endif
-    endif
+  # When building with mingw using -fstack-protector requires libssp library
+  # which is included by using -fstack-protector with linker.
+  if fstack_cflags.length() == 1 and host_machine.system() == 'windows'
+    add_project_link_arguments(fstack_cflags, language: 'c')
   endif
 
   if supported_cc_flags.contains('-Wlogical-op')
@@ -514,7 +587,13 @@ if get_option('warning_level') == '2'
   endif
 
 endif
-add_project_arguments(supported_cc_flags, language: 'c')
+
+run_command([python3_prog,
+             'scripts' / 'meson-warnings.py',
+             meson.current_build_dir() / 'c-warnings.txt'] + supported_cc_flags,
+            check: true)
+
+add_project_arguments('@' + meson.current_build_dir() / 'c-warnings.txt', language: 'c')
 
 if cc.has_argument('-Wsuggest-attribute=format')
   conf.set('WITH_SUGGEST_ATTRIBUTE_FORMAT', 1)
@@ -548,6 +627,10 @@ endif
 
 libvirt_no_indirect = cc.get_supported_link_arguments([
   '-Wl,--no-copy-dt-needed-entries',
+])
+
+libvirt_no_warn_duplicate_libraries = cc.get_supported_link_arguments([
+  '-Wl,-no_warn_duplicate_libraries',
 ])
 
 if host_machine.system() == 'windows'
@@ -593,6 +676,8 @@ functions = [
   'posix_fallocate',
   'posix_memalign',
   'prlimit',
+  'sched_get_priority_min',
+  'sched_getaffinity',
   'sched_setscheduler',
   'setgroups',
   'setrlimit',
@@ -613,6 +698,12 @@ stat_functions = [
 
 functions += stat_functions
 
+open_functions = [
+  '__open_2',
+]
+
+functions += open_functions
+
 foreach function : functions
   if cc.has_function(function)
     conf.set('WITH_@0@'.format(function.to_upper()), 1)
@@ -627,6 +718,13 @@ foreach function : stat_functions
 endforeach
 
 
+foreach function : open_functions
+  if cc.has_header_symbol('fcntl.h', function)
+    conf.set('WITH_@0@_DECL'.format(function.to_upper()), 1)
+  endif
+endforeach
+
+
 # various header checks
 
 headers = [
@@ -634,6 +732,7 @@ headers = [
   'ifaddrs.h',
   'libtasn1.h',
   'linux/kvm.h',
+  'linux/iommufd.h',
   'mntent.h',
   'net/ethernet.h',
   'net/if.h',
@@ -642,6 +741,7 @@ headers = [
   'sched.h',
   'sys/auxv.h',
   'sys/ioctl.h',
+  'sys/mman.h',
   'sys/mount.h',
   'sys/syscall.h',
   'sys/ucred.h',
@@ -678,13 +778,20 @@ symbols = [
 
   # Check for BSD approach for setting MAC addr
   [ 'net/if_dl.h', 'link_addr', '#include <sys/types.h>\n#include <sys/socket.h>' ],
-
-  [ 'sched.h', 'cpu_set_t' ],
 ]
+
+if host_machine.system() == 'linux'
+  symbols += [
+    # process management
+    [ 'sys/syscall.h', 'SYS_pidfd_open' ],
+    # vsock
+    [ 'linux/vm_sockets.h', 'struct sockaddr_vm', '#include <sys/socket.h>' ],
+  ]
+endif
 
 foreach symbol : symbols
   if cc.has_header_symbol(symbol[0], symbol[1], args: '-D_GNU_SOURCE', prefix: symbol.get(2, ''))
-    conf.set('WITH_DECL_@0@'.format(symbol[1].to_upper()), 1)
+    conf.set('WITH_DECL_@0@'.format(symbol[1].underscorify().to_upper()), 1)
   endif
 endforeach
 
@@ -762,87 +869,6 @@ endforeach
 conf.set('SIZEOF_LONG', cc.sizeof('long'))
 
 
-# Where we look for daemons and admin binaries during configure
-
-libvirt_sbin_path = []
-
-if host_machine.system() != 'windows'
-  libvirt_sbin_path += [
-    '/sbin',
-    '/usr/sbin',
-    '/usr/local/sbin',
-  ]
-endif
-
-
-# required programs check
-
-required_programs = [
-  'perl',
-  'python3',
-  'xmllint',
-  'xsltproc',
-]
-
-required_programs_groups = [
-  { 'name': 'rpcgen', 'prog': [ 'rpcgen', 'portable-rpcgen' ] },
-]
-
-if host_machine.system() == 'freebsd'
-  required_programs += 'ifconfig'
-endif
-
-foreach name : required_programs
-  prog = find_program(name, dirs: libvirt_sbin_path)
-  varname = name.underscorify()
-  conf.set_quoted(varname.to_upper(), prog.full_path())
-  set_variable('@0@_prog'.format(varname), prog)
-endforeach
-
-foreach item : required_programs_groups
-  prog = find_program(item.get('prog'), dirs: libvirt_sbin_path)
-  varname = item.get('name').underscorify()
-  conf.set_quoted(varname.to_upper(), prog.full_path())
-  set_variable('@0@_prog'.format(varname), prog)
-endforeach
-
-# optional programs
-
-optional_programs = [
-  'augparse',
-  'dmidecode',
-  'ebtables',
-  'flake8',
-  'ip',
-  'ip6tables',
-  'iptables',
-  'iscsiadm',
-  'mdevctl',
-  'mm-ctl',
-  'modprobe',
-  'ovs-vsctl',
-  'passt',
-  'pdwtags',
-  'rmmod',
-  'scrub',
-  'tc',
-  'udevadm',
-]
-
-foreach name : optional_programs
-  prog = find_program(name, required: false, dirs: libvirt_sbin_path)
-  varname = name.underscorify()
-  if prog.found()
-    prog_path = prog.full_path()
-  else
-    prog_path = name
-  endif
-
-  conf.set_quoted(varname.to_upper(), prog_path)
-  set_variable('@0@_prog'.format(varname), prog)
-endforeach
-
-
 # early checks where lot of other packages depend on the result
 
 if not get_option('driver_remote').disabled()
@@ -851,7 +877,7 @@ if not get_option('driver_remote').disabled()
   # use extra library as it's provided by libc directly.
   if host_machine.system() == 'windows'
     xdr_dep = cc.find_library('portablexdr', required: get_option('driver_remote'))
-  elif host_machine.system() == 'linux'
+  elif host_machine.system() in [ 'linux', 'gnu' ]
     xdr_dep = dependency('libtirpc', required: get_option('driver_remote'))
   elif host_machine.system() in [ 'freebsd', 'darwin' ]
     xdr_dep = cc.find_library('c', required: get_option('driver_remote'))
@@ -868,16 +894,36 @@ else
   xdr_dep = dependency('', required: false)
 endif
 
+if xdr_dep.found()
+  xdrproc_3arg_code = '''
+  #include <rpc/xdr.h>
+
+  bool_t test_filter(XDR *xdr, void *data, unsigned int opaque_flags) {
+      return TRUE;
+  }
+
+  int main() {
+      XDR xdr;
+      xdrproc_t filter = (xdrproc_t)&test_filter;
+      (*filter)(&xdr, NULL, 0);
+      return 0;
+  }
+  '''
+  if cc.compiles(xdrproc_3arg_code, dependencies: xdr_dep)
+    conf.set('XDRPROC_T_3ARGS', 1)
+  endif
+endif
 
 # generic build dependencies
 
-# FIXME rewrite to use dependency()
-acl_dep = cc.find_library('acl', required: false)
+acl_dep = dependency('libacl', required: false)
 if acl_dep.found()
   conf.set('WITH_LIBACL', 1)
 endif
 
-apparmor_dep = dependency('libapparmor', required: get_option('apparmor'))
+apparmor_version = '3.0.0'
+apparmor_dep = dependency('libapparmor', version: '>=' + apparmor_version,
+                          required: get_option('apparmor'))
 if apparmor_dep.found()
   conf.set('WITH_APPARMOR', 1)
   conf.set_quoted('APPARMOR_DIR', sysconfdir / 'apparmor.d')
@@ -899,8 +945,7 @@ if not get_option('apparmor_profiles').disabled()
   endif
 endif
 
-# FIXME rewrite to use dependency() once we can use 2.4.48
-attr_dep = cc.find_library('attr', required: get_option('attr'))
+attr_dep = dependency('libattr', required: get_option('attr'))
 if attr_dep.found()
   conf.set('WITH_LIBATTR', 1)
 endif
@@ -917,6 +962,11 @@ blkid_version = '2.17'
 blkid_dep = dependency('blkid', version: '>=' + blkid_version, required: get_option('blkid'))
 if blkid_dep.found()
   conf.set('WITH_BLKID', 1)
+endif
+
+libbsd_dep = dependency('libbsd', required: false)
+if libbsd_dep.found()
+  conf.set('WITH_LIBBSD', 1)
 endif
 
 capng_dep = dependency('libcap-ng', required: get_option('capng'))
@@ -957,7 +1007,7 @@ else
   endif
 endif
 
-glib_version = '2.56.0'
+glib_version = '2.68'
 glib_dep = dependency('glib-2.0', version: '>=' + glib_version)
 gobject_dep = dependency('gobject-2.0', version: '>=' + glib_version)
 if host_machine.system() == 'windows'
@@ -983,6 +1033,13 @@ glusterfs_dep = dependency('glusterfs-api', version: '>=' + glusterfs_version, r
 gnutls_version = '3.6.0'
 gnutls_dep = dependency('gnutls', version: '>=' + gnutls_version)
 
+json_c_version = '0.14'
+json_c_dep = dependency('json-c', version: '>=' + json_c_version, required: get_option('json_c'))
+if json_c_dep.found()
+  conf.set('WITH_JSON_C', 1)
+  conf.set('WITH_JSON', 1)
+endif
+
 # Check for BSD kvm (kernel memory interface)
 if host_machine.system() == 'freebsd'
   libkvm_dep = cc.find_library('kvm')
@@ -992,6 +1049,39 @@ endif
 
 libiscsi_version = '1.18.0'
 libiscsi_dep = dependency('libiscsi', version: '>=' + libiscsi_version, required: get_option('libiscsi'))
+
+if not get_option('nbdkit').disabled()
+  libnbd_version = '1.0'
+  libnbd_dep = dependency('libnbd', version: '>=' + libnbd_version, required: false)
+
+  nbdkit_requested = get_option('nbdkit').enabled()
+  nbdkit_syscall_ok = conf.has('WITH_DECL_SYS_PIDFD_OPEN')
+  nbdkit_libnbd_ok = libnbd_dep.found()
+
+  if not nbdkit_syscall_ok and nbdkit_requested
+    error('nbdkit support requires pidfd_open(2)')
+  endif
+  if not nbdkit_libnbd_ok and nbdkit_requested
+    error('nbdkit support requires libnbd')
+  endif
+
+  if nbdkit_syscall_ok and nbdkit_libnbd_ok
+    conf.set('WITH_NBDKIT', 1)
+  endif
+endif
+if not conf.has('WITH_NBDKIT')
+  libnbd_dep = dependency('', required: false)
+endif
+
+# default value for storage_use_nbdkit config option.
+# For now 'auto' just maps to disabled, but in the future it may depend on
+# which security drivers are enabled
+use_nbdkit_default = get_option('nbdkit_config_default').enabled()
+
+if use_nbdkit_default and not conf.has('WITH_NBDKIT')
+  error('nbdkit_config_default requires nbdkit to be enabled')
+endif
+conf.set10('USE_NBDKIT_DEFAULT', use_nbdkit_default)
 
 libnl_version = '3.0'
 if not get_option('libnl').disabled() and host_machine.system() == 'linux'
@@ -1028,6 +1118,9 @@ if conf.has('WITH_REMOTE')
   libssh_dep = dependency('libssh', version: '>=' + libssh_version, required: get_option('libssh'))
   if libssh_dep.found()
     conf.set('WITH_LIBSSH', 1)
+    if cc.has_function('ssh_channel_get_exit_state', dependencies: libssh_dep)
+      conf.set('WITH_SSH_CHANNEL_GET_EXIT_STATE', 1)
+    endif
   endif
 else
   libssh_dep = dependency('', required: false)
@@ -1097,8 +1190,7 @@ else
   intl_dep = dependency('', required: false)
 endif
 
-# FIXME rewrite to use dependency() once we can use 2.0.14
-numactl_dep = cc.find_library('numa', required: get_option('numactl'))
+numactl_dep = dependency('numa', required: get_option('numactl'))
 if numactl_dep.found()
   conf.set('WITH_NUMACTL', 1)
   if cc.has_function('numa_set_preferred_many', dependencies: numactl_dep)
@@ -1178,6 +1270,8 @@ if not get_option('sanlock').disabled()
       conf.set('WITH_SANLOCK_STRERROR', 1)
     endif
   endif
+else
+  sanlock_dep = dependency('', required: false)
 endif
 
 sasl_version = '2.1.26'
@@ -1297,48 +1391,27 @@ if wireshark_dep.found()
   if cc.check_header('wireshark/ws_version.h')
     conf.set('WITH_WS_VERSION', 1)
   endif
-endif
 
-yajl_version = '2.0.3'
-yajl_dep = dependency('yajl', version: '>=' + yajl_version, required: get_option('yajl'))
-if yajl_dep.found()
-  # Kludge for yajl include path on non-Linux
-  #
-  # As of 2.1.0, upstream yajl.pc has -I${includedir}/yajl among
-  # its Cflags, which is clearly wrong. This does not affect Linux
-  # because ${includedir} is already part of the default include path,
-  # but on other platforms that's not the case and the result is that
-  # <yajl/yajl.h> can't be located, causing the build to fail.
-  #
-  # Since upstream development for yajl has stopped years ago, there's
-  # little hope of this issue getting fixed by a new upstream release.
-  # Some non-Linux operating systems such as FreeBSD have elected to
-  # carry a small downstream patch, but in the case of Homebrew on
-  # macOS this approach has been rejected[1] and so we're left with no
-  # choice but to work around the issue ourselves.
-  #
-  # [1] https://github.com/Homebrew/homebrew-core/pull/74516
-  if host_machine.system() != 'linux'
-    yajl_includedir = yajl_dep.get_variable(pkgconfig : 'includedir')
-    if yajl_includedir.contains('include/yajl')
-      rc = run_command(
-        'python3', '-c',
-        'print("@0@".replace("@1@", "@2@"))'.format(
-          yajl_includedir, 'include/yajl', 'include',
-        ),
-        check: true,
-      )
-      yajl_includedir = rc.stdout().strip()
-      yajl_dep = declare_dependency(
-        compile_args: [ '-I' + yajl_includedir ],
-        dependencies: [ yajl_dep ],
-      )
-    endif
+  # Find wmem.h
+  # But it's not as easy as you'd think. Ubuntu 20.04 has split parts of
+  # libwireshark.so into libwsutil.so but:
+  # a) wireshark.pc never mentions it,
+  # b) libwsutil-dev package doesn't install pkg-config file.
+  # Fortunately, it's fixed in 24.04.
+  if cc.check_header('wireshark/epan/wmem/wmem.h', dependencies: wireshark_dep)
+    conf.set('WITH_WS_EPAN_WMEM', 1)
+  elif cc.check_header('wireshark/wsutil/wmem/wmem.h', dependencies: wireshark_dep)
+    conf.set('WITH_WS_WSUTIL_WMEM', 1)
+  else
+    error('Unable to locate wmem.h file')
   endif
 
-  conf.set('WITH_YAJL', 1)
+  # TODO: drop wsutil dep once support for Ubuntu 20.04 is dropped
+  wsutil_dep = dependency('', required: false)
+  if not cc.has_function('wmem_free', dependencies: wireshark_dep)
+    wsutil_dep = cc.find_library('wsutil', required: true)
+  endif
 endif
-
 
 # generic build dependencies checks
 
@@ -1410,7 +1483,6 @@ if udev_dep.found() and not pciaccess_dep.found()
   error('You must install the pciaccess module to build with udev')
 endif
 
-
 # build driver options
 
 remote_default_mode = get_option('remote_default_mode')
@@ -1440,17 +1512,12 @@ if not get_option('driver_libvirtd').disabled()
   endif
 endif
 
-if not get_option('driver_bhyve').disabled() and host_machine.system() == 'freebsd'
-  bhyve_prog = find_program('bhyve', required: get_option('driver_bhyve'))
-  bhyvectl_prog = find_program('bhyvectl', required: get_option('driver_bhyve'))
-  bhyveload_prog = find_program('bhyveload', required: get_option('driver_bhyve'))
+if not get_option('libvirtd').disabled() and conf.has('WITH_LIBVIRTD')
+  conf.set('WITH_MONOLITHIC_LIBVIRTD', 1)
+endif
 
-  if bhyve_prog.found() and bhyvectl_prog.found() and bhyveload_prog.found()
-    conf.set('WITH_BHYVE', 1)
-    conf.set_quoted('BHYVE', bhyve_prog.full_path())
-    conf.set_quoted('BHYVECTL', bhyvectl_prog.full_path())
-    conf.set_quoted('BHYVELOAD', bhyveload_prog.full_path())
-  endif
+if not get_option('driver_bhyve').disabled() and host_machine.system() == 'freebsd'
+  conf.set('WITH_BHYVE', 1)
 elif get_option('driver_bhyve').enabled()
   error('The bhyve driver cannot be enabled')
 endif
@@ -1532,8 +1599,15 @@ elif get_option('driver_lxc').enabled()
   error('linux and remote_driver are required for LXC')
 endif
 
-if not get_option('driver_ch').disabled() and host_machine.system() == 'linux' and (host_machine.cpu_family() == 'x86_64' or host_machine.cpu_family() == 'aarch64')
-  use_ch = true
+if not get_option('driver_ch').disabled()
+  if host_machine.system() == 'linux' and (host_machine.cpu_family() == 'x86_64' or host_machine.cpu_family() == 'aarch64')
+    use_ch = true
+  else
+    use_ch = false
+    if get_option('driver_ch').enabled()
+      error('linux on x86_64 or aarch64 is required to build Cloud-Hypervisor driver')
+    endif
+  endif
 
   if not conf.has('WITH_LIBVIRTD')
     use_ch = false
@@ -1542,10 +1616,10 @@ if not get_option('driver_ch').disabled() and host_machine.system() == 'linux' a
     endif
   endif
 
-  if not yajl_dep.found()
+  if not json_c_dep.found()
     use_ch = false
     if get_option('driver_ch').enabled()
-      error('YAJL 2 is required to build Cloud-Hypervisor driver')
+      error('json-c is required to build Cloud-Hypervisor driver')
     endif
   endif
 
@@ -1580,8 +1654,14 @@ elif get_option('driver_network').enabled()
   error('libvirtd must be enabled to build the network driver')
 endif
 
-if udev_dep.found() and conf.has('WITH_LIBVIRTD')
+if not get_option('driver_nodedev').disabled() and conf.has('WITH_LIBVIRTD') and udev_dep.found()
   conf.set('WITH_NODE_DEVICES', 1)
+elif get_option('driver_nodedev').enabled()
+  if not conf.has('WITH_LIBVIRTD')
+    error('libvirtd must be enabled to build the node device driver')
+  elif not udev_dep.found()
+    error('udev library is required to build the node device driver')
+  endif
 endif
 
 if not get_option('driver_openvz').disabled() and host_machine.system() == 'linux'
@@ -1593,10 +1673,10 @@ endif
 if not get_option('driver_qemu').disabled()
   use_qemu = true
 
-  if not yajl_dep.found()
+  if not json_c_dep.found()
     use_qemu = false
     if get_option('driver_qemu').enabled()
-      error('YAJL 2 is required to build QEMU driver')
+      error('json-c is required to build QEMU driver')
     endif
   endif
 
@@ -1669,7 +1749,7 @@ if not get_option('driver_qemu').disabled()
   endif
 endif
 
-if not get_option('driver_secrets').disabled() and conf.has('WITH_LIBVIRTD')
+if not get_option('driver_secret').disabled() and conf.has('WITH_LIBVIRTD')
   conf.set('WITH_SECRETS', 1)
 endif
 
@@ -1714,17 +1794,17 @@ endif
 
 use_storage = false
 
-if conf.has('WITH_LIBVIRTD')
+if not get_option('driver_storage').disabled() and conf.has('WITH_LIBVIRTD')
   if not get_option('storage_dir').disabled()
     use_storage = true
     conf.set('WITH_STORAGE_DIR', 1)
   endif
 
-  if not get_option('storage_disk').disabled() and devmapper_dep.found() and libparted_dep.found()
+  if not get_option('storage_disk').disabled() and libparted_dep.found()
     use_storage = true
     conf.set('WITH_STORAGE_DISK', 1)
   elif get_option('storage_disk').enabled()
-    error('You must install libparted and libdevmapper to compile libvirt with disk storage driver')
+    error('You must install libparted to compile libvirt with disk storage driver')
   endif
 
   if not get_option('storage_fs').disabled()
@@ -1744,29 +1824,9 @@ if conf.has('WITH_LIBVIRTD')
     endif
 
     if fs_enable
-      mount_prog = find_program('mount', required: get_option('storage_fs'), dirs: libvirt_sbin_path)
-      umount_prog = find_program('umount', required: get_option('storage_fs'), dirs: libvirt_sbin_path)
-      mkfs_prog = find_program('mkfs', required: get_option('storage_fs'), dirs: libvirt_sbin_path)
-
-      if not mount_prog.found() or not umount_prog.found() or not mkfs_prog.found()
-        fs_enable = false
-      endif
-    endif
-
-    if fs_enable
       use_storage = true
 
       conf.set('WITH_STORAGE_FS', 1)
-      conf.set_quoted('MOUNT', mount_prog.full_path())
-      conf.set_quoted('UMOUNT', umount_prog.full_path())
-      conf.set_quoted('MKFS', mkfs_prog.full_path())
-
-      showmount_prog = find_program('showmount', required: false, dirs: libvirt_sbin_path)
-      showmount_path = ''
-      if showmount_prog.found()
-        showmount_path = showmount_prog.full_path()
-      endif
-      conf.set_quoted('SHOWMOUNT', showmount_path)
     endif
   endif
 
@@ -1777,11 +1837,11 @@ if conf.has('WITH_LIBVIRTD')
     error('Need glusterfs (libgfapi) for gluster storage driver')
   endif
 
-  if not get_option('storage_iscsi').disabled() and iscsiadm_prog.found()
+  if not get_option('storage_iscsi').disabled() and host_machine.system() == 'linux'
     use_storage = true
     conf.set('WITH_STORAGE_ISCSI', 1)
   elif get_option('storage_iscsi').enabled()
-    error('We need iscsiadm for iSCSI storage driver')
+    error('Linux host needed for iSCSI storage driver using iscsiadm')
   endif
 
   if not get_option('storage_iscsi_direct').disabled() and libiscsi_dep.found()
@@ -1791,32 +1851,12 @@ if conf.has('WITH_LIBVIRTD')
     error('Need libiscsi for iscsi-direct storage driver')
   endif
 
-  if not get_option('storage_lvm').disabled()
+  if not get_option('storage_lvm').disabled() and host_machine.system() == 'linux'
     lvm_enable = true
-    lvm_progs = [
-      'pvcreate', 'vgcreate', 'lvcreate',
-      'pvremove', 'vgremove', 'lvremove',
-      'lvchange', 'vgchange', 'vgscan',
-      'pvs', 'vgs', 'lvs',
-    ]
-    foreach name : lvm_progs
-      set_variable(
-        '@0@_prog'.format(name),
-        find_program(name, required: get_option('storage_lvm'), dirs: libvirt_sbin_path)
-      )
-      if not get_variable('@0@_prog'.format(name)).found()
-        lvm_enable = false
-      endif
-    endforeach
-
-    if lvm_enable
-      use_storage = true
-      conf.set('WITH_STORAGE_LVM', 1)
-
-      foreach name : lvm_progs
-        conf.set_quoted(name.to_upper(), get_variable('@0@_prog'.format(name)).full_path())
-      endforeach
-    endif
+    use_storage = true
+    conf.set('WITH_STORAGE_LVM', 1)
+  elif get_option('storage_lvm').enabled()
+    error('Linux host needed for LVM storage driver')
   endif
 
   if not get_option('storage_mpath').disabled() and host_machine.system() == 'linux' and devmapper_dep.found()
@@ -1857,10 +1897,15 @@ if conf.has('WITH_LIBVIRTD')
     use_storage = true
     conf.set('WITH_STORAGE_ZFS', 1)
   endif
-endif
 
-if use_storage
-  conf.set('WITH_STORAGE', 1)
+  if use_storage
+    conf.set('WITH_STORAGE', 1)
+  elif get_option('driver_storage').enabled()
+    error('storage driver enabled but no storage backends enabled')
+  endif
+
+elif get_option('driver_storage').enabled() and not conf.has('WITH_LIBVIRTD')
+  error('libvirtd must be enabled to build the storage driver')
 endif
 
 
@@ -1926,9 +1971,9 @@ endif
 
 if not get_option('nss').disabled()
   use_nss = true
-  if not yajl_dep.found()
+  if not json_c_dep.found()
     if get_option('nss').enabled()
-      error('Can\'t build nss plugin without yajl')
+      error('Can\'t build nss plugin without json-c')
     else
       use_nss = false
     endif
@@ -1964,20 +2009,49 @@ if not get_option('nss').disabled()
   endif
 endif
 
-if not get_option('numad').disabled() and numactl_dep.found()
-  numad_prog = find_program('numad', required: get_option('numad'), dirs: libvirt_sbin_path)
-  if numad_prog.found()
-    conf.set('WITH_NUMAD', 1)
-    conf.set_quoted('NUMAD', numad_prog.full_path())
-  endif
+if not get_option('numad').disabled() and numactl_dep.found() and host_machine.system() == 'linux'
+  conf.set('WITH_NUMAD', 1)
 elif get_option('numad').enabled()
-  error('You must have numactl enabled for numad support.')
+  error('You must have a Linux host with numactl enabled for numad support.')
 endif
 
 # nwfilter should only be compiled for linux, and only if the
 # libvirt daemon is also being compiled
-if conf.has('WITH_LIBVIRTD') and host_machine.system() == 'linux'
+if not get_option('driver_nwfilter').disabled() and conf.has('WITH_LIBVIRTD') and host_machine.system() == 'linux'
   conf.set('WITH_NWFILTER', 1)
+elif get_option('driver_nwfilter').enabled()
+  if not conf.has('WITH_LIBVIRTD')
+    error('libvirtd must be enabled to build the network driver')
+  else
+    error('linux host is required to build the nwfilter driver')
+  endif
+endif
+
+if conf.has('WITH_NWFILTER') or conf.has('WITH_NETWORK')
+  firewall_backend_priority = get_option('firewall_backend_priority')
+  if firewall_backend_priority.length() == 0
+      if host_machine.system() == 'linux'
+          firewall_backend_priority = ['nftables', 'iptables']
+      elif host_machine.system() == 'freebsd'
+          firewall_backend_priority = ['pf']
+      else
+          # No firewall impl on non-Linux so far, so force 'none'
+          # as placeholder
+          firewall_backend_priority = ['none']
+      endif
+  else
+      if host_machine.system() != 'linux'
+          error('firewall backend priority only supported on linux hosts')
+      endif
+  endif
+
+  backends = []
+  foreach backend: firewall_backend_priority
+      backend = 'VIR_FIREWALL_BACKEND_' + backend.to_upper()
+      backends += backend
+  endforeach
+
+  conf.set('FIREWALL_BACKENDS', ', '.join(backends))
 endif
 
 if not get_option('pm_utils').disabled()
@@ -1991,13 +2065,65 @@ if not get_option('pm_utils').disabled()
   endif
 endif
 
+if not get_option('ssh_proxy').disabled() and conf.has('WITH_DECL_STRUCT_SOCKADDR_VM')
+  conf.set('WITH_SSH_PROXY', 1)
+elif get_option('ssh_proxy').enabled()
+  error('ssh proxy requires vm_sockets.h which wasn\'t found')
+endif
+
 if not get_option('sysctl_config').disabled() and host_machine.system() == 'linux'
   conf.set('WITH_SYSCTL', 1)
 elif get_option('sysctl_config').enabled()
   error('sysctl configuration is supported only on linux')
 endif
 
-conf.set_quoted('TLS_PRIORITY', get_option('tls_priority'))
+prio = get_option('tls_priority')
+if prio == 'auto'
+    # If local OS has 'crypto-policies' then default to that
+    policy = '/etc/crypto-policies/config'
+    if get_option('system') and \
+       run_command('test', '-f', policy, check: false).returncode() == 0
+        prio = '@LIBVIRT,SYSTEM'
+    else
+        prio = 'NORMAL'
+    endif
+endif
+conf.set_quoted('TLS_PRIORITY', prio)
+
+
+# test options
+
+tests_enabled = [ not get_option('tests').disabled() ]
+if tests_enabled[0] and \
+   cc.get_id() == 'clang' and \
+   not supported_cc_flags.contains('-fsemantic-interposition') \
+   and get_option('optimization') != '0'
+   # If CLang doesn't support -fsemantic-interposition then our
+   # mocking doesn't work. The best we can do is to not run the
+   # test suite.
+   msg = 'Forcibly disabling tests because CLang lacks -fsemantic-interposition. Update CLang or disable optimization'
+   if get_option('tests').enabled()
+     error(msg)
+   endif
+   tests_enabled = [ false, '!!! @0@ !!!'.format(msg) ]
+endif
+
+if get_option('expensive_tests').auto()
+  use_expensive_tests = not git and tests_enabled[0]
+else
+  use_expensive_tests = get_option('expensive_tests').enabled()
+  if use_expensive_tests and not tests_enabled[0]
+    error('cannot enable expensive tests when tests are disabled')
+  endif
+endif
+
+coverage_flags = []
+if get_option('test_coverage')
+  coverage_flags = [
+    '-fprofile-arcs',
+    '-ftest-coverage',
+  ]
+endif
 
 
 # Various definitions
@@ -2023,19 +2149,15 @@ subdir('src')
 
 subdir('tools')
 
-build_tests = [ not get_option('tests').disabled() ]
-if build_tests[0] and \
-   cc.get_id() == 'clang' and \
-   not supported_cc_flags.contains('-fsemantic-interposition') \
-   and get_option('optimization') != '0'
-   # If CLang doesn't support -fsemantic-interposition then our
-   # mocking doesn't work. The best we can do is to not run the
-   # test suite.
-   build_tests = [ false, '!!! Forcibly disabling tests because CLang lacks -fsemantic-interposition. Update CLang or disable optimization !!!' ]
-endif
-
-if build_tests[0]
+if tests_enabled[0]
   subdir('tests')
+else
+  # Ensure that 'meson test' fails when tests are disabled, as opposed to
+  # misleadingly succeeding at doing absolutely nothing
+  test(
+    'tests-are-disabled',
+    python3_prog, args: [ '-c', 'raise Exception("tests are disabled")' ],
+  )
 endif
 
 subdir('examples')
@@ -2116,8 +2238,8 @@ if git
 
   foreach file : dist_files
     meson.add_dist_script(
-      meson_python_prog.full_path(), python3_prog.full_path(), meson_dist_prog.full_path(),
-      meson.project_build_root(), file
+      meson_python_prog.full_path(), python3_prog.full_path(),
+      meson_dist_prog.full_path(), file
     )
   endforeach
 endif
@@ -2144,45 +2266,49 @@ run_command('chmod', 'a+x', meson.current_build_dir() / 'run', check: true)
 # print configuration summary
 
 driver_summary = {
-  'QEMU': conf.has('WITH_QEMU'),
-  'OpenVZ': conf.has('WITH_OPENVZ'),
-  'VMware': conf.has('WITH_VMWARE'),
-  'VBox': conf.has('WITH_VBOX'),
-  'libxl': conf.has('WITH_LIBXL'),
-  'LXC': conf.has('WITH_LXC'),
+  'Bhyve': conf.has('WITH_BHYVE'),
   'Cloud-Hypervisor': conf.has('WITH_CH'),
   'ESX': conf.has('WITH_ESX'),
   'Hyper-V': conf.has('WITH_HYPERV'),
-  'vz': conf.has('WITH_VZ'),
-  'Bhyve': conf.has('WITH_BHYVE'),
-  'Test': conf.has('WITH_TEST'),
-  'Remote': conf.has('WITH_REMOTE'),
-  'Network': conf.has('WITH_NETWORK'),
-  'Libvirtd': conf.has('WITH_LIBVIRTD'),
   'Interface': conf.has('WITH_INTERFACE'),
+  'Libvirtd': conf.has('WITH_LIBVIRTD'),
+  'libxl': conf.has('WITH_LIBXL'),
+  'LXC': conf.has('WITH_LXC'),
+  'Monolithic libvirtd': conf.has('WITH_MONOLITHIC_LIBVIRTD'),
+  'Network': conf.has('WITH_NETWORK'),
+  'Node device': conf.has('WITH_NODE_DEVICES'),
+  'NWFilter': conf.has('WITH_NWFILTER'),
+  'OpenVZ': conf.has('WITH_OPENVZ'),
+  'QEMU': conf.has('WITH_QEMU'),
+  'Remote': conf.has('WITH_REMOTE'),
+  'Storage': conf.has('WITH_STORAGE'),
+  'Test': conf.has('WITH_TEST'),
+  'VBox': conf.has('WITH_VBOX'),
+  'VMware': conf.has('WITH_VMWARE'),
+  'vz': conf.has('WITH_VZ'),
 }
 summary(driver_summary, section: 'Drivers', bool_yn: true)
 
 storagedriver_summary = {
   'Dir': conf.has('WITH_STORAGE_DIR'),
+  'Disk': conf.has('WITH_STORAGE_DISK'),
   'FS': conf.has('WITH_STORAGE_FS'),
-  'NetFS': conf.has('WITH_STORAGE_FS'),
-  'LVM': conf.has('WITH_STORAGE_LVM'),
+  'Gluster': conf.has('WITH_STORAGE_GLUSTER'),
   'iSCSI': conf.has('WITH_STORAGE_ISCSI'),
   'iscsi-direct': conf.has('WITH_STORAGE_ISCSI_DIRECT'),
-  'SCSI': conf.has('WITH_STORAGE_SCSI'),
+  'LVM': conf.has('WITH_STORAGE_LVM'),
   'mpath': conf.has('WITH_STORAGE_MPATH'),
-  'Disk': conf.has('WITH_STORAGE_DISK'),
+  'NetFS': conf.has('WITH_STORAGE_FS'),
   'RBD': conf.has('WITH_STORAGE_RBD'),
-  'Gluster': conf.has('WITH_STORAGE_GLUSTER'),
-  'ZFS': conf.has('WITH_STORAGE_ZFS'),
+  'SCSI': conf.has('WITH_STORAGE_SCSI'),
   'Virtuozzo storage': conf.has('WITH_STORAGE_VSTORAGE'),
+  'ZFS': conf.has('WITH_STORAGE_ZFS'),
 }
 summary(storagedriver_summary, section: 'Storage Drivers', bool_yn: true)
 
 secdriver_summary = {
-  'SELinux': conf.has('WITH_SECDRIVER_SELINUX'),
   'AppArmor': conf.has('WITH_SECDRIVER_APPARMOR'),
+  'SELinux': conf.has('WITH_SECDRIVER_SELINUX'),
 }
 summary(secdriver_summary, section: 'Security Drivers', bool_yn: true)
 
@@ -2192,41 +2318,43 @@ drivermod_summary = {
 summary(drivermod_summary, section: 'Driver Loadable Modules', bool_yn: true)
 
 libs_summary = {
-  'acl': acl_dep.found(),
-  'apparmor': apparmor_dep.found(),
-  'attr': attr_dep.found(),
-  'audit': audit_dep.found(),
-  'bash_completion': bash_completion_dep.found(),
-  'blkid': blkid_dep.found(),
-  'capng': capng_dep.found(),
-  'curl': curl_dep.found(),
-  'devmapper': devmapper_dep.found(),
-  'dlopen': dlopen_dep.found(),
-  'fuse': fuse_dep.found(),
-  'glusterfs': glusterfs_dep.found(),
-  'libiscsi': libiscsi_dep.found(),
-  'libkvm': libkvm_dep.found(),
-  'libnl': libnl_dep.found(),
-  'libparted': libparted_dep.found(),
-  'libpcap': libpcap_dep.found(),
-  'libssh': libssh_dep.found(),
-  'libssh2': libssh2_dep.found(),
-  'libutil': libutil_dep.found(),
-  'netcf': conf.has('WITH_NETCF'),
+  'acl': acl_dep,
+  'apparmor': apparmor_dep,
+  'attr': attr_dep,
+  'audit': audit_dep,
+  'bash_completion': bash_completion_dep,
+  'blkid': blkid_dep,
+  'capng': capng_dep,
+  'curl': curl_dep,
+  'devmapper': devmapper_dep,
+  'dlopen': dlopen_dep,
+  'fuse': fuse_dep,
+  'glusterfs': glusterfs_dep,
+  'json-c': json_c_dep,
+  'libbsd': libbsd_dep,
+  'libiscsi': libiscsi_dep,
+  'libkvm': libkvm_dep,
+  'libnbd': libnbd_dep,
+  'libnl': libnl_dep,
+  'libparted': libparted_dep,
+  'libpcap': libpcap_dep,
+  'libssh': libssh_dep,
+  'libssh2': libssh2_dep,
+  'libutil': libutil_dep,
+  'netcf': netcf_dep,
   'NLS': have_gnu_gettext_tools,
-  'numactl': numactl_dep.found(),
-  'openwsman': openwsman_dep.found(),
-  'parallels-sdk': parallels_sdk_dep.found(),
-  'pciaccess': pciaccess_dep.found(),
+  'numactl': numactl_dep,
+  'openwsman': openwsman_dep,
+  'parallels-sdk': parallels_sdk_dep,
+  'pciaccess': pciaccess_dep,
   'polkit': conf.has('WITH_POLKIT'),
-  'rbd': rbd_dep.found(),
-  'readline': readline_dep.found(),
-  'sanlock': conf.has('WITH_SANLOCK'),
-  'sasl': sasl_dep.found(),
-  'selinux': selinux_dep.found(),
-  'udev': udev_dep.found(),
-  'xdr': xdr_dep.found(),
-  'yajl': yajl_dep.found(),
+  'rbd': rbd_dep,
+  'readline': readline_dep,
+  'sanlock': sanlock_dep,
+  'sasl': sasl_dep,
+  'selinux': selinux_dep,
+  'udev': udev_dep,
+  'xdr': xdr_dep,
 }
 summary(libs_summary, section: 'Libraries', bool_yn: true)
 
@@ -2248,28 +2376,45 @@ else
   loader_res = ''
 endif
 misc_summary = {
-  'Warning Flags': supported_cc_flags,
+  'Char device locks': chrdev_lock_files,
   'docs': gen_docs,
-  'tests': build_tests,
   'DTrace': conf.has('WITH_DTRACE_PROBES'),
   'firewalld': conf.has('WITH_FIREWALLD'),
   'firewalld-zone': conf.has('WITH_FIREWALLD_ZONE'),
+  'Init script': init_script,
+  'Loader/NVRAM': loader_res,
+  'nbdkit': conf.has('WITH_NBDKIT'),
   'nss': conf.has('WITH_NSS'),
   'numad': conf.has('WITH_NUMAD'),
-  'Init script': init_script,
-  'Char device locks': chrdev_lock_files,
-  'Loader/NVRAM': loader_res,
   'pm_utils': conf.has('WITH_PM_UTILS'),
-  'virt-login-shell': conf.has('WITH_LOGIN_SHELL'),
-  'virt-host-validate': conf.has('WITH_HOST_VALIDATE'),
+  'SSH proxy': conf.has('WITH_SSH_PROXY'),
+  'sysctl config': conf.has('WITH_SYSCTL'),
+  'tests': tests_enabled,
   'TLS priority': conf.get_unquoted('TLS_PRIORITY'),
+  'virt-host-validate': conf.has('WITH_HOST_VALIDATE'),
+  'virt-login-shell': conf.has('WITH_LOGIN_SHELL'),
+  'Warning Flags': supported_cc_flags,
 }
+if conf.has('WITH_NWFILTER') or conf.has('WITH_NETWORK')
+  misc_summary += {
+    'firewall backends': firewall_backend_priority,
+  }
+endif
 summary(misc_summary, section: 'Miscellaneous', bool_yn: true, list_sep: ' ')
 
 devtools_summary = {
-  'wireshark_dissector': wireshark_dep.found(),
+  'wireshark_dissector': wireshark_dep,
 }
 summary(devtools_summary, section: 'Developer Tools', bool_yn: true)
+
+if missing_optional_programs.length() > 0
+  missing_list = ' '.join(missing_optional_programs)
+  missing_warn = ' (some tests will be skipped!)'
+  test_programs_summary = {
+    'Missing': missing_list + missing_warn,
+  }
+  summary(test_programs_summary, section: 'Optional programs', bool_yn: true)
+endif
 
 if conf.has('WITH_QEMU')
   qemu_warn = ''

@@ -1287,6 +1287,18 @@ static const virErrorMsgTuple virErrorMsgStrings[] = {
     [VIR_ERR_MULTIPLE_DOMAINS] = {
         N_("multiple matching domains found"),
         N_("multiple matching domains found: %1$s") },
+    [VIR_ERR_NO_NETWORK_METADATA] = {
+        N_("metadata not found"),
+        N_("metadata not found: %1$s") },
+    [VIR_ERR_AGENT_COMMAND_TIMEOUT] = {
+        N_("guest agent command timed out"),
+        N_("guest agent command timed out: %1$s") },
+    [VIR_ERR_AGENT_COMMAND_FAILED] = {
+        N_("guest agent command failed"),
+        N_("guest agent command failed: %1$s") },
+    [VIR_ERR_INVALID_ENCR_KEY_SECRET] = {
+        N_("Invalid encryption key for the secret"),
+        N_("Invalid encryption key for the secret: %1$s") },
 };
 
 G_STATIC_ASSERT(G_N_ELEMENTS(virErrorMsgStrings) == VIR_ERR_NUMBER_LAST);

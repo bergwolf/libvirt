@@ -1,3 +1,5 @@
+.. role:: since
+
 ===============================
 Efficient live full disk backup
 ===============================
@@ -10,10 +12,10 @@ Overview
 Live full disk backups are preferred in many scenarios, *despite* their
 space requirements.  The following outlines an efficient method to do
 that using libvirt's APIs.  This method involves concepts: the notion of
-`backing chains <https://libvirt.org/kbase/backing_chains.html>`_,
+`backing chains <backing_chains.html>`_,
 `QCOW2 overlays
-<https://qemu.readthedocs.io/en/latest/interop/live-block-operations.html#disk-image-backing-chain-notation>`_,
-and a special operation called "active block-commit", which allows
+<https://www.qemu.org/docs/master/interop/live-block-operations.html#disk-image-backing-chain-notation>`_,
+and a special operation called *active block-commit*, which allows
 live-merging an overlay disk image into its backing file.
 
 Two kinds of backup: "push" and "pull"
@@ -43,7 +45,7 @@ This document covers only the full backups using the "push" mode.
 Full disk backup using "push" mode
 ==================================
 
-The below approach uses the modern backup API, virDomainBackupBegin().
+The below approach uses the modern backup API, ``virDomainBackupBegin()``.
 This requires libvirt-7.2.0 and QEMU-4.2, or higher versions.
 
 #. Start the guest::
@@ -84,6 +86,24 @@ This requires libvirt-7.2.0 and QEMU-4.2, or higher versions.
     15M -rw-r--r--. 1 qemu qemu 15M May 10 12:22 vm1.qcow2
     21M -rw-------. 1 root root 21M May 10 12:23 vm1.qcow2.1620642185
 
+Shutdown of the guest OS during backup
+--------------------------------------
+
+The backup job is a long running job, potentially copying a lot of data, which
+requires the VM to be active (The backup is done by the qemu process) and
+can't be continued if the VM shuts down. This includes shut down initiated by
+the guest OS itself.
+
+:since:`Since libvirt-11.10` the ``virDomainBackupBegin()`` supports the
+``VIR_DOMAIN_BACKUP_BEGIN_PRESERVE_SHUTDOWN_DOMAIN`` flag
+(``virsh backup-begin --preserve-domain-on-shutdown``) which instructs libvirt
+to avoid termination of the VM if the guest OS shuts down while the backup is
+still running. The VM is in that scenario reset and paused instead of terminated
+allowing the backup to finish. Once the backup finishes the VM process is
+terminated. Users can resume the VM (e.g. ``virsh resume``) which causes it
+to boot normally using the existing VM process and will continue to run after
+completion of the backup job.
+
 
 Full backup with older libvirt versions
 =======================================
@@ -92,8 +112,13 @@ This is the alternative in case you cannot use libvirt-7.2.0 and
 QEMU-4.2 for some reason.  But this assumes you're using *at least* QEMU
 2.1 and libvirt-1.2.9.
 
+.. warning::
+   We strongly suggest that the backup api (``virsh backup-begin``) is used
+   as it doesn't require deleting files as deleting a wrong file can lead
+   to data loss.
+
 This backup approach is slightly more involved, and predates the
-virDomainBackupBegin() API: Assuming a guest with a single disk image,
+``virDomainBackupBegin()`` API: Assuming a guest with a single disk image,
 create a temporary live QCOW2 overlay (commonly called as "external
 snapshot") to track the live guest writes.  Then backup the original
 disk image while the guest (live QEMU) keeps writing to the temporary
@@ -120,13 +145,13 @@ it.
 
     $ virsh snapshot-create-as --domain vm1 overlay1 \
         --diskspec vda,file=/var/lib/libvirt/images/overlay1.qcow2 \
-        --disk-only
+        --disk-only --no-metadata
 
    The disk image chain looks as follows::
 
     base.raw <-- overlay1.qcow2 (live QEMU)
 
-  .. note::
+   .. note::
     Above, if you have QEMU guest agent installed in your virtual
     machine, use the ``--quiesce`` option with ``virsh
     snapshot-create-as [...]`` to ensure you have a consistent disk
@@ -141,8 +166,7 @@ it.
 #. Now, take a backup the original image, ``base.raw``, to a different
    location using ``cp`` or ``rsync``::
 
-    $ cp /var/lib/libvirt/images/base.raw
-        /export/backups/copy1_base.raw
+    $ cp /var/lib/libvirt/images/base.raw /export/backups/copy1_base.raw
 
     # Or:
 
@@ -156,7 +180,7 @@ it.
     $ virsh domblklist vm1
     Target     Source
     ------------------------------------------------
-    vda        vda,file=/var/lib/libvirt/images/overlay1.qcow2
+    vda        /var/lib/libvirt/images/overlay1.qcow2
 
 #. Once the backup of the original image completes, now perform the
    "active block-commit" to live-merge the contents of

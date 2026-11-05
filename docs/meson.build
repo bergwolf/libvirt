@@ -32,6 +32,7 @@ docs_rst_files = [
   'ci',
   'ci-dashboard',
   'ci-runners',
+  'clangd',
   'coding-style',
   'committer-guidelines',
   'compiling',
@@ -48,6 +49,7 @@ docs_rst_files = [
   'drvesx',
   'drvhyperv',
   'drvlxc',
+  'drvnetwork',
   'drvnodedev',
   'drvopenvz',
   'drvqemu',
@@ -95,7 +97,9 @@ docs_rst_files = [
   'programming-languages',
   'python',
   'remote',
+  'secretencryption',
   'securityprocess',
+  'ssh-proxy',
   'storage',
   'strategy',
   'styleguide',
@@ -174,7 +178,6 @@ docs_programs_groups = [
 foreach item : docs_programs_groups
   prog = find_program(item.get('prog'), dirs: libvirt_sbin_path)
   varname = item.get('name').underscorify()
-  conf.set_quoted(varname.to_upper(), prog.full_path())
   set_variable('@0@_prog'.format(varname), prog)
 endforeach
 
@@ -299,7 +302,9 @@ foreach data : html_xslt_gen
       '--stringparam', 'pagesrc', data.get('source', ''),
       '--stringparam', 'builddir', meson.project_build_root(),
       '--stringparam', 'timestamp', docs_timestamp,
-      '--stringparam', 'href_base', data.get('href_base', ''),
+      '--stringparam', 'link_href_base', data.get('href_base', ''),
+      '--stringparam', 'asset_href_base', data.get('href_base', ''),
+      '--stringparam', 'edit_href_base', 'https://gitlab.com/libvirt/libvirt/-/blob/master/',
       '--nonet',
       site_xsl,
       '@INPUT@',
@@ -350,13 +355,21 @@ run_target(
   depends: install_web_deps,
 )
 
-test(
-  'check-html-references',
-  python3_prog,
-  args: [
-    check_html_references_prog.full_path(),
-    '--webroot',
-    meson.project_build_root() / 'docs'
-  ],
-  env: runutf8,
-)
+if tests_enabled[0]
+  test(
+    'check-html-references',
+    python3_prog,
+    args: [
+      check_html_references_prog.full_path(),
+      '--require-https',
+      '--project-uri', 'https://libvirt.org',
+      '--project-uri-exceptions', 'docs/manpages/',
+      '--project-uri-exceptions', 'docs/html/',
+      '--webroot',
+      meson.project_build_root() / 'docs'
+    ],
+    depends: install_web_deps,
+    env: runutf8,
+    suite: 'script'
+  )
+endif

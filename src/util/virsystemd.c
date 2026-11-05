@@ -34,7 +34,6 @@
 #include "virerror.h"
 #include "virfile.h"
 #include "virhash.h"
-#include "virsocketaddr.h"
 
 #define VIR_FROM_THIS VIR_FROM_SYSTEMD
 
@@ -57,7 +56,7 @@ struct _virSystemdActivationEntry {
 static void virSystemdEscapeName(virBuffer *buf,
                                  const char *name)
 {
-    static const char hextable[16] = "0123456789abcdef";
+    static const char hextable[] = "0123456789abcdef";
 
 #define ESCAPE(c) \
     do { \
@@ -127,6 +126,7 @@ char *virSystemdMakeSliceName(const char *partition)
 
 static int virSystemdHasMachinedCachedValue = -1;
 static int virSystemdHasLogindCachedValue = -1;
+static int virSystemdHasResolvedCachedValue = -1;
 
 /* Reset the cache from tests for testing the underlying dbus calls
  * as well */
@@ -140,55 +140,75 @@ void virSystemdHasLogindResetCachedValue(void)
     virSystemdHasLogindCachedValue = -1;
 }
 
+void
+virSystemdHasResolvedResetCachedValue(void)
+{
+    virSystemdHasResolvedCachedValue = -1;
+}
 
-/* -2 = machine1 is not supported on this machine
- * -1 = error
- *  0 = machine1 is available
+
+/**
+ * virSystemdHasService:
+ *
+ * Check whether a DBus @service is enabled and either the service itself is
+ * running or will be started on demand by a running systemd1 service.
+ *
+ * Returns
+ *   -2 when service is not supported on this machine
+ *   -1 on error
+ *    0 when service is available
  */
-int
-virSystemdHasMachined(void)
+static int
+virSystemdHasService(const char *service,
+                     int *cached)
 {
     int ret;
     int val;
 
-    val = g_atomic_int_get(&virSystemdHasMachinedCachedValue);
+    val = g_atomic_int_get(cached);
     if (val != -1)
         return val;
 
-    if ((ret = virGDBusIsServiceEnabled("org.freedesktop.machine1")) < 0) {
+    if ((ret = virGDBusIsServiceEnabled(service)) < 0) {
         if (ret == -2)
-            g_atomic_int_set(&virSystemdHasMachinedCachedValue, -2);
+            g_atomic_int_set(cached, -2);
         return ret;
     }
 
-    if ((ret = virGDBusIsServiceRegistered("org.freedesktop.systemd1")) == -1)
+    if ((ret = virGDBusIsServiceRegistered(service)) == -1)
         return ret;
-    g_atomic_int_set(&virSystemdHasMachinedCachedValue, ret);
+
+    if (ret == -2) {
+        if ((ret = virGDBusIsServiceRegistered("org.freedesktop.systemd1")) == -1)
+            return ret;
+    }
+
+    g_atomic_int_set(cached, ret);
     return ret;
 }
+
+
+int
+virSystemdHasMachined(void)
+{
+    return virSystemdHasService("org.freedesktop.machine1",
+                                &virSystemdHasMachinedCachedValue);
+}
+
 
 int
 virSystemdHasLogind(void)
 {
-    int ret;
-    int val;
+    return virSystemdHasService("org.freedesktop.login1",
+                                &virSystemdHasLogindCachedValue);
+}
 
-    val = g_atomic_int_get(&virSystemdHasLogindCachedValue);
-    if (val != -1)
-        return val;
 
-    ret = virGDBusIsServiceEnabled("org.freedesktop.login1");
-    if (ret < 0) {
-        if (ret == -2)
-            g_atomic_int_set(&virSystemdHasLogindCachedValue, -2);
-        return ret;
-    }
-
-    if ((ret = virGDBusIsServiceRegistered("org.freedesktop.login1")) == -1)
-        return ret;
-
-    g_atomic_int_set(&virSystemdHasLogindCachedValue, ret);
-    return ret;
+int
+virSystemdHasResolved(void)
+{
+    return virSystemdHasService("org.freedesktop.resolve1",
+                                &virSystemdHasResolvedCachedValue);
 }
 
 
@@ -337,6 +357,9 @@ virSystemdGetMachineUnitByPID(pid_t pid)
  * @nnicindexes: number of network interface indexes in list
  * @nicindexes: list of network interface indexes
  * @partition: name of the slice to place the machine in
+ * @maxthreads: maximum number of threads the VM process can use
+ * @daemonDomainShutdown: shutdown of domains on host shutdown is done by the
+ *                        daemon instead of the libvirt-guests script
  *
  * Returns 0 on success, -1 on fatal error, or -2 if systemd-machine is not available
  */
@@ -349,7 +372,8 @@ int virSystemdCreateMachine(const char *name,
                             size_t nnicindexes,
                             int *nicindexes,
                             const char *partition,
-                            unsigned int maxthreads)
+                            unsigned int maxthreads,
+                            bool daemonDomainShutdown)
 {
     int rc;
     GDBusConnection *conn;
@@ -441,11 +465,23 @@ int virSystemdCreateMachine(const char *name,
                                           uuid, 16, sizeof(unsigned char));
         gnicindexes = g_variant_new_fixed_array(G_VARIANT_TYPE("i"),
                                                 nicindexes, nnicindexes, sizeof(int));
-        gprops = g_variant_new_parsed("[('Slice', <%s>),"
-                                      " ('After', <['libvirtd.service', %s]>),"
-                                      " ('Before', <['virt-guest-shutdown.target']>)]",
-                                      slicename,
-                                      servicename);
+
+        if (daemonDomainShutdown) {
+            /* When domains are shut down by the daemon rather than the
+             * "libvirt-guests" script we need ensure that their unit
+             * is ordered so that it's shutdown after the libvirt daemon itself */
+            gprops = g_variant_new_parsed("[('Slice', <%s>),"
+                                          " ('Before', <['libvirtd.service', %s]>)]",
+                                          slicename,
+                                          servicename);
+        } else {
+            gprops = g_variant_new_parsed("[('Slice', <%s>),"
+                                          " ('After', <['libvirtd.service', %s]>),"
+                                          " ('Before', <['virt-guest-shutdown.target']>)]",
+                                          slicename,
+                                          servicename);
+        }
+
         message = g_variant_new("(s@ayssus@ai@a(sv))",
                                 name,
                                 guuid,
@@ -604,12 +640,16 @@ int virSystemdTerminateMachine(const char *name)
     return 0;
 }
 
-void
-virSystemdNotifyStartup(void)
+#ifdef WIN32
+static void
+virSystemdNotify(const char *msg G_GNUC_UNUSED)
 {
-#ifndef WIN32
+}
+#else
+static void
+virSystemdNotify(const char *msg)
+{
     const char *path;
-    const char *msg = "READY=1";
     int fd;
     struct sockaddr_un un = {
         .sun_family = AF_UNIX,
@@ -624,7 +664,9 @@ virSystemdNotifyStartup(void)
         .msg_iovlen = 1,
     };
 
-    if (!(path = getenv("NOTIFY_SOCKET"))) {
+    VIR_DEBUG("Notify '%s'", msg);
+
+    if (!(path = g_getenv("NOTIFY_SOCKET"))) {
         VIR_DEBUG("Skipping systemd notify, not requested");
         return;
     }
@@ -651,7 +693,44 @@ virSystemdNotifyStartup(void)
         VIR_WARN("Failed to notify systemd");
 
     VIR_FORCE_CLOSE(fd);
+}
 #endif /* !WIN32 */
+
+void virSystemdNotifyReady(void)
+{
+    virSystemdNotify("READY=1");
+}
+
+void virSystemdNotifyReload(void)
+{
+    gint64 now = g_get_monotonic_time();
+    g_autofree char *msg = g_strdup_printf(
+        "RELOADING=1\nMONOTONIC_USEC=%lld", (long long int)now);
+    virSystemdNotify(msg);
+}
+
+void virSystemdNotifyStopping(void)
+{
+    virSystemdNotify("STOPPING=1");
+}
+
+void virSystemdNotifyExtendTimeout(int secs)
+{
+    g_autofree char *msg = g_strdup_printf("EXTEND_TIMEOUT_USEC=%llu",
+                                           secs * 1000ull * 1000ull);
+    virSystemdNotify(msg);
+}
+
+void virSystemdNotifyStatus(const char *fmt, ...)
+{
+    g_autofree char *msg1 = NULL;
+    g_autofree char *msg2 = NULL;
+    va_list ap;
+    va_start(ap, fmt);
+    msg1 = g_strdup_vprintf(fmt, ap);
+    va_end(ap);
+    msg2 = g_strdup_printf("STATUS=%s", msg1);
+    virSystemdNotify(msg2);
 }
 
 static int
@@ -812,7 +891,7 @@ virSystemdGetListenFDs(void)
 
     VIR_DEBUG("Setting up networking from caller");
 
-    if (!(pidstr = getenv("LISTEN_PID"))) {
+    if (!(pidstr = g_getenv("LISTEN_PID"))) {
         VIR_DEBUG("No LISTEN_PID from caller");
         return 0;
     }
@@ -828,7 +907,7 @@ virSystemdGetListenFDs(void)
         return 0;
     }
 
-    if (!(fdstr = getenv("LISTEN_FDS"))) {
+    if (!(fdstr = g_getenv("LISTEN_FDS"))) {
         VIR_DEBUG("No LISTEN_FDS from caller");
         return 0;
     }
@@ -875,7 +954,7 @@ virSystemdActivationNew(int nfds)
 
     act->fds = virHashNew(virSystemdActivationEntryFree);
 
-    fdnames = getenv("LISTEN_FDNAMES");
+    fdnames = g_getenv("LISTEN_FDNAMES");
     if (!fdnames) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Missing LISTEN_FDNAMES env from systemd socket activation"));
@@ -1018,4 +1097,82 @@ virSystemdActivationFree(virSystemdActivation *act)
     g_clear_pointer(&act->fds, g_hash_table_unref);
 
     g_free(act);
+}
+
+
+/**
+ * virSystemdResolvedRegisterNameServer:
+ * @link: network interface ID
+ * @domain: registered domain
+ * @addr: address the DNS server is listening on
+ *
+ * Talk to systemd-resolved and register a DNS server listening on @addr
+ * as a resolver for @domain. This configuration is bound to @link interface
+ * and automatically dropped when the interface goes away.
+ *
+ * Returns -2 when systemd-resolved is unavailable,
+ *         -1 on error,
+ *          0 on success.
+ */
+int
+virSystemdResolvedRegisterNameServer(int link,
+                                     const char *domain,
+                                     virSocketAddr *addr)
+{
+    int rc;
+    GDBusConnection *conn;
+    GVariant *params;
+    GVariant *byteArray;
+    unsigned char addrBytes[16];
+    int nBytes;
+
+    if ((rc = virSystemdHasResolved()) < 0)
+        return rc;
+
+    if (!(conn = virGDBusGetSystemBus()))
+        return -1;
+
+    /*
+     * SetLinkDomains(in  i ifindex,
+     *                in  a(sb) domains);
+     */
+    params = g_variant_new_parsed("(%i, [(%s, true)])",
+                                  (gint32) link,
+                                  domain);
+
+    rc = virGDBusCallMethod(conn, NULL, NULL, NULL,
+                            "org.freedesktop.resolve1",
+                            "/org/freedesktop/resolve1",
+                            "org.freedesktop.resolve1.Manager",
+                            "SetLinkDomains",
+                            params);
+    g_variant_unref(params);
+
+    if (rc < 0)
+        return -1;
+
+    /*
+     * SetLinkDNS(in  i ifindex,
+     *            in  a(iay) addresses);
+     */
+    nBytes = virSocketAddrBytes(addr, addrBytes, sizeof(addrBytes));
+    byteArray = g_variant_new_fixed_array(G_VARIANT_TYPE("y"),
+                                          addrBytes, nBytes, 1);
+    params = g_variant_new_parsed("(%i, [(%i, %@ay)])",
+                                  (gint32) link,
+                                  VIR_SOCKET_ADDR_FAMILY(addr),
+                                  byteArray);
+
+    rc = virGDBusCallMethod(conn, NULL, NULL, NULL,
+                            "org.freedesktop.resolve1",
+                            "/org/freedesktop/resolve1",
+                            "org.freedesktop.resolve1.Manager",
+                            "SetLinkDNS",
+                            params);
+    g_variant_unref(params);
+
+    if (rc < 0)
+        return -1;
+
+    return 0;
 }

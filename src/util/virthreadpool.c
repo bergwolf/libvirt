@@ -82,7 +82,7 @@ struct virThreadPoolWorkerData {
 /* Test whether the worker needs to quit if the current number of workers @count
  * is greater than @limit actually allows.
  */
-static inline bool virThreadPoolWorkerQuitHelper(size_t count, size_t limit)
+static bool virThreadPoolWorkerQuitHelper(size_t count, size_t limit)
 {
     return count > limit;
 }
@@ -184,7 +184,7 @@ virThreadPoolExpand(virThreadPool *pool, size_t gain, bool priority)
     size_t i = 0;
     struct virThreadPoolWorkerData *data = NULL;
 
-    VIR_EXPAND_N(*workers, *curWorkers, gain);
+    VIR_REALLOC_N(*workers, *curWorkers + gain);
 
     for (i = 0; i < gain; i++) {
         g_autofree char *name = NULL;
@@ -199,7 +199,7 @@ virThreadPoolExpand(virThreadPool *pool, size_t gain, bool priority)
         else
             name = g_strdup(pool->jobName);
 
-        if (virThreadCreateFull(&(*workers)[i],
+        if (virThreadCreateFull(&(*workers)[*curWorkers],
                                 false,
                                 virThreadPoolWorker,
                                 name,
@@ -207,15 +207,13 @@ virThreadPoolExpand(virThreadPool *pool, size_t gain, bool priority)
                                 data) < 0) {
             VIR_FREE(data);
             virReportSystemError(errno, "%s", _("Failed to create thread"));
-            goto error;
+            return -1;
         }
+
+        (*curWorkers)++;
     }
 
     return 0;
-
- error:
-    *curWorkers -= gain - i;
-    return -1;
 }
 
 virThreadPool *
@@ -429,8 +427,7 @@ virThreadPoolSetParameters(virThreadPool *pool,
     if ((maxWorkers == 0 && pool->maxWorkers > 0) ||
         (maxWorkers > 0 && pool->maxWorkers == 0)) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("maxWorkers must not be switched from zero to non-zero"
-                         " and vice versa"));
+                       _("maxWorkers must not be switched from zero to non-zero and vice versa"));
         return -1;
     }
 

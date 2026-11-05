@@ -142,7 +142,7 @@ qemuAssignDeviceControllerAlias(virDomainDef *domainDef,
         return;
 
     if (controller->type == VIR_DOMAIN_CONTROLLER_TYPE_PCI) {
-        if (!virQEMUCapsHasPCIMultiBus(domainDef)) {
+        if (!qemuDomainSupportsPCIMultibus(domainDef)) {
             /* qemus that don't support multiple PCI buses have
              * hardcoded the name of their single PCI controller as
              * "pci".
@@ -184,6 +184,9 @@ qemuAssignDeviceControllerAlias(virDomainDef *domainDef,
             return;
         }
     } else if (controller->type == VIR_DOMAIN_CONTROLLER_TYPE_USB) {
+        if (controller->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_NONE)
+            return;
+
         /* first USB device is "usb", others are normal "usb%d" */
         if (controller->idx == 0) {
             controller->info.alias = g_strdup("usb");
@@ -214,8 +217,17 @@ qemuAssignDeviceDiskAlias(virDomainDef *def,
     if (!disk->info.alias) {
         if (disk->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DRIVE) {
             if (disk->bus == VIR_DOMAIN_DISK_BUS_SCSI) {
-                controllerModel = qemuDomainFindSCSIControllerModel(def,
-                                                                    &disk->info);
+                virDomainControllerDef *cont;
+
+                if (!(cont = virDomainDeviceFindSCSIController(def, &disk->info.addr.drive))) {
+                    virReportError(VIR_ERR_INTERNAL_ERROR,
+                                   _("unable to find a SCSI controller for idx=%1$d"),
+                                   disk->info.addr.drive.controller);
+                    return -1;
+                }
+
+                controllerModel = cont->model;
+
                 if (controllerModel < 0)
                     return -1;
             }
@@ -244,11 +256,12 @@ qemuAssignDeviceDiskAlias(virDomainDef *def,
      * need the full path into /machine/peripheral as a historical artifact.
      */
     if (!diskPriv->qomName) {
-        switch ((virDomainDiskBus) disk->bus) {
+        switch (disk->bus) {
         case VIR_DOMAIN_DISK_BUS_FDC:
         case VIR_DOMAIN_DISK_BUS_IDE:
         case VIR_DOMAIN_DISK_BUS_SATA:
         case VIR_DOMAIN_DISK_BUS_SCSI:
+        case VIR_DOMAIN_DISK_BUS_NVME:
             diskPriv->qomName = g_strdup(disk->info.alias);
             break;
 
@@ -258,8 +271,23 @@ qemuAssignDeviceDiskAlias(virDomainDef *def,
             break;
 
         case VIR_DOMAIN_DISK_BUS_USB:
-            diskPriv->qomName = g_strdup_printf("/machine/peripheral/%s/%s.0/legacy[0]",
-                                                disk->info.alias, disk->info.alias);
+            switch (disk->model) {
+            case VIR_DOMAIN_DISK_MODEL_USB_STORAGE:
+                diskPriv->qomName = g_strdup_printf("/machine/peripheral/%s/%s.0/legacy[0]",
+                                                    disk->info.alias, disk->info.alias);
+                break;
+
+            case VIR_DOMAIN_DISK_MODEL_USB_BOT:
+                diskPriv->qomName = g_strdup_printf("%s-device", disk->info.alias);
+                break;
+
+            case VIR_DOMAIN_DISK_MODEL_DEFAULT:
+            case VIR_DOMAIN_DISK_MODEL_VIRTIO:
+            case VIR_DOMAIN_DISK_MODEL_VIRTIO_TRANSITIONAL:
+            case VIR_DOMAIN_DISK_MODEL_VIRTIO_NON_TRANSITIONAL:
+            case VIR_DOMAIN_DISK_MODEL_LAST:
+                break;
+            }
             break;
 
         case VIR_DOMAIN_DISK_BUS_XEN:
@@ -622,10 +650,14 @@ qemuAssignDeviceVsockAlias(virDomainVsockDef *vsock)
 
 
 static void
-qemuAssignDeviceIOMMUAlias(virDomainIOMMUDef *iommu)
+qemuAssignDeviceIOMMUAlias(virDomainDef *def,
+                           virDomainIOMMUDef **iommu)
 {
-    if (!iommu->info.alias)
-        iommu->info.alias = g_strdup("iommu0");
+    size_t i;
+    for (i = 0; i < def->niommus; i++) {
+        if (!iommu[i]->info.alias)
+            iommu[i]->info.alias = g_strdup_printf("iommu%zu", i);
+    }
 }
 
 
@@ -646,6 +678,14 @@ qemuAssignDeviceCryptoAlias(virDomainDef *def,
     }
 
     crypto->info.alias = g_strdup_printf("crypto%d", maxidx);
+}
+
+
+static void
+qemuAssignDevicePstoreAlias(virDomainPstoreDef *pstore)
+{
+    if (!pstore->info.alias)
+        pstore->info.alias = g_strdup("pstore0");
 }
 
 
@@ -733,11 +773,14 @@ qemuAssignDeviceAliases(virDomainDef *def)
     if (def->vsock) {
         qemuAssignDeviceVsockAlias(def->vsock);
     }
-    if (def->iommu)
-        qemuAssignDeviceIOMMUAlias(def->iommu);
+    if (def->niommus > 0) {
+        qemuAssignDeviceIOMMUAlias(def, def->iommus);
+    }
     for (i = 0; i < def->ncryptos; i++) {
         qemuAssignDeviceCryptoAlias(def, def->cryptos[i]);
     }
+    if (def->pstore)
+        qemuAssignDevicePstoreAlias(def->pstore);
 
     return 0;
 }

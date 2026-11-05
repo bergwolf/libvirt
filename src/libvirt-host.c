@@ -179,9 +179,7 @@ virConnectGetType(virConnectPtr conn)
  * @conn: pointer to the hypervisor connection
  * @hvVer: return value for the version of the running hypervisor (OUT)
  *
- * Get the version level of the Hypervisor running. This may work only with
- * hypervisor call, i.e. with privileged access to the hypervisor, not
- * with a Read-Only connection.
+ * Get the version level of the Hypervisor running.
  *
  * Returns -1 in case of error, 0 otherwise. if the version can't be
  *    extracted by lack of capacities returns 0 and @hvVer is 0, otherwise
@@ -412,17 +410,20 @@ virConnectGetMaxVcpus(virConnectPtr conn,
  * Use of this API is strongly discouraged as the information provided
  * is not guaranteed to be accurate on all hardware platforms.
  *
- * The mHZ value merely reflects the speed that the first CPU in the
- * machine is currently running at. This speed may vary across CPUs
- * and changes continually as the host OS throttles.
+ * The CPU frequency value (field 'mhz' in virNodeInfo) merely reflects the
+ * speed that the first CPU in the machine is currently running at. This speed
+ * may vary across CPUs and changes continually as the host OS throttles.
  *
- * The nodes/sockets/cores/threads data is potentially inaccurate as
- * it assumes a symmetric installation. If one NUMA node has more
- * sockets populated that another NUMA node this information will be
- * wrong. It is also not able to report about CPU dies.
+ * The virNodeInfo structure is not extensible thus only supports global
+ * nodes/sockets/cores/threads (sockets/cores/threads is per NUMA node)
+ * topology information. If the host CPU has any further groupings (e.g.
+ * dies, clusters, etc) or the NUMA topology is non-symmetrical the structure
+ * can't faithfully represent the system. In such cases a fake topology
+ * (nodes = 1, sockets = 1, cores = number of host cpus, threads = 1) which
+ * only correctly represents the total host CPU count is reported.
  *
  * Applications are recommended to use the virConnectGetCapabilities()
- * call instead, which provides all the information except CPU mHZ,
+ * call instead, which provides all the information except CPU frequency,
  * in a more accurate representation.
  *
  * Returns 0 in case of success and -1 in case of failure.
@@ -614,7 +615,7 @@ virNodeGetCPUStats(virConnectPtr conn,
  *       if ((params = malloc(sizeof(virNodeMemoryStats) * nparams)) == NULL)
  *           goto error;
  *       memset(params, cellNum, 0, sizeof(virNodeMemoryStats) * nparams);
- *       if (virNodeGetMemoryStats(conn, params, &nparams, 0))
+ *       if (virNodeGetMemoryStats(conn, cellNum, params, &nparams, 0))
  *           goto error;
  *   }
  *
@@ -632,6 +633,8 @@ virNodeGetCPUStats(virConnectPtr conn,
  *     The buffers memory usage.(KB)
  * VIR_NODE_MEMORY_STATS_CACHED:
  *     The cached memory usage.(KB)
+ * VIR_NODE_MEMORY_STATS_AVAILABLE:
+ *     The available memory usage.(KB)
  *
  * Returns -1 in case of error, 0 in case of success.
  *
@@ -1299,24 +1302,31 @@ virConnectBaselineCPU(virConnectPtr conn,
  * @ncpus: number of CPUs in xmlCPUs
  * @flags: bitwise-OR of virConnectBaselineCPUFlags
  *
- * Computes the most feature-rich CPU which is compatible with all given CPUs
- * and can be provided by the specified hypervisor. For best results the
- * host-model CPUs as advertised by virConnectGetDomainCapabilities() should be
- * passed in @xmlCPUs. Any of @emulator, @arch, @machine, and @virttype
- * parameters may be NULL; libvirt will choose sensible defaults tailored to
- * the host and its current configuration.
+ * Computes the most feature-rich CPU which is compatible with all given CPUs.
+ * This API must be called on one of the hosts specified in @xmlCPUs. Calling
+ * it on another host results in an undefined behavior as the computed CPU
+ * model is influenced by the hypervisor (the result may use an unexpected CPU
+ * model or some features may disabled even though they are supported on all
+ * input CPUs). The undefined behavior can be avoided using
+ * VIR_CONNECT_BASELINE_CPU_IGNORE_HOST flag (see below).
  *
  * This is different from virConnectBaselineCPU() which doesn't consider any
  * hypervisor abilities when computing the best CPU.
+ *
+ * The @xmlCPUs array should contain guest CPU definitions created from the
+ * host CPU model description as advertised by virConnectGetDomainCapabilities()
+ * in <mode name="host-model"> element. Any of @emulator, @arch, @machine, and
+ * @virttype parameters may be NULL; libvirt will choose sensible defaults
+ * tailored to the host and its current configuration.
  *
  * If @ncpus == 1, the result will be the first (and only) CPU in @xmlCPUs
  * tailored to what the hypervisor can support on the current host.
  * Specifically if this single CPU definition contains no feature elements and
  * a CPU model listed as usable='no' in domain capabilities XML, the result
  * will contain a list usability blockers, i.e., a list of features that would
- * need to be disabled to for the model to be usable on this host. This list
- * may contain more features than what the hypervisor reports as blockers in
- * case the CPU model definition in libvirt differs from QEMU definition.
+ * need to be disabled for the model to be usable on this host. This list may
+ * contain more features than what the hypervisor reports as blockers in case
+ * the CPU model definition in libvirt differs from QEMU definition.
  *
  * If @flags includes VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES then libvirt
  * will explicitly list all CPU features that are part of the computed CPU,
@@ -1325,6 +1335,11 @@ virConnectBaselineCPU(virConnectPtr conn,
  *
  * If @flags includes VIR_CONNECT_BASELINE_CPU_MIGRATABLE, the resulting
  * CPU will not include features that block migration.
+ *
+ * If @flags contains VIR_CONNECT_BASELINE_CPU_IGNORE_HOST and @ncpus > 1, the
+ * API will not consider hypervisor abilities when computing the baseline. With
+ * this flag baseline can be safely computed on any host (even those not
+ * described in @xmlCPUs).
  *
  * Returns XML description of the computed CPU (caller frees) or NULL on error.
  *

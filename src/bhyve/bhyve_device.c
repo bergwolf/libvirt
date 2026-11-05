@@ -2,6 +2,7 @@
  * bhyve_device.c: bhyve device management
  *
  * Copyright (C) 2014 Roman Bogorodskiy
+ * Copyright (C) 2025 The FreeBSD Foundation
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -30,6 +31,36 @@
 
 VIR_LOG_INIT("bhyve.bhyve_device");
 
+
+static int
+bhyveDomainAssignVirtioSerialAddresses(virDomainDef *def)
+{
+    int ret = -1;
+    size_t i;
+    virDomainVirtioSerialAddrSet *addrs = NULL;
+
+    if (!(addrs = virDomainVirtioSerialAddrSetCreateFromDomain(def)))
+        goto cleanup;
+
+    VIR_DEBUG("Finished reserving existing ports");
+
+    for (i = 0; i < def->nchannels; i++) {
+        virDomainChrDef *chr = def->channels[i];
+        if (chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CHANNEL &&
+            chr->targetType == VIR_DOMAIN_CHR_CHANNEL_TARGET_TYPE_VIRTIO &&
+            !virDomainVirtioSerialAddrIsComplete(&chr->info) &&
+            virDomainVirtioSerialAddrAutoAssignFromCache(def, addrs,
+                                                         &chr->info, false) < 0)
+            goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    virDomainVirtioSerialAddrSetFree(addrs);
+    return ret;
+}
+
 static int
 bhyveCollectPCIAddress(virDomainDef *def G_GNUC_UNUSED,
                        virDomainDeviceDef *device G_GNUC_UNUSED,
@@ -38,7 +69,8 @@ bhyveCollectPCIAddress(virDomainDef *def G_GNUC_UNUSED,
 {
     virDomainPCIAddressSet *addrs = NULL;
     virPCIDeviceAddress *addr = NULL;
-    if (info->type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DRIVE)
+
+    if (info->type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI)
         return 0;
 
     addrs = opaque;
@@ -113,6 +145,9 @@ bhyveAssignDevicePCISlots(virDomainDef *def,
     for (i = 0; i < def->ncontrollers; i++) {
         if ((def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_PCI) ||
             (def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_SATA) ||
+            (def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_NVME) ||
+            (def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_SCSI) ||
+            (def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL) ||
             ((def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_USB) &&
              (def->controllers[i]->model == VIR_DOMAIN_CONTROLLER_MODEL_USB_NEC_XHCI)) ||
             def->controllers[i]->type == VIR_DOMAIN_CONTROLLER_TYPE_ISA) {
@@ -184,6 +219,26 @@ bhyveAssignDevicePCISlots(virDomainDef *def,
             return -1;
     }
 
+    for (i = 0; i < def->nrngs; i++) {
+        if (!virDeviceInfoPCIAddressIsWanted(&def->rngs[i]->info))
+            continue;
+        if (virDomainPCIAddressReserveNextAddr(addrs,
+                                               &def->rngs[i]->info,
+                                               VIR_PCI_CONNECT_TYPE_PCI_DEVICE,
+                                               -1) < 0)
+            return -1;
+    }
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        if (!virDeviceInfoPCIAddressIsWanted(def->hostdevs[i]->info))
+            continue;
+        if (virDomainPCIAddressReserveNextAddr(addrs,
+                                               def->hostdevs[i]->info,
+                                               VIR_PCI_CONNECT_TYPE_PCI_DEVICE,
+                                               -1) < 0)
+            return -1;
+    }
+
     return 0;
 }
 
@@ -192,28 +247,38 @@ int bhyveDomainAssignPCIAddresses(virDomainDef *def,
 {
     virDomainPCIAddressSet *addrs = NULL;
     bhyveDomainObjPrivate *priv = NULL;
+    int ret = -1;
 
     if (!(addrs = bhyveDomainPCIAddressSetCreate(def, 1)))
         return -1;
 
     if (bhyveAssignDevicePCISlots(def, addrs) < 0)
-        return -1;
+        goto cleanup;
 
     if (obj && obj->privateData) {
         priv = obj->privateData;
         if (addrs) {
             virDomainPCIAddressSetFree(priv->pciaddrs);
             priv->persistentAddrs = 1;
-            priv->pciaddrs = addrs;
+            priv->pciaddrs = g_steal_pointer(&addrs);
         } else {
             priv->persistentAddrs = 0;
         }
     }
 
-    return 0;
+    ret = 0;
+ cleanup:
+    virDomainPCIAddressSetFree(addrs);
+    return ret;
 }
 
 int bhyveDomainAssignAddresses(virDomainDef *def, virDomainObj *obj)
 {
-    return bhyveDomainAssignPCIAddresses(def, obj);
+    if (bhyveDomainAssignVirtioSerialAddresses(def) < 0)
+        return -1;
+
+    if (bhyveDomainAssignPCIAddresses(def, obj) < 0)
+        return -1;
+
+    return 0;
 }

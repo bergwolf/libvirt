@@ -28,22 +28,15 @@
 virNetDevVPortProfile *
 virNetDevVPortProfileParse(xmlNodePtr node, unsigned int flags)
 {
-    g_autofree char *virtPortType = NULL;
-    g_autofree char *virtPortManagerID = NULL;
-    g_autofree char *virtPortTypeID = NULL;
-    g_autofree char *virtPortTypeIDVersion = NULL;
-    g_autofree char *virtPortInstanceID = NULL;
-    g_autofree char *virtPortProfileID = NULL;
-    g_autofree char *virtPortInterfaceID = NULL;
     g_autofree virNetDevVPortProfile *virtPort = NULL;
     xmlNodePtr parameters;
 
     virtPort = g_new0(virNetDevVPortProfile, 1);
 
-    if ((virtPortType = virXMLPropString(node, "type")) &&
-        (virtPort->virtPortType = virNetDevVPortTypeFromString(virtPortType)) <= 0) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("unknown virtualport type %1$s"), virtPortType);
+    if (virXMLPropEnum(node, "type",
+                       virNetDevVPortTypeFromString,
+                       VIR_XML_PROP_NONZERO,
+                       &virtPort->virtPortType) < 0) {
         return NULL;
     }
 
@@ -55,88 +48,82 @@ virNetDevVPortProfileParse(xmlNodePtr node, unsigned int flags)
     }
 
     if ((parameters = virXMLNodeGetSubelement(node, "parameters"))) {
-        virtPortManagerID = virXMLPropString(parameters, "managerid");
-        virtPortTypeID = virXMLPropString(parameters, "typeid");
-        virtPortTypeIDVersion = virXMLPropString(parameters, "typeidversion");
-        virtPortInstanceID = virXMLPropString(parameters, "instanceid");
-        virtPortProfileID = virXMLPropString(parameters, "profileid");
-        virtPortInterfaceID = virXMLPropString(parameters, "interfaceid");
-    }
-
-    if (virtPortManagerID) {
+        int rc;
         unsigned int val;
+        g_autofree char *virtPortProfileID = NULL;
 
-        if (virStrToLong_ui(virtPortManagerID, NULL, 0, &val)) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("cannot parse value of managerid parameter"));
+        virtPortProfileID =  virXMLPropString(parameters, "profileid");
+
+        if ((rc = virXMLPropUInt(parameters, "managerid", 10,
+                                 VIR_XML_PROP_NONE, &val)) < 0) {
             return NULL;
         }
-        if (val > 0xff) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("value of managerid out of range"));
+
+        if (rc > 0) {
+            if (val > 0xff) {
+                virReportError(VIR_ERR_XML_ERROR, "%s",
+                               _("value of managerid out of range"));
+                return NULL;
+            }
+
+            virtPort->managerID = val;
+            virtPort->managerID_specified = true;
+        }
+
+        if ((rc = virXMLPropUInt(parameters, "typeid", 10,
+                                 VIR_XML_PROP_NONE, &val)) < 0) {
             return NULL;
         }
-        virtPort->managerID = (uint8_t)val;
-        virtPort->managerID_specified = true;
-    }
 
-    if (virtPortTypeID) {
-        unsigned int val;
+        if (rc > 0) {
+            if (val > 0xffffff) {
+                virReportError(VIR_ERR_XML_ERROR, "%s",
+                               _("value for typeid out of range"));
+                return NULL;
+            }
 
-        if (virStrToLong_ui(virtPortTypeID, NULL, 0, &val)) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("cannot parse value of typeid parameter"));
+            virtPort->typeID = val;
+            virtPort->typeID_specified = true;
+        }
+
+        if ((rc = virXMLPropUInt(parameters, "typeidversion", 10,
+                                 VIR_XML_PROP_NONE, &val)) < 0) {
             return NULL;
         }
-        if (val > 0xffffff) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("value for typeid out of range"));
+
+        if (rc > 0) {
+            if (val > 0xff) {
+                virReportError(VIR_ERR_XML_ERROR, "%s",
+                               _("value of typeidversion out of range"));
+                return NULL;
+            }
+
+            virtPort->typeIDVersion = val;
+            virtPort->typeIDVersion_specified = true;
+        }
+
+        if ((rc = virXMLPropUUID(parameters, "instanceid",
+                                 VIR_XML_PROP_NONE, virtPort->instanceID)) < 0) {
             return NULL;
         }
-        virtPort->typeID = (uint32_t)val;
-        virtPort->typeID_specified = true;
-    }
 
-    if (virtPortTypeIDVersion) {
-        unsigned int val;
+        if (rc > 0)
+            virtPort->instanceID_specified = true;
 
-        if (virStrToLong_ui(virtPortTypeIDVersion, NULL, 0, &val)) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("cannot parse value of typeidversion parameter"));
+        if ((rc = virXMLPropUUID(parameters, "interfaceid",
+                                 VIR_XML_PROP_NONE, virtPort->interfaceID)) < 0) {
             return NULL;
         }
-        if (val > 0xff) {
+
+        if (rc > 0)
+            virtPort->interfaceID_specified = true;
+
+        if (virtPortProfileID &&
+            virStrcpyStatic(virtPort->profileID, virtPortProfileID) < 0) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("value of typeidversion out of range"));
+                           _("profileid parameter too long"));
             return NULL;
         }
-        virtPort->typeIDVersion = (uint8_t)val;
-        virtPort->typeIDVersion_specified = true;
-    }
-
-    if (virtPortInstanceID) {
-        if (virUUIDParse(virtPortInstanceID, virtPort->instanceID) < 0) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("cannot parse instanceid parameter as a uuid"));
-            return NULL;
-        }
-        virtPort->instanceID_specified = true;
-    }
-
-    if (virtPortProfileID &&
-        virStrcpyStatic(virtPort->profileID, virtPortProfileID) < 0) {
-        virReportError(VIR_ERR_XML_ERROR, "%s",
-                       _("profileid parameter too long"));
-        return NULL;
-    }
-
-    if (virtPortInterfaceID) {
-        if (virUUIDParse(virtPortInterfaceID, virtPort->interfaceID) < 0) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("cannot parse interfaceid parameter as a uuid"));
-            return NULL;
-        }
-        virtPort->interfaceID_specified = true;
     }
 
     /* generate default instanceID/interfaceID if appropriate */
@@ -177,15 +164,15 @@ virNetDevVPortProfileParse(xmlNodePtr node, unsigned int flags)
 }
 
 
-int
+void
 virNetDevVPortProfileFormat(const virNetDevVPortProfile *virtPort,
                             virBuffer *buf)
 {
-    enum virNetDevVPortProfile type;
+    virNetDevVPortProfileType type;
     bool noParameters;
 
     if (!virtPort)
-        return 0;
+        return;
 
     noParameters = !(virtPort->managerID_specified ||
                      virtPort->typeID_specified ||
@@ -197,13 +184,13 @@ virNetDevVPortProfileFormat(const virNetDevVPortProfile *virtPort,
     type = virtPort->virtPortType;
     if (type == VIR_NETDEV_VPORT_PROFILE_NONE) {
         if (noParameters)
-            return 0;
+            return;
         virBufferAddLit(buf, "<virtualport>\n");
     } else {
         if (noParameters) {
             virBufferAsprintf(buf, "<virtualport type='%s'/>\n",
                               virNetDevVPortTypeToString(type));
-            return 0;
+            return;
         } else {
             virBufferAsprintf(buf, "<virtualport type='%s'>\n",
                               virNetDevVPortTypeToString(type));
@@ -255,5 +242,5 @@ virNetDevVPortProfileFormat(const virNetDevVPortProfile *virtPort,
     virBufferAddLit(buf, "/>\n");
     virBufferAdjustIndent(buf, -2);
     virBufferAddLit(buf, "</virtualport>\n");
-    return 0;
+    return;
 }

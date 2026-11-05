@@ -539,7 +539,7 @@ virNetClient *virNetClientNewLibSSH2(const char *host,
     if (privkeyPath) {
         privkey = g_strdup(privkeyPath);
     } else {
-        homedir = virGetUserDirectory();
+        homedir = virGetUserHomeDirectory();
         if (virNetClientFindDefaultSshKey(homedir, &privkey) < 0)
             return NULL;
     }
@@ -604,7 +604,7 @@ virNetClient *virNetClientNewLibssh(const char *host,
     if (privkeyPath) {
         privkey = g_strdup(privkeyPath);
     } else {
-        homedir = virGetUserDirectory();
+        homedir = virGetUserHomeDirectory();
         if (virNetClientFindDefaultSshKey(homedir, &privkey) < 0)
             return NULL;
     }
@@ -756,6 +756,8 @@ void virNetClientDispose(void *obj)
 #if WITH_SASL
     virObjectUnref(client->sasl);
 #endif
+
+    g_clear_pointer(&client->error, virFreeError);
 
     virNetMessageClear(&client->msg);
 }
@@ -987,6 +989,7 @@ int virNetClientSetTLSSession(virNetClient *client,
      * etc.  If we make the grade, it will send us a '\1' byte.
      */
 
+ repoll:
     source = virEventGLibAddSocketWatch(virNetSocketGetFD(client->sock),
                                         G_IO_IN,
                                         client->eventCtx,
@@ -1003,7 +1006,14 @@ int virNetClientSetTLSSession(virNetClient *client,
     ignore_value(pthread_sigmask(SIG_SETMASK, &oldmask, NULL));
 #endif /* !WIN32 */
 
+ retry:
     len = virNetTLSSessionRead(client->tls, buf, 1);
+    if (len < 0 && errno == EINTR) {
+        goto retry;
+    }
+    if (len < 0 && errno == EAGAIN) {
+        goto repoll;
+    }
     if (len < 0 && errno != ENOMSG) {
         virReportSystemError(errno, "%s",
                              _("Unable to read TLS confirmation"));
@@ -1011,8 +1021,7 @@ int virNetClientSetTLSSession(virNetClient *client,
     }
     if (len != 1 || buf[0] != '\1') {
         virReportError(VIR_ERR_RPC, "%s",
-                       _("server verification (of our certificate or IP "
-                         "address) failed"));
+                       _("server verification (of our certificate or IP address) failed"));
         goto error;
     }
 
@@ -1054,8 +1063,8 @@ bool virNetClientIsOpen(virNetClient *client)
 }
 
 
-int virNetClientAddProgram(virNetClient *client,
-                           virNetClientProgram *prog)
+void virNetClientAddProgram(virNetClient *client,
+                            virNetClientProgram *prog)
 {
     virObjectLock(client);
 
@@ -1063,12 +1072,11 @@ int virNetClientAddProgram(virNetClient *client,
     client->programs[client->nprograms-1] = virObjectRef(prog);
 
     virObjectUnlock(client);
-    return 0;
 }
 
 
-int virNetClientAddStream(virNetClient *client,
-                          virNetClientStream *st)
+void virNetClientAddStream(virNetClient *client,
+                           virNetClientStream *st)
 {
     virObjectLock(client);
 
@@ -1076,7 +1084,6 @@ int virNetClientAddStream(virNetClient *client,
     client->streams[client->nstreams-1] = virObjectRef(st);
 
     virObjectUnlock(client);
-    return 0;
 }
 
 
@@ -1658,7 +1665,7 @@ static int virNetClientIOEventLoop(virNetClient *client,
 #endif /* !WIN32 */
         int timeout = -1;
         virNetMessage *msg = NULL;
-        g_autoptr(GSource) G_GNUC_UNUSED source = NULL;
+        g_autoptr(GSource) source = NULL;
         GIOCondition ev = 0;
         struct virNetClientIOEventData data = {
             .client = client,
@@ -1721,6 +1728,18 @@ static int virNetClientIOEventLoop(virNetClient *client,
 #endif /* !WIN32 */
 
         g_main_loop_run(client->eventLoop);
+
+        /*
+         * If virNetClientIOEventFD ran, this GSource will already be
+         * destroyed due to G_SOURCE_REMOVE. It is harmless to re-destroy
+         * it, since we still own a reference.
+         *
+         * If virNetClientIOWakeup ran, it will have interrupted the
+         * g_main_loop_run call, before virNetClientIOEventFD could
+         * run, and thus the GSource is still registered, and we need
+         * to destroy it since it is referencing stack memory for 'data'
+         */
+        g_source_destroy(source);
 
 #ifndef WIN32
         ignore_value(pthread_sigmask(SIG_SETMASK, &oldmask, NULL));
@@ -1849,6 +1868,15 @@ static void virNetClientIOUpdateCallback(virNetClient *client,
 }
 
 
+static gboolean virNetClientIOWakeup(gpointer opaque)
+{
+    GMainLoop *loop = opaque;
+
+    g_main_loop_quit(loop);
+
+    return G_SOURCE_REMOVE;
+}
+
 /*
  * This function sends a message to remote server and awaits a reply
  *
@@ -1857,8 +1885,8 @@ static void virNetClientIOUpdateCallback(virNetClient *client,
  * which come from the user).  It does however free any intermediate
  * results, eg. the error structure if there is one.
  *
- * NB(2). Make sure to memset (&ret, 0, sizeof(ret)) before calling,
- * else Bad Things will happen in the XDR code.
+ * NB(2). Make sure to initialize ret variable to { 0 } before calling,
+ * else Bad things will happen in the XDR code.
  *
  * NB(3) You must have the client lock before calling this
  *
@@ -1926,7 +1954,9 @@ static int virNetClientIO(virNetClient *client,
     /* Check to see if another thread is dispatching */
     if (client->haveTheBuck) {
         /* Force other thread to wakeup from poll */
-        g_main_loop_quit(client->eventLoop);
+        g_autoptr(GSource) wakeup = g_idle_source_new();
+        g_source_set_callback(wakeup, virNetClientIOWakeup, client->eventLoop, NULL);
+        g_source_attach(wakeup, client->eventCtx);
 
         /* If we are non-blocking, detach the thread and keep the call in the
          * queue. */
@@ -1946,6 +1976,7 @@ static int virNetClientIO(virNetClient *client,
             return -1;
         }
 
+        g_source_destroy(wakeup);
         VIR_DEBUG("Woken up from sleep head=%p call=%p",
                   client->waitDispatch, thiscall);
         /* Three reasons we can be woken up
@@ -2069,15 +2100,13 @@ virNetClientCallNew(virNetMessage *msg,
         (msg->bufferLength != 0) &&
         (msg->header.status == VIR_NET_CONTINUE)) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Attempt to send an asynchronous message with"
-                         " a synchronous reply"));
+                       _("Attempt to send an asynchronous message with a synchronous reply"));
         goto error;
     }
 
     if (expectReply && nonBlock) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Attempt to send a non-blocking message with"
-                         " a synchronous reply"));
+                       _("Attempt to send a non-blocking message with a synchronous reply"));
         goto error;
     }
 

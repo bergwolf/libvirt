@@ -22,6 +22,8 @@
 
 #include "configmake.h"
 #include "vircommand.h"
+#include "virconf.h"
+#include "virfile.h"
 #include "virlog.h"
 #include "virobject.h"
 #include "virstring.h"
@@ -67,9 +69,45 @@ virCaps *virCHDriverCapsInit(void)
     guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM,
                                     caps->host.arch, NULL, NULL, 0, NULL);
 
-    virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_KVM,
-                                  NULL, NULL, 0, NULL);
+    if (virFileExists("/dev/kvm")) {
+        virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_KVM,
+                                      NULL, NULL, 0, NULL);
+    }
+
+    if (virFileExists("/dev/mshv")) {
+        virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_HYPERV,
+                                      NULL, NULL, 0, NULL);
+    }
+
     return g_steal_pointer(&caps);
+}
+
+int virCHDriverConfigLoadFile(virCHDriverConfig *cfg,
+                              const char *filename)
+{
+    g_autoptr(virConf) conf = NULL;
+
+    /* Just check the file is readable before opening it, otherwise
+     * libvirt emits an error.
+     */
+    if (access(filename, R_OK) == -1) {
+        VIR_INFO("Could not read ch config file %s", filename);
+        return 0;
+    }
+
+    if (!(conf = virConfReadFile(filename, 0)))
+        return -1;
+
+    if (virConfGetValueUInt(conf, "log_level", &cfg->logLevel) < 0)
+        return -1;
+
+    if (!(cfg->logLevel < VIR_CH_LOGLEVEL_LAST)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, _("Invalid log_level %1$u"),
+                       cfg->logLevel);
+        return -1;
+    }
+
+    return 0;
 }
 
 /**
@@ -139,10 +177,12 @@ virCHDriverConfigNew(bool privileged)
     if (privileged) {
         cfg->logDir = g_strdup_printf("%s/log/libvirt/ch", LOCALSTATEDIR);
         cfg->stateDir = g_strdup_printf("%s/libvirt/ch", RUNSTATEDIR);
-
+        cfg->saveDir = g_strdup_printf("%s/lib/libvirt/ch/save", LOCALSTATEDIR);
+        cfg->configDir = g_strdup(SYSCONFDIR "/libvirt");
     } else {
         g_autofree char *rundir = NULL;
         g_autofree char *cachedir = NULL;
+        g_autofree char *configbasedir = NULL;
 
         cachedir = virGetUserCacheDirectory();
 
@@ -150,6 +190,10 @@ virCHDriverConfigNew(bool privileged)
 
         rundir = virGetUserRuntimeDirectory();
         cfg->stateDir = g_strdup_printf("%s/ch/run", rundir);
+
+        configbasedir = virGetUserConfigDirectory();
+        cfg->saveDir = g_strdup_printf("%s/ch/save", configbasedir);
+        cfg->configDir = g_strdup_printf("%s/ch", configbasedir);
     }
 
     return cfg;
@@ -167,10 +211,35 @@ virCHDriverConfigDispose(void *obj)
     virCHDriverConfig *cfg = obj;
 
     g_free(cfg->stateDir);
+    g_free(cfg->configDir);
     g_free(cfg->logDir);
+    g_free(cfg->saveDir);
 }
 
 #define MIN_VERSION ((15 * 1000000) + (0 * 1000) + (0))
+
+/**
+ * chPreProcessVersionString:
+ *
+ * Returns: a pointer to numerical version without branch/commit info
+ */
+static char *
+chPreProcessVersionString(char *version)
+{
+    char *tmp = strrchr(version, '/');
+
+    if (tmp)
+        version = tmp + 1;
+
+    if (version[0] == 'v')
+        version++;
+
+    tmp = strchr(version, '-');
+    if (tmp)
+        *tmp = '\0';
+
+    return version;
+}
 
 int
 chExtractVersion(virCHDriver *driver)
@@ -193,12 +262,19 @@ chExtractVersion(virCHDriver *driver)
 
     tmp = help;
 
-    /* expected format: cloud-hypervisor v<major>.<minor>.<micro> */
-    if ((tmp = STRSKIP(tmp, "cloud-hypervisor v")) == NULL) {
+    /* Below are example version formats and expected outputs:
+     *  cloud-hypervisor v32.0.0 (expected: 32.0.0)
+     *  cloud-hypervisor v33.0-104-ge0e3779e-dirty (expected: 33.0)
+     *  cloud-hypervisor testing/v32.0.131-1-ga5d6db5c-dirty (expected: 32.0.131)
+     */
+    if ((tmp = STRSKIP(tmp, "cloud-hypervisor ")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Unexpected output of cloud-hypervisor binary"));
         return -1;
     }
+
+    tmp = chPreProcessVersionString(tmp);
+    VIR_DEBUG("Cloud-Hypervisor version detected: %s", tmp);
 
     if (virStringParseVersion(&version, tmp, true) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,

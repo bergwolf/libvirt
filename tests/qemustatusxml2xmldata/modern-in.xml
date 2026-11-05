@@ -258,8 +258,8 @@
   <numad nodeset='6' cpuset='0-7'/>
   <libDir path='/var/lib/libvirt/qemu/domain-1-upstream'/>
   <channelTargetDir path='/var/lib/libvirt/qemu/channel/target/domain-1-upstream'/>
+  <memoryBackingDir path='/var/lib/libvirt/qemu/ram/1-upstream'/>
   <chardevStdioLogd/>
-  <allowReboot value='yes'/>
   <nodename index='123'/>
   <fdset index='321'/>
   <blockjobs active='no'/>
@@ -345,6 +345,10 @@
                 <fdset type='storage' id='1337'/>
               </fdsets>
               <thresholdEvent indexUsed='yes'/>
+              <nbdkit>
+                <pidfile>/path/to/nbdkit.pid</pidfile>
+                <socketfile>/path/to/nbdkit.socket</socketfile>
+              </nbdkit>
             </privateData>
           </source>
           <backingStore/>
@@ -374,9 +378,9 @@
         <target dev='vdc' bus='virtio'/>
         <address type='pci' domain='0x0000' bus='0x00' slot='0x0c' function='0x0'/>
       </disk>
-      <disk type='file' device='cdrom'>
+      <disk type='volume' device='cdrom'>
         <driver name='qemu' type='raw'/>
-        <source file='/var/lib/libvirt/images/systemrescuecd-x86-4.9.5.iso'/>
+        <source pool='testpool' volume='testvolume' actualType='file' file='/var/lib/libvirt/images/systemrescuecd-x86-4.9.5.iso'/>
         <backingStore/>
         <target dev='hda' bus='ide'/>
         <readonly/>
@@ -431,6 +435,13 @@
         <model type='virtio'/>
         <alias name='net0'/>
         <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+      </interface>
+      <interface type='direct'>
+        <mac address='52:54:00:36:bd:3c'/>
+        <source dev='eth0' mode='vepa'/>
+        <model type='rtl8139'/>
+        <tapfd path='/dev/tap8'/>
+        <address type='pci' domain='0x0000' bus='0x00' slot='0x0d' function='0x0'/>
       </interface>
       <serial type='pty'>
         <source path='/dev/pts/67'/>
@@ -498,7 +509,6 @@
         <address type='drive' controller='0' bus='0' target='2' unit='4'/>
       </hostdev>
       <hostdev mode='subsystem' type='pci' managed='yes'>
-        <driver name='vfio'/>
         <source>
           <address domain='0x0005' bus='0x90' slot='0x01' function='0x2'/>
           <origstates>

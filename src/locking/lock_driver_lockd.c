@@ -138,9 +138,7 @@ virLockManagerLockDaemonConnectionRegister(virLockManager *lock,
                                            int *counter)
 {
     virLockManagerLockDaemonPrivate *priv = lock->privateData;
-    virLockSpaceProtocolRegisterArgs args;
-
-    memset(&args, 0, sizeof(args));
+    virLockSpaceProtocolRegisterArgs args = { 0 };
 
     args.flags = 0;
     memcpy(args.owner.uuid, priv->uuid, VIR_UUID_BUFLEN);
@@ -167,9 +165,7 @@ virLockManagerLockDaemonConnectionRestrict(virLockManager *lock G_GNUC_UNUSED,
                                            virNetClientProgram *program,
                                            int *counter)
 {
-    virLockSpaceProtocolRestrictArgs args;
-
-    memset(&args, 0, sizeof(args));
+    virLockSpaceProtocolRestrictArgs args = { 0 };
 
     args.flags = 0;
 
@@ -217,8 +213,7 @@ static virNetClient *virLockManagerLockDaemonConnectionNew(bool privileged,
                                          NULL)))
         goto error;
 
-    if (virNetClientAddProgram(client, *prog) < 0)
-        goto error;
+    virNetClientAddProgram(client, *prog);
 
     return client;
 
@@ -259,11 +254,10 @@ static int virLockManagerLockDaemonSetupLockspace(const char *path)
 {
     virNetClient *client;
     virNetClientProgram *program = NULL;
-    virLockSpaceProtocolCreateLockSpaceArgs args;
+    virLockSpaceProtocolCreateLockSpaceArgs args = { 0 };
     int rv = -1;
     int counter = 0;
 
-    memset(&args, 0, sizeof(args));
     args.path = (char*)path;
 
     if (!(client = virLockManagerLockDaemonConnectionNew(geteuid() == 0, &program)))
@@ -439,7 +433,7 @@ static int virLockManagerLockDaemonNew(virLockManager *lock,
 }
 
 
-#ifdef LVS
+#ifdef __linux__
 static int
 virLockManagerGetLVMKey(const char *path,
                         char **key)
@@ -452,7 +446,7 @@ virLockManagerGetLVMKey(const char *path,
     int ret = -1;
     g_autoptr(virCommand) cmd = NULL;
 
-    cmd = virCommandNewArgList(LVS, "--noheadings",
+    cmd = virCommandNewArgList("lvs", "--noheadings",
                                "--unbuffered", "--nosuffix",
                                "--options", "uuid", path,
                                NULL
@@ -671,9 +665,7 @@ static int virLockManagerLockDaemonAcquire(virLockManager *lock,
     if (!(flags & VIR_LOCK_MANAGER_ACQUIRE_REGISTER_ONLY)) {
         size_t i;
         for (i = 0; i < priv->nresources; i++) {
-            virLockSpaceProtocolAcquireResourceArgs args;
-
-            memset(&args, 0, sizeof(args));
+            virLockSpaceProtocolAcquireResourceArgs args = { 0 };
 
             args.path = priv->resources[i].lockspace;
             args.name = priv->resources[i].name;
@@ -726,9 +718,7 @@ static int virLockManagerLockDaemonRelease(virLockManager *lock,
         goto cleanup;
 
     for (i = 0; i < priv->nresources; i++) {
-        virLockSpaceProtocolReleaseResourceArgs args;
-
-        memset(&args, 0, sizeof(args));
+        virLockSpaceProtocolReleaseResourceArgs args = { 0 };
 
         if (priv->resources[i].lockspace)
             args.path = priv->resources[i].lockspace;

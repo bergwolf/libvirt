@@ -347,7 +347,15 @@ virConfParseLong(virConfParserCtxt *ctxt, long long *val)
         return -1;
     }
     while ((ctxt->cur < ctxt->end) && (g_ascii_isdigit(CUR))) {
-        l = l * 10 + (CUR - '0');
+        long long c = (CUR - '0');
+
+        if (VIR_MULTIPLY_ADD_IS_OVERFLOW(LLONG_MAX, l, 10, c)) {
+            virConfError(ctxt, VIR_ERR_OVERFLOW,
+                         _("numeric overflow in conf value"));
+            return -1;
+        }
+
+        l = l * 10 + c;
         NEXT;
     }
     if (neg)
@@ -545,7 +553,7 @@ virConfParseName(virConfParserCtxt *ctxt)
     while ((ctxt->cur < ctxt->end) &&
            (g_ascii_isalnum(CUR) || (CUR == '_') ||
             ((ctxt->conf->flags & VIR_CONF_FLAG_VMX_FORMAT) &&
-             ((CUR == ':') || (CUR == '.') || (CUR == '-'))) ||
+             ((CUR == ':') || (CUR == '.') || (CUR == '-') || (CUR == '*'))) ||
             ((ctxt->conf->flags & VIR_CONF_FLAG_LXC_FORMAT) &&
              (CUR == '.'))))
         NEXT;
@@ -939,8 +947,7 @@ int virConfGetValueStringList(virConf *conf,
     case VIR_CONF_STRING:
         if (compatString) {
             *values = g_new0(char *, cval->str ? 2 : 1);
-            if (cval->str)
-                (*values)[0] = g_strdup(cval->str);
+            (*values)[0] = g_strdup(cval->str);
             break;
         }
         G_GNUC_FALLTHROUGH;
@@ -1106,6 +1113,53 @@ int virConfGetValueUInt(virConf *conf,
     *value = (unsigned int)cval->l;
 
     return 1;
+}
+
+
+/**
+ * virConfGetValueBytes:
+ * @conf: the config object
+ * @setting: the config entry name
+ * @value: pointer to hold the byte count
+ *
+ * Get the value of the config entry @setting, storing it in @value.
+ * The entry may be a plain integer, taken as a byte count, or a
+ * string holding a byte count followed by a unit suffix understood
+ * by virStrToBytes(). If the config entry is not present, then
+ * @value will be unmodified.
+ *
+ * Reports an error if the config entry is set but has an unexpected
+ * type, or if a string entry cannot be parsed as a size.
+ *
+ * Returns: 1 if the value was present, 0 if missing, -1 on error
+ */
+int virConfGetValueBytes(virConf *conf,
+                         const char *setting,
+                         unsigned long long *value)
+{
+    virConfValue *cval = virConfGetValue(conf, setting);
+
+    VIR_DEBUG("Get value bytes %p %d",
+              cval, cval ? cval->type : VIR_CONF_NONE);
+
+    if (!cval)
+        return 0;
+
+    if (cval->type == VIR_CONF_ULLONG) {
+        *value = cval->l;
+        return 1;
+    }
+
+    if (cval->type == VIR_CONF_STRING) {
+        if (virStrToBytes(cval->str, ULLONG_MAX, value) < 0)
+            return -1;
+        return 1;
+    }
+
+    virReportError(VIR_ERR_INTERNAL_ERROR,
+                   _("%1$s: expected an unsigned integer or a size string for '%2$s' parameter"),
+                   conf->filename, setting);
+    return -1;
 }
 
 

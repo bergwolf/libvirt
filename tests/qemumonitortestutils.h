@@ -21,7 +21,7 @@
 
 #include "qemu/qemu_conf.h"
 #include "qemu/qemu_monitor.h"
-#include "qemu/qemu_agent.h"
+#include "hypervisor/qemu_agent.h"
 
 typedef struct _qemuMonitorTest qemuMonitorTest;
 
@@ -52,7 +52,8 @@ qemuMonitorTestItemGetPrivateData(qemuMonitorTestItem *item);
 int
 qemuMonitorTestAddErrorResponse(qemuMonitorTest *test,
                                 const char *errmsg,
-                                ...);
+                                ...)
+    G_GNUC_PRINTF(2, 3);
 
 void
 qemuMonitorTestAllowUnusedCommands(qemuMonitorTest *test);
@@ -108,18 +109,8 @@ qemuAgent *
 qemuMonitorTestGetAgent(qemuMonitorTest *test);
 virDomainObj *
 qemuMonitorTestGetDomainObj(qemuMonitorTest *test);
+void
+qemuMonitorTestEmitDeviceDeleted(qemuMonitorTest *test,
+                                 const char *alias);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(qemuMonitorTest, qemuMonitorTestFree);
-
-struct qemuMonitorTestCommandReplyTuple {
-    const char *command;
-    const char *reply;
-    size_t line; /* line number of @command */
-};
-
-
-int
-qemuMonitorTestProcessFileEntries(char *inputstr,
-                                  const char *fileName,
-                                  struct qemuMonitorTestCommandReplyTuple **items,
-                                  size_t *nitems);

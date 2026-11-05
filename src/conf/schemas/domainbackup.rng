@@ -90,6 +90,12 @@
                       <ref name="absFilePath"/>
                     </attribute>
                   </group>
+                  <group>
+                    <attribute name="transport">
+                      <value>fd</value>
+                    </attribute>
+                    <ref name="fdgroupattr"/>
+                  </group>
                 </choice>
               </element>
               <ref name="backupDisksPull"/>
@@ -169,9 +175,19 @@
               <!-- Allow to plainly select a disk for backup without any other config -->
               <group>
                 <ref name="backupAttr"/>
+                <optional>
+                  <attribute name="sparsify">
+                    <ref name="virYesNo"/>
+                  </attribute>
+                </optional>
               </group>
               <group>
                 <ref name="backupAttr"/>
+                <optional>
+                  <attribute name="sparsify">
+                    <ref name="virYesNo"/>
+                  </attribute>
+                </optional>
                 <attribute name="type">
                   <value>file</value>
                 </attribute>
@@ -181,6 +197,7 @@
                       <attribute name="file">
                         <ref name="absFilePath"/>
                       </attribute>
+                      <ref name="fdgroup"/>
                       <interleave>
                         <zeroOrMore>
                           <ref name="devSeclabel"/>
@@ -263,6 +280,7 @@
                       <attribute name="file">
                         <ref name="absFilePath"/>
                       </attribute>
+                      <ref name="fdgroup"/>
                       <interleave>
                         <zeroOrMore>
                           <ref name="devSeclabel"/>

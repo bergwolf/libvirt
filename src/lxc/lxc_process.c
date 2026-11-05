@@ -49,6 +49,7 @@
 #include "virprocess.h"
 #include "netdev_bandwidth_conf.h"
 #include "virutil.h"
+#include "domain_interface.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXC
 
@@ -149,7 +150,6 @@ static void virLXCProcessCleanup(virLXCDriver *driver,
 {
     size_t i;
     virLXCDomainObjPrivate *priv = vm->privateData;
-    const virNetDevVPortProfile *vport = NULL;
     g_autoptr(virLXCDriverConfig) cfg = virLXCDriverGetConfig(driver);
     g_autoptr(virConnect) conn = NULL;
 
@@ -170,7 +170,7 @@ static void virLXCProcessCleanup(virLXCDriver *driver,
     }
 
     if (flags & VIR_LXC_PROCESS_CLEANUP_RESTORE_SECLABEL) {
-        virSecurityManagerRestoreAllLabel(driver->securityManager,
+        virSecurityManagerRestoreAllLabel(driver->securityManager, NULL,
                                           vm->def, false, false);
     }
 
@@ -203,25 +203,20 @@ static void virLXCProcessCleanup(virLXCDriver *driver,
     vm->pid = 0;
     vm->def->id = -1;
 
-    if (!!g_atomic_int_dec_and_test(&driver->nactive) && driver->inhibitCallback)
-        driver->inhibitCallback(false, driver->inhibitOpaque);
+    virInhibitorRelease(driver->inhibitor);
 
     virLXCDomainReAttachHostDevices(driver, vm->def);
 
     for (i = 0; i < vm->def->nnets; i++) {
         virDomainNetDef *iface = vm->def->nets[i];
-        vport = virDomainNetGetActualVirtPortProfile(iface);
+
         if (iface->ifname) {
-            if (vport &&
-                vport->virtPortType == VIR_NETDEV_VPORT_PROFILE_OPENVSWITCH)
-                ignore_value(virNetDevOpenvswitchRemovePort(
-                                virDomainNetGetActualBridgeName(iface),
-                                iface->ifname));
+            virDomainInterfaceVportRemove(iface);
             ignore_value(virNetDevVethDelete(iface->ifname));
         }
         if (iface->type == VIR_DOMAIN_NET_TYPE_NETWORK) {
             if (conn || (conn = virGetConnectNetwork()))
-                virDomainNetReleaseActualDevice(conn, vm->def, iface);
+                virDomainNetReleaseActualDevice(conn, iface);
             else
                 VIR_WARN("Unable to release network device '%s'", NULLSTR(iface->ifname));
         }
@@ -248,7 +243,7 @@ static void virLXCProcessCleanup(virLXCDriver *driver,
         /* we can't stop the operation even if the script raised an error */
         virHookCall(VIR_HOOK_DRIVER_LXC, vm->def->name,
                     VIR_HOOK_LXC_OP_RELEASE, VIR_HOOK_SUBOP_END,
-                    NULL, xml, NULL);
+                    virDomainShutoffReasonTypeToString(reason), xml, NULL);
     }
 
     if (flags & VIR_LXC_PROCESS_CLEANUP_REMOVE_TRANSIENT)
@@ -275,6 +270,7 @@ virLXCProcessSetupInterfaceTap(virDomainDef *vm,
 {
     g_autofree char *parentVeth = NULL;
     g_autofree char *containerVeth = NULL;
+    g_autofree char *backupIfname = NULL;
     const virNetDevVPortProfile *vport = virDomainNetGetActualVirtPortProfile(net);
 
     VIR_DEBUG("calling vethCreate()");
@@ -293,7 +289,7 @@ virLXCProcessSetupInterfaceTap(virDomainDef *vm,
                                             vport, virDomainNetGetActualVlan(net)) < 0)
                 return NULL;
         } else {
-            if (virNetDevBridgeAddPort(brname, parentVeth) < 0)
+            if (virNetDevBridgeAddPort(brname, parentVeth, virDomainNetGetActualVlan(net)) < 0)
                 return NULL;
 
             if (virDomainNetGetActualPortOptionsIsolated(net) == VIR_TRISTATE_BOOL_YES &&
@@ -319,13 +315,16 @@ virLXCProcessSetupInterfaceTap(virDomainDef *vm,
             return NULL;
     }
 
-    if (net->filter &&
-        virDomainConfNWFilterInstantiate(vm->name, vm->uuid, net, false) < 0)
-        return NULL;
-
-    /* success is guaranteed, so update the interface object */
-    g_free(net->ifname);
+    /* success almost guaranteed, next function needs updated net->ifname */
+    backupIfname = g_steal_pointer(&net->ifname);
     net->ifname = g_steal_pointer(&parentVeth);
+
+    if (net->filter &&
+        virDomainConfNWFilterInstantiate(vm->name, vm->uuid, net, false) < 0) {
+        g_free(net->ifname);
+        net->ifname = g_steal_pointer(&backupIfname);
+        return NULL;
+    }
 
     return g_steal_pointer(&containerVeth);
 }
@@ -380,6 +379,7 @@ virLXCProcessSetupInterfaceDirect(virLXCDriver *driver,
             VIR_NETDEV_VPORT_PROFILE_OP_CREATE,
             cfg->stateDir,
             NULL, 0,
+            &net->tapfdpath,
             macvlan_create_flags) < 0)
         return NULL;
 
@@ -452,8 +452,7 @@ static int virLXCProcessSetupNamespaceNet(int ns_type, const char *name)
     int fd;
     if (ns_type != VIR_LXC_DOMAIN_NAMESPACE_SHARENET) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("'netns' namespace source can only be "
-                         "used with sharenet"));
+                       _("'netns' namespace source can only be used with sharenet"));
         return -1;
     }
 
@@ -610,12 +609,15 @@ virLXCProcessSetupInterfaces(virLXCDriver *driver,
         actualBandwidth = virDomainNetGetActualBandwidth(net);
         if (actualBandwidth) {
             if (virNetDevSupportsBandwidth(type)) {
-                if (virNetDevBandwidthSet(net->ifname, actualBandwidth, false,
-                                          !virDomainNetTypeSharesHostView(net)) < 0)
+                unsigned int flags = VIR_NETDEV_BANDWIDTH_SET_CLEAR_ALL;
+
+                if (!virDomainNetTypeSharesHostView(net))
+                    flags |= VIR_NETDEV_BANDWIDTH_SET_DIR_SWAPPED;
+
+                if (virNetDevBandwidthSet(net->ifname, actualBandwidth, flags) < 0)
                     goto cleanup;
             } else {
-                VIR_WARN("setting bandwidth on interfaces of "
-                         "type '%s' is not implemented yet",
+                VIR_WARN("setting bandwidth on interfaces of type '%s' is not implemented yet",
                          virDomainNetTypeToString(type));
             }
         }
@@ -638,13 +640,11 @@ virLXCProcessSetupInterfaces(virLXCDriver *driver,
         virErrorPreserveLast(&save_err);
         for (i = 0; i < def->nnets; i++) {
             virDomainNetDef *iface = def->nets[i];
-            const virNetDevVPortProfile *vport = virDomainNetGetActualVirtPortProfile(iface);
-            if (vport && vport->virtPortType == VIR_NETDEV_VPORT_PROFILE_OPENVSWITCH)
-                ignore_value(virNetDevOpenvswitchRemovePort(
-                                virDomainNetGetActualBridgeName(iface),
-                                iface->ifname));
+
+            virDomainInterfaceVportRemove(iface);
+
             if (iface->type == VIR_DOMAIN_NET_TYPE_NETWORK && netconn)
-                virDomainNetReleaseActualDevice(netconn, def, iface);
+                virDomainNetReleaseActualDevice(netconn, iface);
         }
         virErrorRestore(&save_err);
     }
@@ -859,7 +859,8 @@ int virLXCProcessStop(virLXCDriver *driver,
             return -1;
         }
 
-        if (virCgroupSetFreezerState(priv->cgroup, "THAWED") < 0) {
+        if (virCgroupSetFreezerState(priv->cgroup,
+                                     VIR_CGROUP_FREEZER_STATE_THAWED) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("Unable to thaw all processes"));
 
@@ -1011,6 +1012,7 @@ virLXCProcessReadLogOutputData(virDomainObj *vm,
     int retries = 10;
     int got = 0;
     char *filter_next = buf;
+    bool filtered;
 
     buf[0] = '\0';
 
@@ -1036,11 +1038,13 @@ virLXCProcessReadLogOutputData(virDomainObj *vm,
         buf[got] = '\0';
 
         /* Filter out debug messages from intermediate libvirt process */
+        filtered = false;
         while ((eol = strchr(filter_next, '\n'))) {
             *eol = '\0';
             if (virLXCProcessIgnorableLogLine(filter_next)) {
                 memmove(filter_next, eol + 1, got - (eol - buf));
                 got -= eol + 1 - filter_next;
+                filtered = true;
             } else {
                 filter_next = eol + 1;
                 *eol = '\n';
@@ -1053,6 +1057,9 @@ virLXCProcessReadLogOutputData(virDomainObj *vm,
                            buf);
             return -1;
         }
+
+        if (filtered)
+            continue;
 
         if (isdead)
             return got;
@@ -1118,6 +1125,7 @@ virLXCProcessReportStartupLogError(virDomainObj *vm,
 {
     size_t buflen = 1024;
     g_autofree char *errbuf = g_new0(char, buflen);
+    char *p;
     int rc;
 
     if ((rc = virLXCProcessReadLogOutput(vm, logfile, pos, errbuf, buflen)) < 0)
@@ -1125,6 +1133,11 @@ virLXCProcessReportStartupLogError(virDomainObj *vm,
 
     if (rc == 0)
         return 0;
+
+    /* strip last newline */
+    if ((p = strrchr(errbuf, '\n')) &&
+        p[1] == '\0')
+        *p = '\0';
 
     virReportError(VIR_ERR_INTERNAL_ERROR,
                    _("guest failed to start: %1$s"), errbuf);
@@ -1315,7 +1328,7 @@ int virLXCProcessStart(virLXCDriver * driver,
     stopFlags |= VIR_LXC_PROCESS_CLEANUP_RELEASE_SECLABEL;
 
     VIR_DEBUG("Setting domain security labels");
-    if (virSecurityManagerSetAllLabel(driver->securityManager,
+    if (virSecurityManagerSetAllLabel(driver->securityManager, NULL,
                                       vm->def, NULL, false, false) < 0)
         goto cleanup;
     stopFlags |= VIR_LXC_PROCESS_CLEANUP_RESTORE_SECLABEL;
@@ -1333,9 +1346,16 @@ int virLXCProcessStart(virLXCDriver * driver,
         g_free(vm->def->consoles[i]->source->data.file.path);
         vm->def->consoles[i]->source->data.file.path = ttyPath;
 
-        g_free(vm->def->consoles[i]->info.alias);
         vm->def->consoles[i]->info.alias = g_strdup_printf("console%zu", i);
     }
+
+    VIR_DEBUG("Setting up filesystem aliases");
+    for (i = 0; i < vm->def->nfss; i++)
+        virLXCAssignDeviceFSAlias(vm->def, vm->def->fss[i]);
+
+    VIR_DEBUG("Setting up network interface aliases");
+    for (i = 0; i < vm->def->nnets; i++)
+        virLXCAssignDeviceNetAlias(vm->def, vm->def->nets[i]);
 
     VIR_DEBUG("Setting up Interfaces");
     if (virLXCProcessSetupInterfaces(driver, vm->def, &veths) < 0)
@@ -1453,8 +1473,7 @@ int virLXCProcessStart(virLXCDriver * driver,
     if (virCommandHandshakeNotify(cmd) < 0)
         goto cleanup;
 
-    if (g_atomic_int_add(&driver->nactive, 1) == 0 && driver->inhibitCallback)
-        driver->inhibitCallback(true, driver->inhibitOpaque);
+    virInhibitorHold(driver->inhibitor);
 
     /* The first synchronization point is when the controller creates CGroups. */
     if (lxcContainerWaitForContinue(handshakefds[0]) < 0) {
@@ -1551,18 +1570,13 @@ int virLXCProcessStart(virLXCDriver * driver,
 }
 
 
-static int
+void
 virLXCProcessAutostartDomain(virDomainObj *vm,
                              void *opaque G_GNUC_UNUSED)
 {
-    VIR_LOCK_GUARD lock = virObjectLockGuard(vm);
     virLXCDomainObjPrivate *priv = vm->privateData;
     virObjectEvent *event;
     int rc = 0;
-
-    if (!vm->autostart ||
-        virDomainObjIsActive(vm))
-        return 0;
 
     rc = virLXCProcessStart(priv->driver, vm, 0, NULL, NULL, VIR_DOMAIN_RUNNING_BOOTED);
     virDomainAuditStart(vm, "booted", rc >= 0);
@@ -1571,22 +1585,13 @@ virLXCProcessAutostartDomain(virDomainObj *vm,
         VIR_ERROR(_("Failed to autostart VM '%1$s': %2$s"),
                   vm->def->name,
                   virGetLastErrorMessage());
-        return -1;
+        return;
     }
 
     event = virDomainEventLifecycleNewFromObj(vm,
                                               VIR_DOMAIN_EVENT_STARTED,
                                               VIR_DOMAIN_EVENT_STARTED_BOOTED);
     virObjectEventStateQueue(priv->driver->domainEventState, event);
-
-    return 0;
-}
-
-
-void
-virLXCProcessAutostartAll(virLXCDriver *driver)
-{
-    virDomainObjListForEach(driver->domains, false, virLXCProcessAutostartDomain, NULL);
 }
 
 
@@ -1652,8 +1657,7 @@ virLXCProcessReconnectDomain(virDomainObj *vm,
         virDomainObjSetState(vm, VIR_DOMAIN_RUNNING,
                              VIR_DOMAIN_RUNNING_UNKNOWN);
 
-        if (g_atomic_int_add(&driver->nactive, 1) == 0 && driver->inhibitCallback)
-            driver->inhibitCallback(true, driver->inhibitOpaque);
+        virInhibitorHold(driver->inhibitor);
 
         if (!(priv->monitor = virLXCProcessConnectMonitor(driver, vm)))
             goto error;

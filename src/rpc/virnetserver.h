@@ -59,8 +59,8 @@ void virNetServerShutdownWait(virNetServer *srv);
 
 virJSONValue *virNetServerPreExecRestart(virNetServer *srv);
 
-int virNetServerAddService(virNetServer *srv,
-                           virNetServerService *svc);
+void virNetServerAddService(virNetServer *srv,
+                            virNetServerService *svc);
 int virNetServerAddServiceTCP(virNetServer *srv,
                               virSystemdActivation *act,
                               const char *actname,
@@ -84,8 +84,8 @@ int virNetServerAddServiceUNIX(virNetServer *srv,
                                size_t max_queued_clients,
                                size_t nrequests_client_max);
 
-int virNetServerAddProgram(virNetServer *srv,
-                           virNetServerProgram *prog);
+void virNetServerAddProgram(virNetServer *srv,
+                            virNetServerProgram *prog);
 
 int virNetServerSetTLSContext(virNetServer *srv,
                               virNetTLSContext *tls);

@@ -128,11 +128,9 @@ static int
 virDMOpen(void)
 {
     VIR_AUTOCLOSE controlFD = -1;
-    struct dm_ioctl dm;
+    struct dm_ioctl dm = { 0 };
     g_autofree char *tmp = NULL;
     int ret;
-
-    memset(&dm, 0, sizeof(dm));
 
     if ((controlFD = open(CONTROL_PATH, O_RDWR)) < 0) {
         /* We can't talk to devmapper. Produce a warning and let
@@ -166,7 +164,7 @@ virDMOpen(void)
 
 
 static char *
-virDMSanitizepath(const char *path)
+virDMGetDeviceName(const char *path)
 {
     g_autofree char *dmDirPath = NULL;
     struct dirent *ent = NULL;
@@ -207,7 +205,7 @@ virDMSanitizepath(const char *path)
 
         if (stat(tmp, &sb[1]) == 0 &&
             sb[0].st_rdev == sb[1].st_rdev) {
-            return g_steal_pointer(&tmp);
+            return g_strdup(ent->d_name);
         }
     }
 
@@ -221,13 +219,11 @@ virDevMapperGetTargetsImpl(int controlFD,
                            GSList **devPaths,
                            unsigned int ttl)
 {
-    g_autofree char *sanitizedPath = NULL;
+    g_autofree char *deviceName = NULL;
     g_autofree char *buf = NULL;
-    struct dm_ioctl dm;
+    struct dm_ioctl dm = { 0 };
     struct dm_target_deps *deps = NULL;
     size_t i;
-
-    memset(&dm, 0, sizeof(dm));
 
     if (ttl == 0) {
         errno = ELOOP;
@@ -237,10 +233,10 @@ virDevMapperGetTargetsImpl(int controlFD,
     if (!virIsDevMapperDevice(path))
         return 0;
 
-    if (!(sanitizedPath = virDMSanitizepath(path)))
+    if (!(deviceName = virDMGetDeviceName(path)))
         return 0;
 
-    if (virStrcpy(dm.name, sanitizedPath, DM_NAME_LEN) < 0) {
+    if (virStrcpy(dm.name, deviceName, DM_NAME_LEN) < 0) {
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                        _("Resolved device mapper name too long"));
         return -1;
@@ -325,14 +321,14 @@ bool
 virIsDevMapperDevice(const char *dev_name)
 {
     struct stat buf;
-    unsigned int major;
+    unsigned int maj = 0;
 
-    if (virDevMapperGetMajor(&major) < 0)
+    if (virDevMapperGetMajor(&maj) < 0)
         return false;
 
     if (!stat(dev_name, &buf) &&
         S_ISBLK(buf.st_mode) &&
-        major(buf.st_rdev) == major)
+        major(buf.st_rdev) == maj)
         return true;
 
     return false;

@@ -78,8 +78,8 @@ static virClass *virNetServerClass;
 static void virNetServerDispose(void *obj);
 static void virNetServerUpdateServicesLocked(virNetServer *srv,
                                              bool enabled);
-static inline size_t virNetServerTrackPendingAuthLocked(virNetServer *srv);
-static inline size_t virNetServerTrackCompletedAuthLocked(virNetServer *srv);
+static size_t virNetServerTrackPendingAuthLocked(virNetServer *srv);
+static size_t virNetServerTrackCompletedAuthLocked(virNetServer *srv);
 
 static int
 virNetServerOnceInit(void)
@@ -372,8 +372,7 @@ virNetServerNew(const char *name,
 
     if (max_clients < max_anonymous_clients) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("The overall maximum number of clients must not be less "
-                         "than the number of clients waiting for authentication"));
+                       _("The overall maximum number of clients must not be less than the number of clients waiting for authentication"));
         return NULL;
     }
 
@@ -458,8 +457,7 @@ virNetServerNewPostExecRestart(virJSONValue *object,
         }
         if (max_clients < max_anonymous_clients) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("The overall maximum number of clients must not be less "
-                             "than the number of clients waiting for authentication"));
+                           _("The overall maximum number of clients must not be less than the number of clients waiting for authentication"));
             return NULL;
         }
     } else {
@@ -515,10 +513,7 @@ virNetServerNewPostExecRestart(virJSONValue *object,
         if (!(service = virNetServerServiceNewPostExecRestart(child)))
             return NULL;
 
-        if (virNetServerAddService(srv, service) < 0) {
-            virObjectUnref(service);
-            return NULL;
-        }
+        virNetServerAddService(srv, service);
     }
 
 
@@ -625,7 +620,7 @@ virNetServerPreExecRestart(virNetServer *srv)
 }
 
 
-int
+void
 virNetServerAddService(virNetServer *srv,
                        virNetServerService *svc)
 {
@@ -635,7 +630,6 @@ virNetServerAddService(virNetServer *srv,
     srv->services[srv->nservices-1] = virObjectRef(svc);
 
     virNetServerServiceSetDispatcher(svc, virNetServerDispatchNewClient, srv);
-    return 0;
 }
 
 
@@ -671,10 +665,7 @@ virNetServerAddServiceActivation(virNetServer *srv,
         if (!svc)
             return -1;
 
-        if (virNetServerAddService(srv, svc) < 0) {
-            virObjectUnref(svc);
-            return -1;
-        }
+        virNetServerAddService(srv, svc);
     }
 
     /* Intentionally return 1 any time activation is present,
@@ -725,11 +716,7 @@ virNetServerAddServiceTCP(virNetServer *srv,
                                           nrequests_client_max)))
         return -1;
 
-    if (virNetServerAddService(srv, svc) < 0) {
-        virObjectUnref(svc);
-        return -1;
-    }
-
+    virNetServerAddService(srv, svc);
     virObjectUnref(svc);
 
     return 0;
@@ -774,18 +761,14 @@ virNetServerAddServiceUNIX(virNetServer *srv,
                                            nrequests_client_max)))
         return -1;
 
-    if (virNetServerAddService(srv, svc) < 0) {
-        virObjectUnref(svc);
-        return -1;
-    }
-
+    virNetServerAddService(srv, svc);
     virObjectUnref(svc);
 
     return 0;
 }
 
 
-int
+void
 virNetServerAddProgram(virNetServer *srv,
                        virNetServerProgram *prog)
 {
@@ -793,7 +776,6 @@ virNetServerAddProgram(virNetServer *srv,
 
     VIR_EXPAND_N(srv->programs, srv->nprograms, 1);
     srv->programs[srv->nprograms-1] = virObjectRef(prog);
-    return 0;
 }
 
 
@@ -919,14 +901,14 @@ virNetServerShutdownWait(virNetServer *srv)
 }
 
 
-static inline size_t
+static size_t
 virNetServerTrackPendingAuthLocked(virNetServer *srv)
 {
     return ++srv->nclients_unauth;
 }
 
 
-static inline size_t
+static size_t
 virNetServerTrackCompletedAuthLocked(virNetServer *srv)
 {
     return --srv->nclients_unauth;
@@ -1127,8 +1109,7 @@ virNetServerSetClientLimits(virNetServer *srv,
 
     if (max < max_unauth) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
-                       _("The overall maximum number of clients must not be less "
-                         "than the number of clients waiting for authentication"));
+                       _("The overall maximum number of clients must not be less than the number of clients waiting for authentication"));
         return -1;
     }
 

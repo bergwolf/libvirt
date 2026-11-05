@@ -203,7 +203,7 @@ virPerfEventEnable(virPerf *perf,
                    virPerfEventType type,
                    pid_t pid)
 {
-    struct perf_event_attr attr;
+    struct perf_event_attr attr = { 0 };
     struct virPerfEvent *event = &(perf->events[type]);
     struct virPerfEventAttr *event_attr = &attrs[type];
 
@@ -233,7 +233,6 @@ virPerfEventEnable(virPerf *perf,
         }
     }
 
-    memset(&attr, 0, sizeof(attr));
     attr.size = sizeof(attr);
     attr.inherit = 1;
     attr.disabled = 1;
@@ -291,6 +290,12 @@ bool virPerfEventIsEnabled(virPerf *perf,
     return perf && perf->events[type].enabled;
 }
 
+
+/**
+ * virPerfReadEvent:
+ *
+ * Returns 0 on success -ERRNO on failure.
+ */
 int
 virPerfReadEvent(virPerf *perf,
                  virPerfEventType type,
@@ -298,13 +303,10 @@ virPerfReadEvent(virPerf *perf,
 {
     struct virPerfEvent *event = &perf->events[type];
     if (!event->enabled)
-        return -1;
+        return -EINVAL;
 
-    if (saferead(event->fd, value, sizeof(uint64_t)) < 0) {
-        virReportSystemError(errno, "%s",
-                             _("Unable to read cache data"));
-        return -1;
-    }
+    if (saferead(event->fd, value, sizeof(uint64_t)) < 0)
+        return -errno;
 
     if (type == VIR_PERF_EVENT_CMT)
         *value *= event->efields.cmt.scale;
@@ -351,9 +353,7 @@ virPerfReadEvent(virPerf *perf G_GNUC_UNUSED,
                  virPerfEventType type G_GNUC_UNUSED,
                  uint64_t *value G_GNUC_UNUSED)
 {
-    virReportSystemError(ENXIO, "%s",
-                         _("Perf not supported on this platform"));
-    return -1;
+    return -ENOSYS;
 }
 
 #endif

@@ -723,6 +723,12 @@ virNodeDeviceObjHasCap(const virNodeDeviceObj *obj,
                 return true;
             break;
 
+        case VIR_NODE_DEV_CAP_CCW_DEV:
+            if (type == VIR_NODE_DEV_CAP_CCWGROUP_MEMBER &&
+                (cap->data.ccw_dev.flags & VIR_NODE_DEV_CAP_FLAG_CCW_CCWGROUP_MEMBER))
+                return true;
+            break;
+
         case VIR_NODE_DEV_CAP_SYSTEM:
         case VIR_NODE_DEV_CAP_USB_DEV:
         case VIR_NODE_DEV_CAP_USB_INTERFACE:
@@ -736,11 +742,12 @@ virNodeDeviceObjHasCap(const virNodeDeviceObj *obj,
         case VIR_NODE_DEV_CAP_DRM:
         case VIR_NODE_DEV_CAP_MDEV_TYPES:
         case VIR_NODE_DEV_CAP_MDEV:
-        case VIR_NODE_DEV_CAP_CCW_DEV:
         case VIR_NODE_DEV_CAP_VDPA:
         case VIR_NODE_DEV_CAP_AP_CARD:
         case VIR_NODE_DEV_CAP_AP_QUEUE:
         case VIR_NODE_DEV_CAP_VPD:
+        case VIR_NODE_DEV_CAP_CCWGROUP_DEV:
+        case VIR_NODE_DEV_CAP_CCWGROUP_MEMBER:
         case VIR_NODE_DEV_CAP_LAST:
             break;
         }
@@ -899,7 +906,9 @@ virNodeDeviceObjMatch(virNodeDeviceObj *obj,
               MATCH_CAP(AP_CARD)       ||
               MATCH_CAP(AP_QUEUE)      ||
               MATCH_CAP(AP_MATRIX)     ||
-              MATCH_CAP(VPD)))
+              MATCH_CAP(VPD)           ||
+              MATCH_CAP(CCWGROUP_DEV)  ||
+              MATCH_CAP(CCWGROUP_MEMBER)))
             return false;
     }
 
@@ -908,6 +917,14 @@ virNodeDeviceObjMatch(virNodeDeviceObj *obj,
               virNodeDeviceObjIsActive(obj)) ||
               (MATCH(VIR_CONNECT_LIST_NODE_DEVICES_INACTIVE) &&
                !virNodeDeviceObjIsActive(obj))))
+            return false;
+    }
+
+    if (flags & (VIR_CONNECT_LIST_NODE_DEVICES_FILTERS_PERSISTENT)) {
+        if (!((MATCH(VIR_CONNECT_LIST_NODE_DEVICES_PERSISTENT) &&
+              virNodeDeviceObjIsPersistent(obj)) ||
+              (MATCH(VIR_CONNECT_LIST_NODE_DEVICES_TRANSIENT) &&
+               !virNodeDeviceObjIsPersistent(obj))))
             return false;
     }
 
@@ -1128,4 +1145,46 @@ virNodeDeviceObjListFind(virNodeDeviceObjList *devs,
     return virNodeDeviceObjListSearch(devs,
                                       virNodeDeviceObjListFindHelper,
                                       &data);
+}
+
+
+/**
+ * virNodeDeviceObjUpdateModificationImpact:
+ * @obj: Pointer to node device object
+ * @flags: flags to update the modification impact on
+ *
+ * Resolves virNodeDeviceUpdateFlags flags in @flags so that they correctly
+ * apply to the actual state of @obj. @flags may be modified after call to this
+ * function.
+ *
+ * Returns 0 on success if @flags point to a valid combination for @obj or -1
+ * on error.
+ */
+int
+virNodeDeviceObjUpdateModificationImpact(virNodeDeviceObj *obj,
+                                         unsigned int *flags)
+{
+    bool isActive = virNodeDeviceObjIsActive(obj);
+
+    if ((*flags & (VIR_NODE_DEVICE_UPDATE_AFFECT_LIVE | VIR_NODE_DEVICE_UPDATE_AFFECT_CONFIG)) ==
+        VIR_NODE_DEVICE_UPDATE_AFFECT_CURRENT) {
+        if (isActive)
+            *flags |= VIR_NODE_DEVICE_UPDATE_AFFECT_LIVE;
+        else
+            *flags |= VIR_NODE_DEVICE_UPDATE_AFFECT_CONFIG;
+    }
+
+    if (!isActive && (*flags & VIR_NODE_DEVICE_UPDATE_AFFECT_LIVE)) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("node device is not active"));
+        return -1;
+    }
+
+    if (!virNodeDeviceObjIsPersistent(obj) && (*flags & VIR_NODE_DEVICE_UPDATE_AFFECT_CONFIG)) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("transient node devices do not have any persistent config"));
+        return -1;
+    }
+
+    return 0;
 }

@@ -25,6 +25,7 @@
 
 #include "virlog.h"
 #include "virerror.h"
+#include "virstring.h"
 #include "virtime.h"
 #include "virsystemd.h"
 #include "virinitctl.h"
@@ -238,7 +239,8 @@ virLXCDomainDefPostParse(virDomainDef *def,
         return -1;
     if (!virCapabilitiesDomainSupported(caps, def->os.type,
                                         def->os.arch,
-                                        def->virtType))
+                                        def->virtType,
+                                        true))
         return -1;
 
     /* check for emulator and create a default one if needed */
@@ -339,12 +341,10 @@ virLXCDomainSetRunlevel(virDomainObj *vm,
                         int runlevel)
 {
     virLXCDomainObjPrivate *priv = vm->privateData;
-    lxcDomainInitctlCallbackData data;
+    lxcDomainInitctlCallbackData data = { 0 };
     size_t nfifos = 0;
     size_t i;
     int ret = -1;
-
-    memset(&data, 0, sizeof(data));
 
     data.runlevel = runlevel;
 
@@ -375,4 +375,64 @@ virLXCDomainSetRunlevel(virDomainObj *vm,
     g_clear_pointer(&data.st, g_free);
     g_clear_pointer(&data.st_valid, g_free);
     return ret;
+}
+
+
+void
+virLXCAssignDeviceNetAlias(virDomainDef *def,
+                           virDomainNetDef *net)
+{
+    size_t i;
+    int idx = 0;
+
+    if (net->info.alias)
+        return;
+
+    for (i = 0; i < def->nnets; i++) {
+        const char *alias;
+        int thisidx;
+
+        if (!def->nets[i]->info.alias)
+            continue;
+        if (!(alias = STRSKIP(def->nets[i]->info.alias, "net")))
+            continue;
+
+        if (virStrToLong_i(alias, NULL, 10, &thisidx) < 0)
+            continue;
+
+        if (thisidx >= idx)
+            idx = thisidx + 1;
+    }
+
+    net->info.alias = g_strdup_printf("net%d", idx);
+}
+
+
+void
+virLXCAssignDeviceFSAlias(virDomainDef *def,
+                          virDomainFSDef *fs)
+{
+    size_t i;
+    int idx = 0;
+
+    if (fs->info.alias)
+        return;
+
+    for (i = 0; i < def->nfss; i++) {
+        const char *alias;
+        int thisidx;
+
+        if (!def->fss[i]->info.alias)
+            continue;
+        if (!(alias = STRSKIP(def->fss[i]->info.alias, "fs")))
+            continue;
+
+        if (virStrToLong_i(alias, NULL, 10, &thisidx) < 0)
+            continue;
+
+        if (thisidx >= idx)
+            idx = thisidx + 1;
+    }
+
+    fs->info.alias = g_strdup_printf("fs%d", idx);
 }

@@ -4,7 +4,7 @@
 #
 # https://gitlab.com/libvirt/libvirt-ci
 
-FROM docker.io/library/debian:sid-slim
+FROM docker.io/amd64/debian:sid-slim
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -14,6 +14,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       augeas-lenses \
                       augeas-tools \
                       bash-completion \
+                      black \
                       ca-certificates \
                       ccache \
                       codespell \
@@ -25,38 +26,32 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       gettext \
                       git \
                       grep \
-                      iproute2 \
-                      iptables \
-                      kmod \
-                      libc-dev-bin \
+                      libclang-rt-dev \
+                      libnbd-dev \
                       libxml2-utils \
                       locales \
-                      lvm2 \
                       make \
                       meson \
-                      nfs-common \
                       ninja-build \
-                      numad \
-                      open-iscsi \
                       perl-base \
                       pkgconf \
-                      policykit-1 \
                       python3 \
                       python3-docutils \
+                      python3-pytest \
                       qemu-utils \
-                      scrub \
                       sed \
                       xsltproc && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen && \
-    dpkg-reconfigure locales
+    dpkg-reconfigure locales && \
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
 
-ENV CCACHE_WRAPPERSDIR "/usr/libexec/ccache-wrappers"
-ENV LANG "en_US.UTF-8"
-ENV MAKE "/usr/bin/make"
-ENV NINJA "/usr/bin/ninja"
-ENV PYTHON "/usr/bin/python3"
+ENV CCACHE_WRAPPERSDIR="/usr/libexec/ccache-wrappers"
+ENV LANG="en_US.UTF-8"
+ENV MAKE="/usr/bin/make"
+ENV NINJA="/usr/bin/ninja"
+ENV PYTHON="/usr/bin/python3"
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     dpkg --add-architecture armel && \
@@ -74,28 +69,26 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       libcap-ng-dev:armel \
                       libcurl4-gnutls-dev:armel \
                       libdevmapper-dev:armel \
-                      libfuse-dev:armel \
+                      libfuse3-dev:armel \
                       libglib2.0-dev:armel \
-                      libglusterfs-dev:armel \
                       libgnutls28-dev:armel \
                       libiscsi-dev:armel \
+                      libjson-c-dev:armel \
                       libnl-3-dev:armel \
                       libnl-route-3-dev:armel \
                       libnuma-dev:armel \
                       libparted-dev:armel \
                       libpcap0.8-dev:armel \
                       libpciaccess-dev:armel \
-                      librbd-dev:armel \
                       libreadline-dev:armel \
                       libsanlock-dev:armel \
                       libsasl2-dev:armel \
-                      libselinux1-dev:armel \
-                      libssh-gcrypt-dev:armel \
+                      libselinux-dev:armel \
+                      libssh-dev:armel \
                       libssh2-1-dev:armel \
                       libtirpc-dev:armel \
                       libudev-dev:armel \
                       libxml2-dev:armel \
-                      libyajl-dev:armel \
                       systemtap-sdt-dev:armel && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
@@ -116,5 +109,5 @@ endian = 'little'\n" > /usr/local/share/meson/cross/arm-linux-gnueabi && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/arm-linux-gnueabi-cc && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/arm-linux-gnueabi-gcc
 
-ENV ABI "arm-linux-gnueabi"
-ENV MESON_OPTS "--cross-file=arm-linux-gnueabi"
+ENV ABI="arm-linux-gnueabi"
+ENV MESON_OPTS="--cross-file=arm-linux-gnueabi"

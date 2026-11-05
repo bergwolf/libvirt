@@ -65,6 +65,8 @@ struct _virDomainBackupDiskDef {
     char *exportname; /* name of the NBD export for pull mode backup */
     char *exportbitmap; /* name of the bitmap exposed in NBD for pull mode backup */
 
+    virTristateBool sparsify; /* sparsify full backup output file */
+
     /* details of target for push-mode, or of the scratch file for pull-mode */
     virStorageSource *store;
 
@@ -99,6 +101,10 @@ struct _virDomainBackupDef {
     char *errmsg; /* error message of failed sub-blockjob */
 
     unsigned int apiFlags; /* original flags used when starting the job */
+
+    bool nbdStopped; /* The NBD server for a pull-mode backup was stopped. This
+                        flag is deliberately not stored in the status XML as
+                        it's related only to termination of the backup. */
 };
 
 typedef enum {

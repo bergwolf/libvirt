@@ -26,6 +26,7 @@
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <mntent.h>
 #include <sys/reboot.h>
@@ -790,7 +791,8 @@ static int lxcContainerSetReadOnly(void)
     if (!mounts)
         return 0;
 
-    qsort(mounts, nmounts, sizeof(mounts[0]), virStringSortRevCompare);
+    g_qsort_with_data(mounts, nmounts,
+                      sizeof(mounts[0]), virStringSortRevCompare, NULL);
 
     /* turn 'mounts' into a proper GStrv */
     VIR_EXPAND_N(mounts, nmounts, 1);
@@ -1466,12 +1468,13 @@ static int lxcContainerMountAllFS(virDomainDef *vmDef,
         if (STREQ(vmDef->fss[i]->dst, "/"))
             continue;
 
-        VIR_DEBUG("Mounting '%s' -> '%s'", vmDef->fss[i]->src->path, vmDef->fss[i]->dst);
+        VIR_DEBUG("Mounting '%s' -> '%s'", NULLSTR(vmDef->fss[i]->src->path),
+                  vmDef->fss[i]->dst);
 
         if (lxcContainerResolveSymlinks(vmDef->fss[i], false) < 0)
             return -1;
 
-        if (!(vmDef->fss[i]->src && vmDef->fss[i]->src->path &&
+        if (!(vmDef->fss[i]->src->path &&
               STRPREFIX(vmDef->fss[i]->src->path, vmDef->fss[i]->dst)) &&
             lxcContainerUnmountSubtree(vmDef->fss[i]->dst, false) < 0)
             return -1;
@@ -1724,7 +1727,13 @@ static int lxcContainerDropCapabilities(virDomainDef *def,
                                 CAP_SYSLOG,
                                 CAP_WAKE_ALARM};
 
-    capng_get_caps_process();
+    /* Init the internal state of capng */
+    if ((ret = capng_get_caps_process()) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Failed to get current process capabilities: %1$d"),
+                       ret);
+        return -1;
+    }
 
     /* Make sure we drop everything if required by the user */
     if (policy == VIR_DOMAIN_CAPABILITIES_POLICY_DENY)
@@ -2050,9 +2059,8 @@ static int lxcContainerChild(void *data)
     /* TODO is it safe to call it here or should this call be moved in
      * front of the clone() as otherwise there might be a risk for a
      * deadlock */
-    if ((ngroups = virGetGroupList(virCommandGetUID(cmd), virCommandGetGID(cmd),
-                                   &groups)) < 0)
-        goto cleanup;
+    ngroups = virGetGroupList(virCommandGetUID(cmd), virCommandGetGID(cmd),
+                              &groups);
 
     ret = 0;
  cleanup:
@@ -2132,9 +2140,10 @@ int lxcContainerStart(virDomainDef *def,
 {
     pid_t pid;
     int cflags;
-    int stacksize = getpagesize() * 4;
-    g_autofree char *stack = NULL;
+    int stacksize = getpagesize() * 16;
+    char *stack = NULL;
     char *stacktop;
+    int ret = -1;
     lxc_child_argv_t args = {
         .config = def,
         .securityDriver = securityDriver,
@@ -2150,7 +2159,14 @@ int lxcContainerStart(virDomainDef *def,
     };
 
     /* allocate a stack for the container */
-    stack = g_new0(char, stacksize);
+    stack = mmap(NULL, stacksize, PROT_READ | PROT_WRITE,
+                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_GROWSDOWN | MAP_STACK,
+                 -1, 0);
+    if (stack == MAP_FAILED) {
+        virReportSystemError(errno, "%s",
+                             _("Unable to allocate stack"));
+        return -1;
+    }
 
     stacktop = stack + stacksize;
 
@@ -2160,7 +2176,7 @@ int lxcContainerStart(virDomainDef *def,
         if (virProcessNamespaceAvailable(VIR_PROCESS_NAMESPACE_USER) < 0) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                            _("Kernel doesn't support user namespace"));
-            return -1;
+            goto cleanup;
         }
         VIR_DEBUG("Enable user namespace");
         cflags |= CLONE_NEWUSER;
@@ -2173,9 +2189,8 @@ int lxcContainerStart(virDomainDef *def,
     } else {
         if (lxcNeedNetworkNamespace(def)) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("Config asks for inherit net namespace "
-                             "as well as private network interfaces"));
-            return -1;
+                           _("Config asks for inherit net namespace as well as private network interfaces"));
+            goto cleanup;
         }
         VIR_DEBUG("Inheriting a net namespace");
     }
@@ -2199,10 +2214,15 @@ int lxcContainerStart(virDomainDef *def,
     if (pid < 0) {
         virReportSystemError(errno, "%s",
                              _("Failed to run clone container"));
-        return -1;
+        goto cleanup;
     }
 
-    return pid;
+    ret = pid;
+ cleanup:
+    if (munmap(stack, stacksize) < 0)
+        VIR_WARN("Unable to munmap() stack: %s", g_strerror(errno));
+
+    return ret;
 }
 
 int lxcContainerChown(virDomainDef *def, const char *path)

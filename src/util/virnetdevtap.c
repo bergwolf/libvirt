@@ -172,7 +172,6 @@ int virNetDevTapCreate(char **ifname,
                        unsigned int flags)
 {
     size_t i = 0;
-    struct ifreq ifr;
     int rc;
     int ret = -1;
     int fd = -1;
@@ -204,16 +203,15 @@ int virNetDevTapCreate(char **ifname,
     if (!tunpath)
         tunpath = "/dev/net/tun";
 
-    memset(&ifr, 0, sizeof(ifr));
     for (i = 0; i < tapfdSize; i++) {
+        struct ifreq ifr = { 0 };
+
         if ((fd = open(tunpath, O_RDWR)) < 0) {
             virReportSystemError(errno,
                                  _("Unable to open %1$s, is tun module loaded?"),
                                  tunpath);
             goto cleanup;
         }
-
-        memset(&ifr, 0, sizeof(ifr));
 
         ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
         /* If tapfdSize is greater than one, request multiqueue */
@@ -232,9 +230,21 @@ int virNetDevTapCreate(char **ifname,
         }
 
         if (ioctl(fd, TUNSETIFF, &ifr) < 0) {
-            virReportSystemError(errno,
-                                 _("Unable to create tap device %1$s"),
-                                 NULLSTR(*ifname));
+            if (flags & VIR_NETDEV_TAP_CREATE_ALLOW_EXISTING) {
+                if (tapfdSize > 1) {
+                    virReportSystemError(errno,
+                                         _("Unable to create multiple fds for tap device %1$s (maybe existing device was created without multi_queue flag)"),
+                                         *ifname);
+                } else {
+                    virReportSystemError(errno,
+                                         _("Unable to set tap device %1$s (maybe existing device was created with multi_queue flag but device XML lacks 'queues' greater than one)"),
+                                         *ifname);
+                }
+            } else {
+                virReportSystemError(errno,
+                                     _("Unable to create tap device %1$s"),
+                                     *ifname);
+            }
             goto cleanup;
         }
 
@@ -249,7 +259,7 @@ int virNetDevTapCreate(char **ifname,
             ioctl(fd, TUNSETPERSIST, 1) < 0) {
             virReportSystemError(errno,
                                  _("Unable to set tap device %1$s to persistent"),
-                                 NULLSTR(*ifname));
+                                 *ifname);
             goto cleanup;
         }
         tapfd[i] = fd;
@@ -272,7 +282,7 @@ int virNetDevTapCreate(char **ifname,
 int virNetDevTapDelete(const char *ifname,
                        const char *tunpath)
 {
-    struct ifreq try;
+    struct ifreq try = { 0 };
     int fd;
     int ret = -1;
 
@@ -286,7 +296,6 @@ int virNetDevTapDelete(const char *ifname,
         return -1;
     }
 
-    memset(&try, 0, sizeof(struct ifreq));
     try.ifr_flags = IFF_TAP|IFF_NO_PI;
 
     if (virStrcpyStatic(try.ifr_name, ifname) < 0) {
@@ -325,11 +334,12 @@ int virNetDevTapCreate(char **ifname,
     int s;
     struct ifreq ifr;
     int ret = -1;
+    bool created = false;
 
     if (tapfdSize > 1) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                        _("Multiqueue devices are not supported on this system"));
-        goto cleanup;
+        return -1;
     }
 
     /* auto-generate an unused name for the new device (this
@@ -348,8 +358,11 @@ int virNetDevTapCreate(char **ifname,
     if (ioctl(s, SIOCIFCREATE2, &ifr) < 0) {
         virReportSystemError(errno, "%s",
                              _("Unable to create tap device"));
-        goto cleanup;
+        VIR_FORCE_CLOSE(s);
+        return -1;
     }
+
+    created = true;
 
     if (tapfd) {
         g_autofree char *dev_path = NULL;
@@ -369,6 +382,18 @@ int virNetDevTapCreate(char **ifname,
 
     ret = 0;
  cleanup:
+    if (ret < 0 && created) {
+        virErrorPtr err;
+
+        virErrorPreserveLast(&err);
+
+        if (tapfd)
+            VIR_FORCE_CLOSE(*tapfd);
+
+        ignore_value(virNetDevTapDelete(ifr.ifr_name, NULL));
+        virErrorRestore(&err);
+    }
+
     VIR_FORCE_CLOSE(s);
 
     return ret;
@@ -479,7 +504,7 @@ virNetDevTapAttachBridge(const char *tapname,
                 return -1;
         }
     } else {
-        if (virNetDevBridgeAddPort(brname, tapname) < 0)
+        if (virNetDevBridgeAddPort(brname, tapname, virtVlan) < 0)
             return -1;
 
         if (isolatedPort == VIR_TRISTATE_BOOL_YES &&
@@ -506,6 +531,9 @@ virNetDevTapAttachBridge(const char *tapname,
  * @virtVlan: vlan tag info
  * @mtu: requested MTU for port (or 0 for "default")
  * @actualMTU: MTU actually set for port (after accounting for bridge's MTU)
+ * @force: set true to force detach/reattach even if the bridge name is unchanged
+ *         (this can be useful if, for example, the profileid of the
+ *         <virtualport> changes)
  *
  * Ensures that the tap device (@tapname) is connected to the bridge
  * (@brname), potentially removing it from any existing bridge that
@@ -522,7 +550,8 @@ virNetDevTapReattachBridge(const char *tapname,
                            const virNetDevVlan *virtVlan,
                            virTristateBool isolatedPort,
                            unsigned int mtu,
-                           unsigned int *actualMTU)
+                           unsigned int *actualMTU,
+                           bool force)
 {
     bool useOVS = false;
     g_autofree char *master = NULL;
@@ -533,12 +562,15 @@ virNetDevTapReattachBridge(const char *tapname,
     /* IFLA_MASTER for a tap on an OVS switch is always "ovs-system" */
     if (STREQ_NULLABLE(master, "ovs-system")) {
         useOVS = true;
+
+        /* master needs to be released here because it will be reassigned */
+        g_clear_pointer(&master, g_free);
         if (virNetDevOpenvswitchInterfaceGetMaster(tapname, &master) < 0)
             return -1;
     }
 
     /* Nothing more todo if we're on the right bridge already */
-    if (STREQ_NULLABLE(brname, master))
+    if (STREQ_NULLABLE(brname, master) && !force)
         return 0;
 
     /* disconnect from current (incorrect) bridge, if any  */
@@ -546,7 +578,7 @@ virNetDevTapReattachBridge(const char *tapname,
         int ret;
         VIR_INFO("Removing %s from %s", tapname, master);
         if (useOVS)
-            ret = virNetDevOpenvswitchRemovePort(master, tapname);
+            ret = virNetDevOpenvswitchRemovePort(tapname);
         else
             ret = virNetDevBridgeRemovePort(master, tapname);
         if (ret < 0)
@@ -662,6 +694,16 @@ int virNetDevTapCreateInBridgePort(const char *brname,
  error:
     for (i = 0; i < tapfdSize && tapfd[i] >= 0; i++)
         VIR_FORCE_CLOSE(tapfd[i]);
+
+#if defined(VIR_NETDEV_TAP_REQUIRE_MANUAL_CLEANUP)
+    if (!(flags & VIR_NETDEV_TAP_CREATE_ALLOW_EXISTING)) {
+        virErrorPtr err;
+
+        virErrorPreserveLast(&err);
+        ignore_value(virNetDevTapDelete(*ifname, tunpath));
+        virErrorRestore(&err);
+    }
+#endif /* VIR_NETDEV_TAP_REQUIRE_MANUAL_CLEANUP */
 
     return -1;
 }

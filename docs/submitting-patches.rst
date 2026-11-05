@@ -8,6 +8,11 @@ tool. All libvirt-related repositories contain a config file
 that tells git-publish to use the correct mailing list and
 subject prefix.
 
+If you are a first-time contributor, you may wish to read some
+patch submission threads from the `mailing list archive
+<contact.html#mailing-lists>`__ of the mailing list from the
+``.gitpublish`` file.
+
 Alternatively, you may send patches using ``git send-email``.
 
 The usual workflow of libvirt developer is:
@@ -30,7 +35,7 @@ When you want to post your patches:
   $ git pull --rebase
   (fix any conflicts)
   $ git send-email --cover-letter --no-chain-reply-to --annotate \
-                   --confirm=always --to=libvir-list@redhat.com master
+                   --confirm=always --to=devel@lists.libvirt.org master
 
 For a single patch you can omit ``--cover-letter``, but a
 series of two or more patches needs a cover letter.
@@ -38,21 +43,7 @@ series of two or more patches needs a cover letter.
 Note that the ``git send-email`` subcommand may not be in the
 main git package and using it may require installation of a
 separate package, for example the "git-email" package in Fedora
-and Debian. If this is your first time using
-``git send-email``, you might need to configure it to point it
-to your SMTP server with something like:
-
-::
-
-  $ git config --global sendemail.smtpServer stmp.youremailprovider.net
-
-If you get tired of typing ``--to=libvir-list@redhat.com`` all
-the time, you can configure that to be automatically handled as
-well:
-
-::
-
-  $ git config sendemail.to libvir-list@redhat.com
+and Debian.
 
 Avoid using mail clients for sending patches, as most of them
 will mangle the messages in some way, making them unusable for
@@ -60,8 +51,8 @@ our purposes. Gmail and other Web-based mail clients are
 particularly bad at this.
 
 If everything went well, your patch should show up on the
-`libvir-list
-archives <https://listman.redhat.com/archives/libvir-list/>`__ in a
+`devel list
+archives <https://lists.libvirt.org/archives/list/devel@lists.libvirt.org/>`__ in a
 matter of minutes; if you still can't find it on there after an
 hour or so, you should double-check your setup. **Note that, if
 you are not already a subscriber, your very first post to the
@@ -82,6 +73,56 @@ Moreover, such patch needs to be prefixed correctly with
 ``--subject-prefix=PATCHv2`` appended to
 ``git send-email`` (substitute ``v2`` with the
 correct version if needed though).
+
+Git Configuration
+-----------------
+
+If this is your first time using ``git send-email``, you will probably
+need to setup your global git configuration, to point to your outgoing
+SMTP server with something like:
+
+::
+
+  $ git config --global sendemail.smtpServer stmp.youremailprovider.net
+
+If your email provider (often your employer) has configured a DMARC
+policy for their domain, there are some additional settings that will
+be required. Before doing this, check the DMARC policy with
+
+::
+
+  $ host -t txt _dmarc.$YOURDOMAIN.COM
+
+If this returns no output, or contains ``p=none`` then no configuration
+is required. If it reports ``p=quarantine`` or ``p=reject``, then the
+libvirt lists will apply DMARC countermeasures to your email. To ensure
+that git authorship is preserved add
+
+::
+
+  $ git config --global format.from "Your Name <your@email.com>"
+  $ git config --global format.forceInBodyFrom true
+
+This will force git to always add an additional line
+
+::
+
+   From: Your Name <your@email.com>
+
+in the body of the patch, guaranteeing correct author records even
+when the main ``From`` header is rewritten by mailman.
+
+If you get tired of typing ``--to=devel@lists.libvirt.org`` all
+the time, you can configure that to be automatically handled by
+adding a local repository setting:
+
+::
+
+  $ git config sendemail.to devel@lists.libvirt.org
+
+This last setting is not required if using ``git-publish`` to send
+patches, as that auto-identifies the mailing list address from its
+config file stored in git.
 
 Review process
 --------------

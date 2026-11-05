@@ -36,20 +36,19 @@ struct _virHostCPUTscInfo {
 
 int virHostCPUGetStats(int cpuNum,
                        virNodeCPUStatsPtr params,
-                       int *nparams,
-                       unsigned int flags);
+                       int *nparams);
 
-bool virHostCPUHasBitmap(void);
+bool virHostCPUHasBitmap(void) ATTRIBUTE_MOCKABLE;
 virBitmap *virHostCPUGetPresentBitmap(void);
-virBitmap *virHostCPUGetOnlineBitmap(void);
+virBitmap *virHostCPUGetOnlineBitmap(void) ATTRIBUTE_MOCKABLE;
 virBitmap *virHostCPUGetAvailableCPUsBitmap(void);
+int virHostCPUGetIsolated(virBitmap **isolated) ATTRIBUTE_MOCKABLE;
 
 int virHostCPUGetCount(void);
-int virHostCPUGetThreadsPerSubcore(virArch arch) G_NO_INLINE;
+int virHostCPUGetThreadsPerSubcore(virArch arch) ATTRIBUTE_MOCKABLE;
 
 int virHostCPUGetMap(unsigned char **cpumap,
-                     unsigned int *online,
-                     unsigned int flags);
+                     unsigned int *online);
 int virHostCPUGetInfo(virArch hostarch,
                       unsigned int *cpus,
                       unsigned int *mhz,
@@ -59,7 +58,7 @@ int virHostCPUGetInfo(virArch hostarch,
                       unsigned int *threads);
 
 
-int virHostCPUGetKVMMaxVCPUs(void) G_NO_INLINE;
+int virHostCPUGetKVMMaxVCPUs(void) ATTRIBUTE_MOCKABLE;
 
 int virHostCPUStatsAssign(virNodeCPUStatsPtr param,
                           const char *name,
@@ -68,6 +67,7 @@ int virHostCPUStatsAssign(virNodeCPUStatsPtr param,
 #ifdef __linux__
 int virHostCPUGetSocket(unsigned int cpu, unsigned int *socket);
 int virHostCPUGetDie(unsigned int cpu, unsigned int *die);
+int virHostCPUGetCluster(unsigned int cpu, unsigned int *cluster);
 int virHostCPUGetCore(unsigned int cpu, unsigned int *core);
 
 virBitmap *virHostCPUGetSiblingsList(unsigned int cpu);
@@ -76,7 +76,10 @@ virBitmap *virHostCPUGetSiblingsList(unsigned int cpu);
 int virHostCPUGetOnline(unsigned int cpu, bool *online);
 
 unsigned int
-virHostCPUGetMicrocodeVersion(virArch hostArch) G_NO_INLINE;
+virHostCPUGetMicrocodeVersion(virArch hostArch) ATTRIBUTE_MOCKABLE;
+
+int virHostCPUGetMSRFromKVM(unsigned long index,
+                            uint64_t *result) ATTRIBUTE_MOCKABLE;
 
 int virHostCPUGetMSR(unsigned long index,
                      uint64_t *msr);
@@ -87,7 +90,8 @@ virHostCPUTscInfo *virHostCPUGetTscInfo(void);
 
 int virHostCPUGetSignature(char **signature);
 
-int virHostCPUGetPhysAddrSize(unsigned int *size);
+int virHostCPUGetPhysAddrSize(const virArch hostArch,
+                              unsigned int *size) ATTRIBUTE_MOCKABLE;
 
 int virHostCPUGetHaltPollTime(pid_t pid,
                               unsigned long long *haltPollSuccess,

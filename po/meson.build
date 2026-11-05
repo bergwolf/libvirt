@@ -1,5 +1,3 @@
-i18n = import('i18n')
-
 i18n.gettext(
   meson.project_name(),
   args: [
@@ -14,12 +12,14 @@ i18n.gettext(
     '--package-version=@0@'.format(meson.project_version()),
     '--sort-output',
   ],
+  data_dirs: meson.current_source_dir()
 )
 
 potfiles_dep = [
-  access_gen_sources,
+  access_generated,
   admin_client_generated,
   admin_driver_generated,
+  remote_protocol_generated,
   remote_driver_generated,
   remote_daemon_generated,
 ]

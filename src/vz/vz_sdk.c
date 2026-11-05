@@ -596,16 +596,16 @@ prlsdkGetDiskId(PRL_HANDLE disk, virDomainDiskBus *bus, char **dst)
     switch (ifType) {
     case PMS_IDE_DEVICE:
         *bus = VIR_DOMAIN_DISK_BUS_IDE;
-        *dst = virIndexToDiskName(pos, "hd");
+        *dst = virIndexToDiskName(0, pos, "hd");
         break;
     case PMS_SCSI_DEVICE:
     case PMS_UNKNOWN_DEVICE:
         *bus = VIR_DOMAIN_DISK_BUS_SCSI;
-        *dst = virIndexToDiskName(pos, "sd");
+        *dst = virIndexToDiskName(0, pos, "sd");
         break;
     case PMS_SATA_DEVICE:
         *bus = VIR_DOMAIN_DISK_BUS_SATA;
-        *dst = virIndexToDiskName(pos, "sd");
+        *dst = virIndexToDiskName(0, pos, "sd");
         break;
     default:
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -801,8 +801,7 @@ prlsdkAddDomainHardDisksInfo(struct _vzDriver *driver, PRL_HANDLE sdkdom, virDom
             if (prlsdkGetFSInfo(hdd, fs) < 0)
                 goto error;
 
-            if (virDomainFSInsert(def, fs) < 0)
-                goto error;
+            virDomainFSInsert(def, fs);
 
             fs = NULL;
             PrlHandle_Free(hdd);
@@ -901,7 +900,6 @@ prlsdkParseNetAddress(char *addr)
         VIR_WARN("cannot parse network address '%s'", addr);
 
     VIR_FREE(ip);
-    VIR_FREE(addr);
 
     return ret;
 }
@@ -924,7 +922,7 @@ prlsdkGetNetAddresses(PRL_HANDLE sdknet, virDomainNetDef *net)
     for (i = 0; i < num; ++i) {
         virNetDevIPAddr *ip = NULL;
         PRL_UINT32 buflen = 0;
-        char *addr;
+        g_autofree char *addr = NULL;
 
         pret = PrlStrList_GetItem(addrlist, i, NULL, &buflen);
         prlsdkCheckRetGoto(pret, cleanup);
@@ -1849,15 +1847,8 @@ prlsdkLoadDomain(struct _vzDriver *driver,
         int bus = IS_CT(def) ? VIR_DOMAIN_INPUT_BUS_PARALLELS :
                                VIR_DOMAIN_INPUT_BUS_PS2;
 
-        if (virDomainDefMaybeAddInput(def,
-                                      VIR_DOMAIN_INPUT_TYPE_MOUSE,
-                                      bus) < 0)
-            return NULL;
-
-        if (virDomainDefMaybeAddInput(def,
-                                      VIR_DOMAIN_INPUT_TYPE_KBD,
-                                      bus) < 0)
-            return NULL;
+        virDomainDefMaybeAddInput(def, VIR_DOMAIN_INPUT_TYPE_MOUSE, bus);
+        virDomainDefMaybeAddInput(def, VIR_DOMAIN_INPUT_TYPE_KBD, bus);
     }
 
     if (!dom) {
@@ -2415,15 +2406,13 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
 
     if (def->blkio.ndevices > 0) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("blkio parameters are not supported "
-                         "by vz driver"));
+                       _("blkio parameters are not supported by vz driver"));
         return -1;
     }
 
     if (virDomainDefGetMemoryTotal(def) != def->mem.cur_balloon) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing balloon parameters is not supported "
-                         "by vz driver"));
+                       _("changing balloon parameters is not supported by vz driver"));
         return -1;
     }
 
@@ -2440,8 +2429,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
         virMemoryLimitIsSet(def->mem.swap_hard_limit)) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Memory parameter is not supported "
-                         "by vz driver"));
+                       _("Memory parameter is not supported by vz driver"));
         return -1;
     }
 
@@ -2453,8 +2441,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
 
     if (def->placement_mode) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing cpu placement mode is not supported "
-                         "by vz driver"));
+                       _("changing cpu placement mode is not supported by vz driver"));
         return -1;
     }
 
@@ -2489,8 +2476,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
          memMode == VIR_DOMAIN_NUMATUNE_MEM_STRICT) ||
         virDomainNumatuneHasPerNodeBinding(def->numa)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("numa parameters are not supported "
-                         "by vz driver"));
+                       _("numa parameters are not supported by vz driver"));
         return -1;
     }
 
@@ -2499,8 +2485,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
         def->onCrash != VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("on_reboot, on_poweroff and on_crash parameters "
-                         "are not supported by vz driver"));
+                       _("on_reboot, on_poweroff and on_crash parameters are not supported by vz driver"));
         return -1;
     }
 
@@ -2516,8 +2501,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
         def->os.bios.useserial != 0) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing OS parameters is not supported "
-                         "by vz driver"));
+                       _("changing OS parameters is not supported by vz driver"));
         return -1;
     }
 
@@ -2531,8 +2515,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
         !(vmType == PVT_CT && IS_CT(def))) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing OS type is not supported "
-                         "by vz driver"));
+                       _("changing OS type is not supported by vz driver"));
         return -1;
     }
 
@@ -2555,16 +2538,14 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
 
     if (def->emulator) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing emulator is not supported "
-                         "by vz driver"));
+                       _("changing emulator is not supported by vz driver"));
         return -1;
     }
 
     for (i = 0; i < VIR_DOMAIN_FEATURE_LAST; i++) {
         if (def->features[i]) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("changing features is not supported "
-                             "by vz driver"));
+                           _("changing features is not supported by vz driver"));
             return -1;
         }
     }
@@ -2573,15 +2554,13 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
         def->clock.ntimers != 0) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing clock parameters is not supported "
-                         "by vz driver"));
+                       _("changing clock parameters is not supported by vz driver"));
         return -1;
     }
 
     if (!IS_CT(def) && def->nfss != 0) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Filesystems in VMs are not supported "
-                         "by vz driver"));
+                       _("Filesystems in VMs are not supported by vz driver"));
         return -1;
     }
 
@@ -2591,8 +2570,7 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDef *def)
         def->nleases != 0 || def->nhubs != 0) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("changing devices parameters is not supported "
-                         "by vz driver"));
+                       _("changing devices parameters is not supported by vz driver"));
         return -1;
     }
 
@@ -2716,15 +2694,13 @@ static int prlsdkCheckVideoUnsupportedParams(virDomainDef *def)
             return 0;
         } else {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("Video adapters are not supported "
-                             "int containers."));
+                           _("Video adapters are not supported in containers."));
             return -1;
         }
     } else {
         if (def->nvideos != 1) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("vz driver supports "
-                             "only one video adapter."));
+                           _("vz driver supports only one video adapter."));
             return -1;
         }
     }
@@ -2733,22 +2709,19 @@ static int prlsdkCheckVideoUnsupportedParams(virDomainDef *def)
 
     if (v->type != VIR_DOMAIN_VIDEO_TYPE_VGA) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vz driver supports "
-                         "only VGA video adapters."));
+                       _("vz driver supports only VGA video adapters."));
         return -1;
     }
 
     if (v->heads != 1) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vz driver doesn't support "
-                         "multihead video adapters."));
+                       _("vz driver doesn't support multihead video adapters."));
         return -1;
     }
 
     if (v->accel != NULL && (v->accel->accel2d || v->accel->accel3d)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vz driver doesn't support "
-                         "setting video acceleration parameters."));
+                       _("vz driver doesn't support setting video acceleration parameters."));
         return -1;
     }
 
@@ -2759,15 +2732,13 @@ static int prlsdkCheckSerialUnsupportedParams(virDomainChrDef *chr)
 {
     if (chr->deviceType != VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Specified character device type is not supported "
-                         "by vz driver."));
+                       _("Specified character device type is not supported by vz driver."));
         return -1;
     }
 
     if (chr->targetType != VIR_DOMAIN_CHR_SERIAL_TARGET_TYPE_NONE) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Specified character device target type is not "
-                         "supported by vz driver."));
+                       _("Specified character device target type is not supported by vz driver."));
         return -1;
     }
 
@@ -2779,22 +2750,19 @@ static int prlsdkCheckSerialUnsupportedParams(virDomainChrDef *chr)
 
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Specified character device source type is not "
-                         "supported by vz driver."));
+                       _("Specified character device source type is not supported by vz driver."));
         return -1;
     }
 
     if (chr->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting device info for character devices is not "
-                         "supported by vz driver."));
+                       _("Setting device info for character devices is not supported by vz driver."));
         return -1;
     }
 
     if (chr->source->nseclabels > 0) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting security labels is not "
-                         "supported by vz driver."));
+                       _("Setting security labels is not supported by vz driver."));
         return -1;
     }
 
@@ -2812,8 +2780,7 @@ static int prlsdkCheckSerialUnsupportedParams(virDomainChrDef *chr)
          STRNEQ(chr->source->data.udp.bindService,
                 chr->source->data.udp.connectService))) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Different bind and connect parameters for "
-                         "udp character device is not supported."));
+                       _("Different bind and connect parameters for udp character device is not supported."));
         return -1;
     }
 
@@ -2825,71 +2792,61 @@ static int prlsdkCheckNetUnsupportedParams(virDomainNetDef *net)
     if (net->type != VIR_DOMAIN_NET_TYPE_NETWORK &&
         net->type != VIR_DOMAIN_NET_TYPE_BRIDGE) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Specified network adapter type is not "
-                         "supported by vz driver."));
+                       _("Specified network adapter type is not supported by vz driver."));
         return -1;
     }
 
     if (net->backend.tap || net->backend.vhost) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Interface backend parameters are not "
-                         "supported by vz driver."));
+                       _("Interface backend parameters are not supported by vz driver."));
         return -1;
     }
 
     if (net->data.network.portgroup) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Virtual network portgroups are not "
-                         "supported by vz driver."));
+                       _("Virtual network portgroups are not supported by vz driver."));
         return -1;
     }
 
     if (net->tune.sndbuf_specified) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting interface sndbuf is not "
-                         "supported by vz driver."));
+                       _("Setting interface sndbuf is not supported by vz driver."));
         return -1;
     }
 
     if (net->script) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting interface script is not "
-                         "supported by vz driver."));
+                       _("Setting interface script is not supported by vz driver."));
         return -1;
     }
 
     if (net->ifname_guest) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting guest interface name is not "
-                         "supported by vz driver."));
+                       _("Setting guest interface name is not supported by vz driver."));
         return -1;
     }
 
     if (net->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting device info for network devices is not "
-                         "supported by vz driver."));
+                       _("Setting device info for network devices is not supported by vz driver."));
         return -1;
     }
 
     if (net->filter) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting network filter is not "
-                         "supported by vz driver."));
+                       _("Setting network filter is not supported by vz driver."));
         return -1;
     }
 
     if (net->bandwidth) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting network bandwidth is not "
-                         "supported by vz driver."));
+                       _("Setting network bandwidth is not supported by vz driver."));
         return -1;
     }
 
     if (net->vlan.trunk) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting up vlans is not "
-                         "supported by vz driver."));
+                       _("Setting up vlans is not supported by vz driver."));
         return -1;
     }
 
@@ -2901,50 +2858,43 @@ static int prlsdkCheckFSUnsupportedParams(virDomainFSDef *fs)
     if (fs->type != VIR_DOMAIN_FS_TYPE_FILE &&
         fs->type != VIR_DOMAIN_FS_TYPE_VOLUME) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Only file based or volume based filesystems "
-                         "are supported by vz driver."));
+                       _("Only file based or volume based filesystems are supported by vz driver."));
         return -1;
     }
 
     if (fs->fsdriver != VIR_DOMAIN_FS_DRIVER_TYPE_PLOOP) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Only ploop fs driver is "
-                         "supported by vz driver."));
+                       _("Only ploop fs driver is supported by vz driver."));
         return -1;
     }
 
     if (fs->accessmode != VIR_DOMAIN_FS_ACCESSMODE_PASSTHROUGH) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Changing fs access mode is not "
-                         "supported by vz driver."));
+                       _("Changing fs access mode is not supported by vz driver."));
         return -1;
     }
 
     if (fs->wrpolicy != VIR_DOMAIN_FS_WRPOLICY_DEFAULT) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Changing fs write policy is not "
-                         "supported by vz driver."));
+                       _("Changing fs write policy is not supported by vz driver."));
         return -1;
     }
 
     if (fs->format != VIR_STORAGE_FILE_PLOOP) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Only ploop disk images are "
-                         "supported by vz driver."));
+                       _("Only ploop disk images are supported by vz driver."));
         return -1;
     }
 
     if (fs->readonly) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting readonly for filesystems is "
-                         "not supported by vz driver."));
+                       _("Setting readonly for filesystems is not supported by vz driver."));
         return -1;
     }
 
     if (fs->space_hard_limit || fs->space_soft_limit) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Setting fs quotas is not "
-                         "supported by vz driver."));
+                       _("Setting fs quotas is not supported by vz driver."));
         return -1;
     }
 
@@ -3053,8 +3003,7 @@ static int prlsdkAddSerial(PRL_HANDLE sdkdom, virDomainChrDef *chr)
         break;
     default:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("vz driver doesn't support "
-                         "specified serial source type."));
+                       _("vz driver doesn't support specified serial source type."));
         goto cleanup;
     }
 
@@ -3269,8 +3218,7 @@ static int prlsdkConfigureNet(struct _vzDriver *driver G_GNUC_UNUSED,
 
     if (isCt) {
         if (net->model != VIR_DOMAIN_NET_MODEL_UNKNOWN)
-            VIR_WARN("Setting network adapter for containers is not "
-                     "supported by vz driver.");
+            VIR_WARN("Setting network adapter for containers is not supported by vz driver.");
     } else {
         if (net->model == VIR_DOMAIN_NET_MODEL_RTL8139) {
             pret = PrlVmDevNet_SetAdapterType(sdknet, PNT_RTL);
@@ -3280,8 +3228,7 @@ static int prlsdkConfigureNet(struct _vzDriver *driver G_GNUC_UNUSED,
             pret = PrlVmDevNet_SetAdapterType(sdknet, PNT_VIRTIO);
         } else {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("Specified network adapter model is not "
-                             "supported by vz driver."));
+                           _("Specified network adapter model is not supported by vz driver."));
             goto cleanup;
         }
         prlsdkCheckRetGoto(pret, cleanup);
@@ -3431,11 +3378,11 @@ static int prlsdkConfigureDisk(struct _vzDriver *driver,
     case VIR_DOMAIN_DISK_BUS_USB:
     case VIR_DOMAIN_DISK_BUS_UML:
     case VIR_DOMAIN_DISK_BUS_SD:
+    case VIR_DOMAIN_DISK_BUS_NVME:
     case VIR_DOMAIN_DISK_BUS_LAST:
     default:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("Specified disk bus is not "
-                         "supported by vz driver."));
+                       _("Specified disk bus is not supported by vz driver."));
         goto cleanup;
     }
 
@@ -3947,8 +3894,7 @@ prlsdkDoApplyConfig(struct _vzDriver *driver,
     pret = PrlVmCfg_SetCpuCount(sdkdom, virDomainDefGetVcpus(def));
     prlsdkCheckRetGoto(pret, error);
 
-    if (!(mask = virBitmapFormat(def->cpumask)))
-        goto error;
+    mask = virBitmapFormat(def->cpumask);
 
     pret = PrlVmCfg_SetCpuMask(sdkdom, mask);
     prlsdkCheckRetGoto(pret, error);
@@ -4276,8 +4222,7 @@ prlsdkUnregisterDomain(struct _vzDriver *driver, virDomainObj *dom, unsigned int
         !(flags & VIR_DOMAIN_UNDEFINE_MANAGED_SAVE)) {
 
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("Refusing to undefine while domain managed "
-                         "save image exists"));
+                       _("Refusing to undefine while domain managed save image exists"));
         return -1;
     }
 
@@ -4393,6 +4338,7 @@ prlsdkGetBlockStats(PRL_HANDLE sdkstats,
         case VIR_DOMAIN_DISK_BUS_USB:
         case VIR_DOMAIN_DISK_BUS_UML:
         case VIR_DOMAIN_DISK_BUS_SD:
+        case VIR_DOMAIN_DISK_BUS_NVME:
         case VIR_DOMAIN_DISK_BUS_LAST:
         default:
             virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -4657,11 +4603,8 @@ prlsdkParseSnapshotTree(const char *treexml)
                             "ParallelsSavedStates", &ctxt, NULL, false)))
         goto cleanup;
 
-    if ((n = virXPathNodeSet("//SavedStateItem", ctxt, &nodes)) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("cannot extract snapshot nodes"));
+    if ((n = virXPathNodeSet("//SavedStateItem", ctxt, &nodes)) < 0)
         goto cleanup;
-    }
 
     for (i = 0; i < n; i++) {
         if (nodes[i]->parent == xmlDocGetRootElement(xml))

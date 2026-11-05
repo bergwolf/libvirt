@@ -34,6 +34,12 @@
 
 VIR_LOG_INIT("rpc.netmessage");
 
+#if defined(XDRPROC_T_3ARGS)
+# define XDRPROC_FILTER(filter, xdr, data) ((*filter)(&xdr, data, 0))
+#else
+# define XDRPROC_FILTER(filter, xdr, data) ((*filter)(&xdr, data))
+#endif
+
 virNetMessage *virNetMessageNew(bool tracked)
 {
     virNetMessage *msg;
@@ -96,12 +102,47 @@ void virNetMessageFree(virNetMessage *msg)
         msg->cb(msg, msg->opaque);
 
     virNetMessageClearPayload(msg);
+
+    /* Make a stale reference from a queue detectable rather than dangling */
+    msg->next = NULL;
+
     g_free(msg);
 }
+
+static bool
+virNetMessageQueueContains(virNetMessage *queue, virNetMessage *msg)
+{
+    virNetMessage *tmp;
+
+    for (tmp = queue; tmp; tmp = tmp->next) {
+        if (tmp == msg)
+            return true;
+    }
+
+    return false;
+}
+
 
 void virNetMessageQueuePush(virNetMessage **queue, virNetMessage *msg)
 {
     virNetMessage *tmp = *queue;
+
+    VIR_DEBUG("queue=%p msg=%p", queue, msg);
+
+    /* A message which is already linked into a queue must never be pushed
+     * again. If it happens to be the tail of this very queue, the loop
+     * below would link it to itself, and virNetMessageQueueServe() would
+     * then hand out the same message repeatedly - which the callers go on
+     * to free more than once.
+     *
+     * Note that virNetMessageClear() memsets ->next, so a message can be
+     * queued and yet appear unlinked; the queue has to be walked.
+     */
+    if (msg->next || virNetMessageQueueContains(*queue, msg)) {
+        VIR_WARN("Refusing to queue message %p which is already queued (queue=%p *queue=%p msg->next=%p)",
+                 msg, queue, *queue, msg->next);
+        return;
+    }
 
     if (tmp) {
         while (tmp->next)
@@ -117,10 +158,23 @@ virNetMessage *virNetMessageQueueServe(virNetMessage **queue)
 {
     virNetMessage *tmp = *queue;
 
+    VIR_DEBUG("queue serve start queue=%p *queue=%p", queue, *queue);
+
     if (tmp) {
         *queue = g_steal_pointer(&tmp->next);
+
+        /* A message linked to itself means the queue was corrupted by a
+         * duplicate push; serving it would hand out the same pointer
+         * indefinitely. Break the cycle rather than looping on it.
+         */
+        if (*queue == tmp) {
+            VIR_WARN("Detected self-referencing message %p on queue %p, breaking cycle",
+                     tmp, queue);
+            *queue = NULL;
+        }
     }
 
+    VIR_DEBUG("queue serve end queue=%p *queue=%p", queue, *queue);
     return tmp;
 }
 
@@ -362,7 +416,7 @@ int virNetMessageEncodePayload(virNetMessage *msg,
                   msg->bufferLength - msg->bufferOffset, XDR_ENCODE);
 
     /* Try to encode the payload. If the buffer is too small increase it. */
-    while (!(*filter)(&xdr, data, 0)) {
+    while (!XDRPROC_FILTER(*filter, xdr, data)) {
         unsigned int newlen = msg->bufferLength - VIR_NET_MESSAGE_LEN_MAX;
         newlen *= 2;
 
@@ -419,7 +473,7 @@ int virNetMessageDecodePayload(virNetMessage *msg,
     xdrmem_create(&xdr, msg->buffer + msg->bufferOffset,
                   msg->bufferLength - msg->bufferOffset, XDR_DECODE);
 
-    if (!(*filter)(&xdr, data, 0)) {
+    if (!XDRPROC_FILTER(*filter, xdr, data)) {
         virReportError(VIR_ERR_RPC, "%s", _("Unable to decode message payload"));
         goto error;
     }

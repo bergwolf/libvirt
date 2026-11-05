@@ -47,3 +47,11 @@ void virCommandSetDryRun(virCommandDryRunToken *tok,
                          bool bufCommandStripPath,
                          virCommandDryRunCallback cb,
                          void *opaque);
+
+void virCommandPeekSendBuffers(virCommand *cmd,
+                               virCommandSendBuffer **buffers,
+                               int *nbuffers);
+
+void virCommandArgListAccess(virCommand *cmd,
+                             char ***args,
+                             size_t *nargs);

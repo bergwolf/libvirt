@@ -1,4 +1,5 @@
 [gitpublishprofile "default"]
 base = master
-to = libvir-list@redhat.com
-prefix = libvirt PATCH
+to = devel@lists.libvirt.org
+prefix = PATCH
+suppresscc = misc-by

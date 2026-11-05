@@ -1,14 +1,15 @@
 ch_driver_sources = [
+  'ch_alias.c',
+  'ch_capabilities.c',
   'ch_conf.c',
-  'ch_conf.h',
   'ch_domain.c',
-  'ch_domain.h',
   'ch_driver.c',
-  'ch_driver.h',
+  'ch_events.c',
+  'ch_hostdev.c',
+  'ch_hotplug.c',
+  'ch_interface.c',
   'ch_monitor.c',
-  'ch_monitor.h',
   'ch_process.c',
-  'ch_process.h',
 ]
 
 driver_source_files += files(ch_driver_sources)
@@ -57,10 +58,28 @@ if conf.has('WITH_CH')
 
   virt_daemon_units += {
     'service': 'virtchd',
-    'service_in': files('virtchd.service.in'),
-    'name': 'Libvirt ch',
-    'sockprefix': 'virtchd',
-    'sockets': [ 'main', 'ro', 'admin' ],
+    'name': 'Cloud Hypervisor',
+    'service_extra_in': [
+      files('virtchd.service.extra.in'),
+      systemd_service_limitnofile_extra_in,
+      systemd_service_tasksmax_extra_in,
+      systemd_service_limitmemlock_extra_in,
+    ],
+    'socket_extra_in': [
+      files('virtchd.socket.extra.in'),
+    ],
+  }
+
+  ch_conf = files('ch.conf')
+  virt_conf_files += ch_conf
+  virt_aug_files += files('libvirtd_ch.aug')
+  virt_test_aug_files += {
+    'name': 'test_libvirtd_ch.aug',
+    'aug': files('test_libvirtd_ch.aug.in'),
+    'conf': ch_conf,
+    'test_name': 'libvirtd_ch',
+    'test_srcdir': meson.current_source_dir(),
+    'test_builddir': meson.current_build_dir(),
   }
 
   virt_install_dirs += [

@@ -130,29 +130,6 @@ qemuHostdevUpdateActiveDomainDevices(virQEMUDriver *driver,
 }
 
 
-bool
-qemuHostdevNeedsVFIO(const virDomainHostdevDef *hostdev)
-{
-    return virHostdevIsVFIODevice(hostdev) ||
-        virHostdevIsMdevDevice(hostdev);
-}
-
-
-bool
-qemuHostdevHostSupportsPassthroughVFIO(void)
-{
-    /* condition 1 - host has IOMMU */
-    if (!virHostHasIOMMU())
-        return false;
-
-    /* condition 2 - /dev/vfio/vfio exists */
-    if (!virFileExists(QEMU_DEV_VFIO))
-        return false;
-
-    return true;
-}
-
-
 int
 qemuHostdevPrepareOneNVMeDisk(virQEMUDriver *driver,
                               const char *name,
@@ -245,8 +222,7 @@ qemuHostdevPrepareMediatedDevices(virQEMUDriver *driver,
         if (virHostdevIsMdevDevice(hostdevs[i])) {
             if (!supportsVFIO) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                               _("Mediated host device assignment requires "
-                                 "VFIO support"));
+                               _("Mediated host device assignment requires VFIO support"));
                 return -1;
             }
             break;

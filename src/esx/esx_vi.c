@@ -231,6 +231,8 @@ esxVI_CURL_Perform(esxVI_CURL *curl, const char *url)
     long responseCode = 0;
     const char *redirectUrl = NULL;
 
+    VIR_DEBUG("URL: %s", url);
+
     errorCode = curl_easy_perform(curl->handle);
 
     if (errorCode != CURLE_OK) {
@@ -253,8 +255,7 @@ esxVI_CURL_Perform(esxVI_CURL *curl, const char *url)
 
     if (responseCode < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("curl_easy_getinfo(CURLINFO_RESPONSE_CODE) returned a "
-                         "negative response code"));
+                       _("curl_easy_getinfo(CURLINFO_RESPONSE_CODE) returned a negative response code"));
         return -1;
     }
 
@@ -300,6 +301,17 @@ esxVI_CURL_Connect(esxVI_CURL *curl, esxUtil_ParsedUri *parsedUri)
                                       "Content-Type: text/xml; charset=UTF-8");
 
     /*
+     * Testing showed that the 4.0 version is most close to our current types in
+     * esx_vi_generator.input data.  We could update the version if new method
+     * parameters or object properties are needed.
+     *
+     * The other option is to drop the "/x.y" suffix completely once
+     * https://gitlab.com/libvirt/libvirt/-/work_items/878 is implemented since
+     * that will not limit the version at all.
+     */
+    curl->headers = curl_slist_append(curl->headers, "SOAPAction: urn:vim25/4.0");
+
+    /*
      * Add an empty expect header to stop CURL from waiting for a response code
      * 100 (Continue) from the server before continuing the POST operation.
      * Waiting for this response would slowdown each communication with the
@@ -316,13 +328,13 @@ esxVI_CURL_Connect(esxVI_CURL *curl, esxUtil_ParsedUri *parsedUri)
     }
 
     curl_easy_setopt(curl->handle, CURLOPT_USERAGENT, "libvirt-esx");
-    curl_easy_setopt(curl->handle, CURLOPT_NOSIGNAL, 1);
-    curl_easy_setopt(curl->handle, CURLOPT_HEADER, 0);
-    curl_easy_setopt(curl->handle, CURLOPT_FOLLOWLOCATION, 0);
+    curl_easy_setopt(curl->handle, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl->handle, CURLOPT_HEADER, 0L);
+    curl_easy_setopt(curl->handle, CURLOPT_FOLLOWLOCATION, 0L);
     curl_easy_setopt(curl->handle, CURLOPT_SSL_VERIFYPEER,
-                     parsedUri->noVerify ? 0 : 1);
+                     parsedUri->noVerify ? 0L : 1L);
     curl_easy_setopt(curl->handle, CURLOPT_SSL_VERIFYHOST,
-                     parsedUri->noVerify ? 0 : 2);
+                     parsedUri->noVerify ? 0L : 2L);
     curl_easy_setopt(curl->handle, CURLOPT_COOKIEFILE, "");
     curl_easy_setopt(curl->handle, CURLOPT_HTTPHEADER, curl->headers);
     curl_easy_setopt(curl->handle, CURLOPT_READFUNCTION,
@@ -332,17 +344,20 @@ esxVI_CURL_Connect(esxVI_CURL *curl, esxUtil_ParsedUri *parsedUri)
     curl_easy_setopt(curl->handle, CURLOPT_ERRORBUFFER, curl->error);
 #if ESX_VI__CURL__ENABLE_DEBUG_OUTPUT
     curl_easy_setopt(curl->handle, CURLOPT_DEBUGFUNCTION, esxVI_CURL_Debug);
-    curl_easy_setopt(curl->handle, CURLOPT_VERBOSE, 1);
+    curl_easy_setopt(curl->handle, CURLOPT_VERBOSE, 1L);
 #endif
 
     if (parsedUri->proxy) {
         curl_easy_setopt(curl->handle, CURLOPT_PROXY,
                          parsedUri->proxy_hostname);
         curl_easy_setopt(curl->handle, CURLOPT_PROXYTYPE,
-                         parsedUri->proxy_type);
+                         (long) parsedUri->proxy_type);
         curl_easy_setopt(curl->handle, CURLOPT_PROXYPORT,
-                         parsedUri->proxy_port);
+                         (long) parsedUri->proxy_port);
     }
+
+    if (parsedUri->cacert)
+        curl_easy_setopt(curl->handle, CURLOPT_CAINFO, parsedUri->cacert);
 
     if (virMutexInit(&curl->lock) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
@@ -371,7 +386,7 @@ esxVI_CURL_Download(esxVI_CURL *curl, const char *url, char **content,
          */
         if (*length > INT32_MAX / 2) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Download length it too large"));
+                           _("Download length is too large"));
             return -1;
         }
 
@@ -384,8 +399,8 @@ esxVI_CURL_Download(esxVI_CURL *curl, const char *url, char **content,
         curl_easy_setopt(curl->handle, CURLOPT_URL, url);
         curl_easy_setopt(curl->handle, CURLOPT_RANGE, range);
         curl_easy_setopt(curl->handle, CURLOPT_WRITEDATA, &buffer);
-        curl_easy_setopt(curl->handle, CURLOPT_UPLOAD, 0);
-        curl_easy_setopt(curl->handle, CURLOPT_HTTPGET, 1);
+        curl_easy_setopt(curl->handle, CURLOPT_UPLOAD, 0L);
+        curl_easy_setopt(curl->handle, CURLOPT_HTTPGET, 1L);
 
         responseCode = esxVI_CURL_Perform(curl, url);
     }
@@ -424,7 +439,7 @@ esxVI_CURL_Upload(esxVI_CURL *curl, const char *url, const char *content)
         curl_easy_setopt(curl->handle, CURLOPT_URL, url);
         curl_easy_setopt(curl->handle, CURLOPT_RANGE, NULL);
         curl_easy_setopt(curl->handle, CURLOPT_READDATA, &content);
-        curl_easy_setopt(curl->handle, CURLOPT_UPLOAD, 1);
+        curl_easy_setopt(curl->handle, CURLOPT_UPLOAD, 1L);
         curl_easy_setopt(curl->handle, CURLOPT_INFILESIZE, strlen(content));
 
         responseCode = esxVI_CURL_Perform(curl, url);
@@ -674,15 +689,13 @@ esxVI_MultiCURL_Remove(esxVI_MultiCURL *multi, esxVI_CURL *curl)
 {
     if (!curl->handle) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Cannot remove uninitialized CURL handle from a "
-                         "multi handle"));
+                       _("Cannot remove uninitialized CURL handle from a multi handle"));
         return -1;
     }
 
     if (!curl->multi) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Cannot remove CURL handle from a multi handle when it "
-                         "wasn't added before"));
+                       _("Cannot remove CURL handle from a multi handle when it wasn't added before"));
         return -1;
     }
 
@@ -931,7 +944,8 @@ esxVI_Context_Connect(esxVI_Context *ctx, const char *url,
     if (ctx->productLine == esxVI_ProductLine_VPX)
         ctx->hasSessionIsActive = true;
 
-
+    ctx->legacy_uuid = parsedUri->legacy_uuid;
+    ctx->uuid_key = ctx->legacy_uuid ? "config.uuid" : "config.instanceUuid";
 
     if (esxVI_Login(ctx, username, escapedPassword, NULL, &ctx->session) < 0 ||
         esxVI_BuildSelectSetCollection(ctx) < 0) {
@@ -1223,7 +1237,7 @@ esxVI_Context_Execute(esxVI_Context *ctx, const char *methodName,
         curl_easy_setopt(ctx->curl->handle, CURLOPT_URL, ctx->url);
         curl_easy_setopt(ctx->curl->handle, CURLOPT_RANGE, NULL);
         curl_easy_setopt(ctx->curl->handle, CURLOPT_WRITEDATA, &buffer);
-        curl_easy_setopt(ctx->curl->handle, CURLOPT_UPLOAD, 0);
+        curl_easy_setopt(ctx->curl->handle, CURLOPT_UPLOAD, 0L);
         curl_easy_setopt(ctx->curl->handle, CURLOPT_POSTFIELDS, request);
         curl_easy_setopt(ctx->curl->handle, CURLOPT_POSTFIELDSIZE, strlen(request));
 
@@ -1909,8 +1923,7 @@ esxVI_EnsureSession(esxVI_Context *ctx)
         }
     } else if (STRNEQ(ctx->session->key, currentSession->key)) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Key of the current session differs from the key at "
-                         "last login"));
+                       _("Key of the current session differs from the key at last login"));
         goto cleanup;
     }
 
@@ -2385,6 +2398,7 @@ esxVI_LookupNumberOfDomainsByPowerState(esxVI_Context *ctx,
 
 int
 esxVI_GetVirtualMachineIdentity(esxVI_ObjectContent *virtualMachine,
+                                const char *uuid_key,
                                 int *id, char **name, unsigned char *uuid)
 {
     const char *uuid_string = NULL;
@@ -2442,6 +2456,12 @@ esxVI_GetVirtualMachineIdentity(esxVI_ObjectContent *virtualMachine,
     }
 
     if (uuid) {
+        if (!uuid_key) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Cannot get VM's UUID without supplying a VM UUID key"));
+            goto failure;
+        }
+
         if (esxVI_GetManagedEntityStatus(virtualMachine, "configStatus",
                                          &configStatus) < 0) {
             goto failure;
@@ -2451,7 +2471,8 @@ esxVI_GetVirtualMachineIdentity(esxVI_ObjectContent *virtualMachine,
             for (dynamicProperty = virtualMachine->propSet;
                  dynamicProperty;
                  dynamicProperty = dynamicProperty->_next) {
-                if (STREQ(dynamicProperty->name, "config.uuid")) {
+
+                if (STREQ(dynamicProperty->name, uuid_key)) {
                     if (esxVI_AnyType_ExpectType(dynamicProperty->val,
                                                  esxVI_Type_String) < 0) {
                         goto failure;
@@ -2477,8 +2498,7 @@ esxVI_GetVirtualMachineIdentity(esxVI_ObjectContent *virtualMachine,
         } else {
             memset(uuid, 0, VIR_UUID_BUFLEN);
 
-            VIR_WARN("Cannot access UUID, because 'configStatus' property "
-                      "indicates a config problem");
+            VIR_WARN("Cannot access UUID, because 'configStatus' property indicates a config problem");
         }
     }
 
@@ -2676,13 +2696,17 @@ esxVI_LookupVirtualMachineByUuid(esxVI_Context *ctx, const unsigned char *uuid,
     int result = -1;
     esxVI_ManagedObjectReference *managedObjectReference = NULL;
     char uuid_string[VIR_UUID_STRING_BUFLEN] = "";
+    esxVI_Boolean instanceUuid = esxVI_Boolean_True;
+
+    if (ctx->legacy_uuid)
+        instanceUuid = esxVI_Boolean_Undefined;
 
     ESX_VI_CHECK_ARG_LIST(virtualMachine);
 
     virUUIDFormat(uuid, uuid_string);
 
     if (esxVI_FindByUuid(ctx, ctx->datacenter->_reference, uuid_string,
-                         esxVI_Boolean_True, esxVI_Boolean_Undefined,
+                         esxVI_Boolean_True, instanceUuid,
                          &managedObjectReference) < 0) {
         return -1;
     }
@@ -2742,7 +2766,7 @@ esxVI_LookupVirtualMachineByName(esxVI_Context *ctx, const char *name,
          candidate = candidate->_next) {
         g_autofree char *name_candidate = NULL;
 
-        if (esxVI_GetVirtualMachineIdentity(candidate, NULL, &name_candidate,
+        if (esxVI_GetVirtualMachineIdentity(candidate, NULL, NULL, &name_candidate,
                                             NULL) < 0) {
             goto cleanup;
         }
@@ -4220,13 +4244,10 @@ esxVI_WaitForTaskCompletion(esxVI_Context *ctx,
 
                 if (taskInfo->cancelable == esxVI_Boolean_True) {
                     if (esxVI_CancelTask(ctx, task) < 0 && blocked) {
-                        VIR_ERROR(_("Cancelable task is blocked by an "
-                                     "unanswered question but cancellation "
-                                     "failed"));
+                        VIR_ERROR(_("Cancelable task is blocked by an unanswered question but cancellation failed"));
                     }
                 } else if (blocked) {
-                    VIR_ERROR(_("Non-cancelable task is blocked by an "
-                                 "unanswered question"));
+                    VIR_ERROR(_("Non-cancelable task is blocked by an unanswered question"));
                 }
 
                 /* FIXME: Enable error reporting here again */
@@ -4623,7 +4644,6 @@ esxVI_LookupHostScsiTopologyLunListByTargetName
     esxVI_HostScsiTopologyInterface *hostScsiInterfaceList = NULL;
     esxVI_HostScsiTopologyInterface *hostScsiInterface = NULL;
     esxVI_HostScsiTopologyTarget *hostScsiTopologyTarget = NULL;
-    bool found = false;
     esxVI_HostInternetScsiTargetTransport *candidate = NULL;
 
     ESX_VI_CHECK_ARG_LIST(hostScsiTopologyLunList);
@@ -4660,22 +4680,20 @@ esxVI_LookupHostScsiTopologyLunListByTargetName
 
     /* See vSphere API documentation about HostScsiTopologyInterface */
     for (hostScsiInterface = hostScsiInterfaceList;
-         hostScsiInterface && !found;
+         hostScsiInterface && !hostScsiTopologyTarget;
          hostScsiInterface = hostScsiInterface->_next) {
-        for (hostScsiTopologyTarget = hostScsiInterface->target;
-             hostScsiTopologyTarget;
-             hostScsiTopologyTarget = hostScsiTopologyTarget->_next) {
-            candidate = esxVI_HostInternetScsiTargetTransport_DynamicCast
-                          (hostScsiTopologyTarget->transport);
+        esxVI_HostScsiTopologyTarget *target;
+        for (target = hostScsiInterface->target; target; target = target->_next) {
+            candidate = esxVI_HostInternetScsiTargetTransport_DynamicCast(target->transport);
 
             if (candidate && STREQ(candidate->iScsiName, name)) {
-                found = true;
+                hostScsiTopologyTarget = target;
                 break;
             }
         }
     }
 
-    if (!found || !hostScsiTopologyTarget)
+    if (!hostScsiTopologyTarget)
         goto cleanup;
 
     if (!hostScsiTopologyTarget->lun) {
@@ -4958,6 +4976,8 @@ esxVI_LookupManagedObjectHelper(esxVI_Context *ctx,
                 goto cleanup;
             }
 
+            VIR_DEBUG("comparing path element '%s' with candidate name '%s'",
+                      name, name_candidate);
             if (STREQ(name_candidate, name)) {
                 /* Found item with matching name */
                 break;

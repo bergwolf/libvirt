@@ -20,6 +20,7 @@
 
 #include <config.h>
 
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
@@ -117,6 +118,7 @@ bhyveMonitorIO(int watch, int kq, int events G_GNUC_UNUSED, void *opaque)
     const char *name;
     struct kevent kev;
     int rc, status;
+    bool shutdownBySignal;
 
     if (watch != mon->watch || kq != mon->kq) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -139,37 +141,64 @@ bhyveMonitorIO(int watch, int kq, int events G_GNUC_UNUSED, void *opaque)
         return;
     }
 
-    if (kev.filter == EVFILT_PROC && (kev.fflags & NOTE_EXIT) != 0) {
-        if ((pid_t)kev.ident != vm->pid) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("event from unexpected proc %1$ju!=%2$ju"),
-                           (uintmax_t)vm->pid, (uintmax_t)kev.ident);
-            return;
-        }
+    if (kev.filter != EVFILT_PROC || (kev.fflags & NOTE_EXIT) == 0)
+        return;
 
-        name = vm->def->name;
-        status = kev.data;
-        if (WIFSIGNALED(status) && WCOREDUMP(status)) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("Guest %1$s got signal %2$d and crashed"),
-                           name, WTERMSIG(status));
-            virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_CRASHED);
-        } else if (WIFEXITED(status)) {
-            if (WEXITSTATUS(status) == 0 || mon->reboot) {
-                /* 0 - reboot */
+    virObjectLock(vm);
+
+    if ((pid_t)kev.ident != vm->pid) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("event from unexpected proc %1$ju!=%2$ju"),
+                       (uintmax_t)vm->pid, (uintmax_t)kev.ident);
+        goto cleanup;
+    }
+
+    name = vm->def->name;
+    status = kev.data;
+    /* On amd64 SIGTERM triggers ACPI shutdown, and we see it as WIFEXITED(status).
+     * However, arm64 has no SIGTERM handler, so we see it as WIFSIGNALED(status).
+     */
+    shutdownBySignal = WIFSIGNALED(status) &&
+        WTERMSIG(status) == SIGTERM;
+
+    if (WIFSIGNALED(status) && WCOREDUMP(status)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Guest %1$s got signal %2$d and crashed"),
+                       name, WTERMSIG(status));
+        virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_CRASHED, false);
+    } else if (WIFEXITED(status) || shutdownBySignal) {
+        if ((!shutdownBySignal && WEXITSTATUS(status) == 0) || mon->reboot) {
+            /* 0 - reboot */
+            if (vm->def->onReboot == VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY ||
+                vm->def->onReboot == VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE) {
+                VIR_INFO("Guest %s rebooted; domain on_reboot setting overridden, shutting down.", name);
+                virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_SHUTDOWN, false);
+            } else {
                 VIR_INFO("Guest %s rebooted; restarting domain.", name);
                 virBhyveProcessRestart(driver, vm);
-            } else if (WEXITSTATUS(status) < 3) {
-                /* 1 - shutdown, 2 - halt, 3 - triple fault. others - error */
-                VIR_INFO("Guest %s shut itself down; destroying domain.", name);
-                virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_SHUTDOWN);
-            } else {
-                VIR_INFO("Guest %s had an error and exited with status %d; destroying domain.",
-                         name, WEXITSTATUS(status));
-                virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_UNKNOWN);
             }
+        } else if (shutdownBySignal || WEXITSTATUS(status) < 3) {
+            /* 1 - shutdown, 2 - halt, 3 - triple fault. others - error */
+            if (vm->def->onPoweroff == VIR_DOMAIN_LIFECYCLE_ACTION_RESTART ||
+                vm->def->onPoweroff == VIR_DOMAIN_LIFECYCLE_ACTION_RESTART_RENAME) {
+                VIR_INFO("Guest %s shut itself down; domain on_poweroff setting overridden, attempting reboot.", name);
+                virBhyveProcessRestart(driver, vm);
+            } else {
+                VIR_INFO("Guest %s shut itself down; destroying domain.", name);
+                virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_SHUTDOWN, false);
+            }
+        } else {
+            VIR_INFO("Guest %s had an error and exited with status %d; destroying domain.",
+                     name, WEXITSTATUS(status));
+            virBhyveProcessStop(driver, vm, VIR_DOMAIN_SHUTOFF_UNKNOWN, false);
         }
     }
+
+    if (!virDomainObjIsActive(vm) && !vm->persistent)
+        virDomainObjListRemove(driver->domains, vm);
+
+ cleanup:
+    virObjectUnlock(vm);
 }
 
 static bhyveMonitor *

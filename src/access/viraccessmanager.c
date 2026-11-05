@@ -36,10 +36,6 @@
 
 VIR_LOG_INIT("access.accessmanager");
 
-#define virAccessError(code, ...) \
-    virReportErrorHelper(VIR_FROM_THIS, code, __FILE__, \
-                         __FUNCTION__, __LINE__, __VA_ARGS__)
-
 struct _virAccessManager {
     virObjectLockable parent;
 
@@ -164,10 +160,7 @@ virAccessManager *virAccessManagerNewStack(const char **names)
         if (!child)
             goto error;
 
-        if (virAccessDriverStackAppend(manager, child) < 0) {
-            virObjectUnref(child);
-            goto error;
-        }
+        virAccessDriverStackAppend(manager, child);
     }
 
     return manager;
@@ -206,7 +199,7 @@ virAccessManagerSanitizeError(int ret,
 {
     if (ret < 0) {
         virResetLastError();
-        virAccessError(VIR_ERR_ACCESS_DENIED,
+        virReportError(VIR_ERR_ACCESS_DENIED,
                        _("'%1$s' denied access"), driverName);
     }
 

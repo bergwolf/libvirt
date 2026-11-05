@@ -33,8 +33,7 @@ int virHostValidateCh(void)
     bool hasVirtFlag = false;
     virArch arch = virArchFromHost();
     const char *kvmhint =
-        _("Check that CPU and firmware supports virtualization "
-          "and kvm module is loaded");
+        _("Check that CPU and firmware supports virtualization and kvm module is loaded");
 
     if (!(flags = virHostValidateGetCPUFlags()))
         return -1;
@@ -43,8 +42,7 @@ int virHostValidateCh(void)
     switch ((int)arch) {
     case VIR_ARCH_X86_64:
         hasVirtFlag = true;
-        kvmhint = _("Check that the 'kvm-intel' or 'kvm-amd' modules are "
-                    "loaded & the BIOS has enabled virtualization");
+        kvmhint = _("Check that the 'kvm-intel' or 'kvm-amd' modules are loaded & the BIOS has enabled virtualization");
         if (virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_SVM) ||
             virBitmapIsBitSet(flags, VIR_HOST_VALIDATE_CPU_FLAG_VMX))
             hasHwVirt = true;
@@ -59,24 +57,22 @@ int virHostValidateCh(void)
     }
 
     if (hasVirtFlag) {
-        virHostMsgCheck("CH", "%s", _("for hardware virtualization"));
+        virValidateCheck("CH", "%s", _("Checking for hardware virtualization"));
         if (hasHwVirt) {
-            virHostMsgPass();
+            virValidatePass();
         } else {
-            virHostMsgFail(VIR_HOST_VALIDATE_FAIL,
-                           _("Only emulated CPUs are available, performance will be "
-                             "significantly limited"));
+            virValidateFail(VIR_VALIDATE_FAIL,
+                            _("Only emulated CPUs are available, performance will be significantly limited"));
             ret = -1;
         }
     }
 
     if (hasHwVirt || !hasVirtFlag) {
-        if (virHostValidateDeviceExists("CH", "/dev/kvm", VIR_HOST_VALIDATE_FAIL,
+        if (virHostValidateDeviceExists("CH", "/dev/kvm", VIR_VALIDATE_FAIL,
                                         kvmhint) < 0)
             ret = -1;
-        else if (virHostValidateDeviceAccessible("CH", "/dev/kvm", VIR_HOST_VALIDATE_FAIL,
-                                                 _("Check /dev/kvm is world writable or you are in "
-                                                   "a group that is allowed to access it")) < 0)
+        else if (virHostValidateDeviceAccessible("CH", "/dev/kvm", VIR_VALIDATE_FAIL,
+                                                 _("Check /dev/kvm is world writable or you are in a group that is allowed to access it")) < 0)
             ret = -1;
     }
 

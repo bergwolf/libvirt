@@ -140,13 +140,15 @@ virSecurityStackPreFork(virSecurityManager *mgr)
 
 
 static int
-virSecurityStackTransactionStart(virSecurityManager *mgr)
+virSecurityStackTransactionStart(virSecurityManager *mgr,
+                                 char *const *sharedFilesystems)
 {
     virSecurityStackData *priv = virSecurityManagerGetPrivateData(mgr);
     virSecurityStackItem *item = priv->itemsHead;
 
     for (; item; item = item->next) {
-        if (virSecurityManagerTransactionStart(item->securityManager) < 0)
+        if (virSecurityManagerTransactionStart(item->securityManager,
+                                               sharedFilesystems) < 0)
             goto rollback;
     }
 
@@ -162,13 +164,15 @@ virSecurityStackTransactionStart(virSecurityManager *mgr)
 static int
 virSecurityStackTransactionCommit(virSecurityManager *mgr,
                                   pid_t pid,
-                                  bool lock)
+                                  bool lock,
+                                  bool lockMetadataException)
 {
     virSecurityStackData *priv = virSecurityManagerGetPrivateData(mgr);
     virSecurityStackItem *item = priv->itemsHead;
 
     for (; item; item = item->next) {
-        if (virSecurityManagerTransactionCommit(item->securityManager, pid, lock) < 0)
+        if (virSecurityManagerTransactionCommit(item->securityManager, pid,
+                                                lock, lockMetadataException) < 0)
             goto rollback;
     }
 
@@ -302,8 +306,7 @@ virSecurityStackSetHostdevLabel(virSecurityManager *mgr,
                                                   vm,
                                                   dev,
                                                   vroot) < 0) {
-            VIR_WARN("Unable to restore hostdev label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s hostdev=%p",
+            VIR_WARN("Unable to restore hostdev label after failed set label call virDriver=%s driver=%s domain=%s hostdev=%p",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name, dev);
@@ -337,6 +340,7 @@ virSecurityStackRestoreHostdevLabel(virSecurityManager *mgr,
 
 static int
 virSecurityStackSetAllLabel(virSecurityManager *mgr,
+                            char *const *sharedFilesystems,
                             virDomainDef *vm,
                             const char *incomingPath,
                             bool chardevStdioLogd,
@@ -346,8 +350,9 @@ virSecurityStackSetAllLabel(virSecurityManager *mgr,
     virSecurityStackItem *item = priv->itemsHead;
 
     for (; item; item = item->next) {
-        if (virSecurityManagerSetAllLabel(item->securityManager, vm,
-                                          incomingPath, chardevStdioLogd,
+        if (virSecurityManagerSetAllLabel(item->securityManager,
+                                          sharedFilesystems,
+                                          vm, incomingPath, chardevStdioLogd,
                                           migrated) < 0)
             goto rollback;
     }
@@ -357,11 +362,11 @@ virSecurityStackSetAllLabel(virSecurityManager *mgr,
  rollback:
     for (item = item->prev; item; item = item->prev) {
         if (virSecurityManagerRestoreAllLabel(item->securityManager,
+                                              sharedFilesystems,
                                               vm,
                                               migrated,
                                               chardevStdioLogd) < 0) {
-            VIR_WARN("Unable to restore all labels after failed set label call "
-                     "virDriver=%s driver=%s domain=%s migrated=%d",
+            VIR_WARN("Unable to restore all labels after failed set label call virDriver=%s driver=%s domain=%s migrated=%d",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name, migrated);
@@ -373,6 +378,7 @@ virSecurityStackSetAllLabel(virSecurityManager *mgr,
 
 static int
 virSecurityStackRestoreAllLabel(virSecurityManager *mgr,
+                                char *const *sharedFilesystems,
                                 virDomainDef *vm,
                                 bool migrated,
                                 bool chardevStdioLogd)
@@ -382,8 +388,11 @@ virSecurityStackRestoreAllLabel(virSecurityManager *mgr,
     int rc = 0;
 
     for (; item; item = item->next) {
-        if (virSecurityManagerRestoreAllLabel(item->securityManager, vm,
-                                              migrated, chardevStdioLogd) < 0)
+        if (virSecurityManagerRestoreAllLabel(item->securityManager,
+                                              sharedFilesystems,
+                                              vm,
+                                              migrated,
+                                              chardevStdioLogd) < 0)
             rc = -1;
     }
 
@@ -411,8 +420,7 @@ virSecurityStackSetSavedStateLabel(virSecurityManager *mgr,
         if (virSecurityManagerRestoreSavedStateLabel(item->securityManager,
                                                      vm,
                                                      savefile) < 0) {
-            VIR_WARN("Unable to restore saved state label after failed set "
-                     "label call virDriver=%s driver=%s savefile=%s",
+            VIR_WARN("Unable to restore saved state label after failed set label call virDriver=%s driver=%s savefile=%s",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      savefile);
@@ -512,8 +520,7 @@ virSecurityStackSetDaemonSocketLabel(virSecurityManager *mgr,
     for (item = item->prev; item; item = item->prev) {
         if (virSecurityManagerClearSocketLabel(item->securityManager,
                                                vm) < 0) {
-            VIR_WARN("Unable to clear new daemon socket label after failed "
-                     "set label call virDriver=%s driver=%s domain=%s",
+            VIR_WARN("Unable to clear new daemon socket label after failed set label call virDriver=%s driver=%s domain=%s",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name);
@@ -540,8 +547,7 @@ virSecurityStackSetSocketLabel(virSecurityManager *mgr,
     for (item = item->prev; item; item = item->prev) {
         if (virSecurityManagerClearSocketLabel(item->securityManager,
                                                vm) < 0) {
-            VIR_WARN("Unable to clear new socket label after failed "
-                     "set label call virDriver=%s driver=%s domain=%s",
+            VIR_WARN("Unable to clear new socket label after failed set label call virDriver=%s driver=%s domain=%s",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name);
@@ -638,6 +644,7 @@ virSecurityStackGetBaseLabel(virSecurityManager *mgr, int virtType)
 
 static int
 virSecurityStackSetImageLabel(virSecurityManager *mgr,
+                              char *const *sharedFilesystems,
                               virDomainDef *vm,
                               virStorageSource *src,
                               virSecurityDomainImageLabelFlags flags)
@@ -646,8 +653,9 @@ virSecurityStackSetImageLabel(virSecurityManager *mgr,
     virSecurityStackItem *item = priv->itemsHead;
 
     for (; item; item = item->next) {
-        if (virSecurityManagerSetImageLabel(item->securityManager, vm, src,
-                                            flags) < 0)
+        if (virSecurityManagerSetImageLabel(item->securityManager,
+                                            sharedFilesystems,
+                                            vm, src, flags) < 0)
             goto rollback;
     }
 
@@ -656,12 +664,11 @@ virSecurityStackSetImageLabel(virSecurityManager *mgr,
  rollback:
     for (item = item->prev; item; item = item->prev) {
         if (virSecurityManagerRestoreImageLabel(item->securityManager,
+                                                sharedFilesystems,
                                                 vm,
                                                 src,
                                                 flags) < 0) {
-            VIR_WARN("Unable to restore image label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s src=%p (path=%s) "
-                     "flags=0x%x",
+            VIR_WARN("Unable to restore image label after failed set label call virDriver=%s driver=%s domain=%s src=%p (path=%s) flags=0x%x",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name, src, NULLSTR(src->path), flags);
@@ -672,6 +679,7 @@ virSecurityStackSetImageLabel(virSecurityManager *mgr,
 
 static int
 virSecurityStackRestoreImageLabel(virSecurityManager *mgr,
+                                  char *const *sharedFilesystems,
                                   virDomainDef *vm,
                                   virStorageSource *src,
                                   virSecurityDomainImageLabelFlags flags)
@@ -682,6 +690,7 @@ virSecurityStackRestoreImageLabel(virSecurityManager *mgr,
 
     for (; item; item = item->next) {
         if (virSecurityManagerRestoreImageLabel(item->securityManager,
+                                                sharedFilesystems,
                                                 vm, src, flags) < 0)
             rc = -1;
     }
@@ -691,6 +700,7 @@ virSecurityStackRestoreImageLabel(virSecurityManager *mgr,
 
 static int
 virSecurityStackMoveImageMetadata(virSecurityManager *mgr,
+                                  char *const *sharedFilesystems,
                                   pid_t pid,
                                   virStorageSource *src,
                                   virStorageSource *dst)
@@ -701,6 +711,7 @@ virSecurityStackMoveImageMetadata(virSecurityManager *mgr,
 
     for (; item; item = item->next) {
         if (virSecurityManagerMoveImageMetadata(item->securityManager,
+                                                sharedFilesystems,
                                                 pid, src, dst) < 0)
             rc = -1;
     }
@@ -728,8 +739,7 @@ virSecurityStackSetMemoryLabel(virSecurityManager *mgr,
         if (virSecurityManagerRestoreMemoryLabel(item->securityManager,
                                                  vm,
                                                  mem) < 0) {
-            VIR_WARN("Unable to restore memory label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s mem=%p",
+            VIR_WARN("Unable to restore memory label after failed set label call virDriver=%s driver=%s domain=%s mem=%p",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name, mem);
@@ -776,8 +786,7 @@ virSecurityStackSetInputLabel(virSecurityManager *mgr,
         if (virSecurityManagerRestoreInputLabel(item->securityManager,
                                                 vm,
                                                 input) < 0) {
-            VIR_WARN("Unable to restore input label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s input=%p",
+            VIR_WARN("Unable to restore input label after failed set label call virDriver=%s driver=%s domain=%s input=%p",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name, input);
@@ -886,8 +895,7 @@ virSecurityStackDomainSetChardevLabel(virSecurityManager *mgr,
                                                   def,
                                                   dev_source,
                                                   chardevStdioLogd) < 0) {
-            VIR_WARN("Unable to restore chardev label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s dev_source=%p",
+            VIR_WARN("Unable to restore chardev label after failed set label call virDriver=%s driver=%s domain=%s dev_source=%p",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      def->name, dev_source);
@@ -937,8 +945,7 @@ virSecurityStackSetTPMLabels(virSecurityManager *mgr,
     for (item = item->prev; item; item = item->prev) {
         if (virSecurityManagerRestoreTPMLabels(item->securityManager,
                                                vm, setTPMStateLabel) < 0) {
-            VIR_WARN("Unable to restore TPM label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s",
+            VIR_WARN("Unable to restore TPM label after failed set label call virDriver=%s driver=%s domain=%s",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      vm->name);
@@ -986,8 +993,7 @@ virSecurityStackDomainSetNetdevLabel(virSecurityManager *mgr,
     for (item = item->prev; item; item = item->prev) {
         if (virSecurityManagerRestoreNetdevLabel(item->securityManager,
                                                  def, net) < 0) {
-            VIR_WARN("Unable to restore netdev label after failed set label "
-                     "call virDriver=%s driver=%s domain=%s",
+            VIR_WARN("Unable to restore netdev label after failed set label call virDriver=%s driver=%s domain=%s",
                      virSecurityManagerGetVirtDriver(mgr),
                      virSecurityManagerGetDriver(item->securityManager),
                      def->name);

@@ -199,6 +199,8 @@ struct _esxVI_Context {
     esxVI_SelectionSpec *selectSet_datacenterToNetwork;
     bool hasQueryVirtualDiskUuid;
     bool hasSessionIsActive;
+    bool legacy_uuid;
+    const char *uuid_key;
 };
 
 int esxVI_Context_Alloc(esxVI_Context **ctx);
@@ -351,6 +353,7 @@ int esxVI_LookupNumberOfDomainsByPowerState
        bool inverse);
 
 int esxVI_GetVirtualMachineIdentity(esxVI_ObjectContent *virtualMachine,
+                                    const char *uuid_key,
                                     int *id, char **name, unsigned char *uuid);
 
 int esxVI_GetNumberOfSnapshotTrees
@@ -397,12 +400,12 @@ int esxVI_LookupVirtualMachineByUuidAndPrepareForTask
        bool autoAnswer);
 
 int esxVI_LookupDatastoreList(esxVI_Context *ctx, esxVI_String *propertyNameList,
-                              esxVI_ObjectContent **datastoreList);
+                              esxVI_ObjectContent **datastoreList) ATTRIBUTE_MOCKABLE;
 
 int esxVI_LookupDatastoreByName(esxVI_Context *ctx, const char *name,
                                 esxVI_String *propertyNameList,
                                 esxVI_ObjectContent **datastore,
-                                esxVI_Occurrence occurrence);
+                                esxVI_Occurrence occurrence) ATTRIBUTE_MOCKABLE;
 
 int esxVI_LookupDatastoreByAbsolutePath(esxVI_Context *ctx,
                                         const char *absolutePath,
@@ -413,7 +416,7 @@ int esxVI_LookupDatastoreByAbsolutePath(esxVI_Context *ctx,
 int esxVI_LookupDatastoreHostMount(esxVI_Context *ctx,
                                    esxVI_ManagedObjectReference *datastore,
                                    esxVI_DatastoreHostMount **hostMount,
-                                   esxVI_Occurrence occurrence);
+                                   esxVI_Occurrence occurrence) ATTRIBUTE_MOCKABLE;
 
 int esxVI_LookupTaskInfoByTask(esxVI_Context *ctx,
                                esxVI_ManagedObjectReference *task,

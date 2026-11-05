@@ -30,6 +30,9 @@
 # include "vircgroupv2devices.h"
 
 static int (*real_open)(const char *path, int flags, ...);
+# if WITH___OPEN_2
+static int (*real___open_2)(const char *path, int flags);
+# endif
 static FILE *(*real_fopen)(const char *path, const char *mode);
 static int (*real_access)(const char *path, int mode);
 static int (*real_mkdir)(const char *path, mode_t mode);
@@ -301,7 +304,14 @@ static void init_syms(void)
     VIR_MOCK_REAL_INIT(fopen);
     VIR_MOCK_REAL_INIT(access);
     VIR_MOCK_REAL_INIT(mkdir);
+# if defined(__GLIBC__) && defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64
+    VIR_MOCK_REAL_INIT_ALIASED(open, "open64");
+# else
     VIR_MOCK_REAL_INIT(open);
+# endif
+# if WITH___OPEN_2
+    VIR_MOCK_REAL_INIT(__open_2);
+# endif
 }
 
 
@@ -311,7 +321,7 @@ static int make_controller(const char *path, mode_t mode)
     bool unified = false;
     bool hybrid = false;
 
-    mock = getenv("VIR_CGROUP_MOCK_MODE");
+    mock = g_getenv("VIR_CGROUP_MOCK_MODE");
     if (mock) {
         if (STREQ(mock, "unified")) {
             unified = true;
@@ -334,11 +344,11 @@ static int make_controller(const char *path, mode_t mode)
 static void init_sysfs(void)
 {
     const char *mock;
-    char *newfakerootdir;
+    const char *newfakerootdir;
     bool unified = false;
     bool hybrid = false;
 
-    if (!(newfakerootdir = getenv("LIBVIRT_FAKE_ROOT_DIR"))) {
+    if (!(newfakerootdir = g_getenv("LIBVIRT_FAKE_ROOT_DIR"))) {
         fprintf(stderr, "Missing LIBVIRT_FAKE_ROOT_DIR env variable\n");
         abort();
     }
@@ -349,7 +359,7 @@ static void init_sysfs(void)
     VIR_FREE(fakerootdir);
     fakerootdir = g_strdup(newfakerootdir);
 
-    mock = getenv("VIR_CGROUP_MOCK_MODE");
+    mock = g_getenv("VIR_CGROUP_MOCK_MODE");
     if (mock) {
         if (STREQ(mock, "unified")) {
             unified = true;
@@ -411,7 +421,7 @@ FILE *fopen(const char *path, const char *mode)
     char *filepath = NULL;
     const char *type = NULL;
     FILE *rc = NULL;
-    const char *filename = getenv("VIR_CGROUP_MOCK_FILENAME");
+    const char *filename = g_getenv("VIR_CGROUP_MOCK_FILENAME");
 
     init_syms();
 
@@ -588,6 +598,42 @@ int open(const char *path, int flags, ...)
     free(newpath);
     return ret;
 }
+
+# if WITH___OPEN_2
+int
+__open_2(const char *path, int flags)
+{
+    int ret;
+    char *newpath = NULL;
+
+    init_syms();
+
+    if (STREQ(path, SYSFS_CPU_PRESENT)) {
+        init_sysfs();
+        if (asprintf(&newpath, "%s/%s",
+                     fakesysfscgroupdir,
+                     SYSFS_CPU_PRESENT_MOCKED) < 0) {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+
+    if (STRPREFIX(path, SYSFS_CGROUP_PREFIX)) {
+        init_sysfs();
+        if (asprintf(&newpath, "%s%s",
+                     fakesysfscgroupdir,
+                     path + strlen(SYSFS_CGROUP_PREFIX)) < 0) {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+
+    ret = real___open_2(newpath ? newpath : path, flags);
+
+    free(newpath);
+    return ret;
+}
+# endif
 
 bool
 virCgroupV2DevicesAvailable(virCgroup *group G_GNUC_UNUSED)

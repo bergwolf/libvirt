@@ -35,7 +35,7 @@
 
 VIR_LOG_INIT("util.string");
 
-/* Like strtol, but produce an "int" result, and check more carefully.
+/* Like strtol with C locale, but produce an "int" result, and check more carefully.
    Return 0 upon success;  return -1 to indicate failure.
    When END_PTR is NULL, the byte after the final valid digit must be NUL.
    Otherwise, it's like strtol and lets the caller check any suffix for
@@ -44,12 +44,12 @@ VIR_LOG_INIT("util.string");
 int
 virStrToLong_i(char const *s, char **end_ptr, int base, int *result)
 {
-    long int val;
+    long long val;
     char *p;
     int err;
 
     errno = 0;
-    val = strtol(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoll(s, &p, base);
     err = (errno || (!end_ptr && *p) || p == s || (int) val != val);
     if (end_ptr)
         *end_ptr = p;
@@ -65,22 +65,22 @@ virStrToLong_i(char const *s, char **end_ptr, int base, int *result)
 int
 virStrToLong_ui(char const *s, char **end_ptr, int base, unsigned int *result)
 {
-    unsigned long int val;
+    unsigned long long val;
     char *p;
     bool err = false;
 
     errno = 0;
-    val = strtoul(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoull(s, &p, base);
 
     /* This one's tricky.  We _want_ to allow "-1" as shorthand for
      * UINT_MAX regardless of whether long is 32-bit or 64-bit.  But
-     * strtoul treats "-1" as ULONG_MAX, and going from ulong back
-     * to uint differs depending on the size of long. */
-    if (sizeof(long) > sizeof(int) && memchr(s, '-', p - s)) {
+     * g_ascii_strtoull treats "-1" as ULLONG_MAX, and going from ullong back
+     * to uint differs depending on the size of uint. */
+    if (memchr(s, '-', p - s)) {
         if (-val > UINT_MAX)
             err = true;
         else
-            val &= 0xffffffff;
+            val &= UINT_MAX;
     }
 
     err |= (errno || (!end_ptr && *p) || p == s || (unsigned int) val != val);
@@ -97,12 +97,12 @@ virStrToLong_ui(char const *s, char **end_ptr, int base, unsigned int *result)
 int
 virStrToLong_uip(char const *s, char **end_ptr, int base, unsigned int *result)
 {
-    unsigned long int val;
+    unsigned long long val;
     char *p;
     bool err = false;
 
     errno = 0;
-    val = strtoul(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoull(s, &p, base);
     err = (memchr(s, '-', p - s) ||
            errno || (!end_ptr && *p) || p == s || (unsigned int) val != val);
     if (end_ptr)
@@ -113,24 +113,7 @@ virStrToLong_uip(char const *s, char **end_ptr, int base, unsigned int *result)
     return 0;
 }
 
-/* Just like virStrToLong_i, above, but produce a "long" value.  */
-int
-virStrToLong_l(char const *s, char **end_ptr, int base, long *result)
-{
-    long int val;
-    char *p;
-    int err;
-
-    errno = 0;
-    val = strtol(s, &p, base); /* exempt from syntax-check */
-    err = (errno || (!end_ptr && *p) || p == s);
-    if (end_ptr)
-        *end_ptr = p;
-    if (err)
-        return -1;
-    *result = val;
-    return 0;
-}
+/* virStrToLong_l is intentionally skipped, consider virStrToLong_ll instead */
 
 /* Just like virStrToLong_i, above, but produce an "unsigned long"
  * value.  This version allows twos-complement wraparound of negative
@@ -138,13 +121,25 @@ virStrToLong_l(char const *s, char **end_ptr, int base, long *result)
 int
 virStrToLong_ul(char const *s, char **end_ptr, int base, unsigned long *result)
 {
-    unsigned long int val;
+    unsigned long long val;
     char *p;
-    int err;
+    bool err = false;
 
     errno = 0;
-    val = strtoul(s, &p, base); /* exempt from syntax-check */
-    err = (errno || (!end_ptr && *p) || p == s);
+    val = g_ascii_strtoull(s, &p, base);
+
+    /* This one's tricky.  We _want_ to allow "-1" as shorthand for
+     * ULONG_MAX regardless of whether long is 32-bit or 64-bit.  But
+     * g_ascii_strtoull treats "-1" as ULLONG_MAX, and going from ullong back
+     * to ulong differs depending on the size of ulong. */
+    if (memchr(s, '-', p - s)) {
+        if (-val > ULONG_MAX)
+            err = true;
+        else
+            val &= ULONG_MAX;
+    }
+
+    err |= (errno || (!end_ptr && *p) || p == s || (unsigned long) val != val);
     if (end_ptr)
         *end_ptr = p;
     if (err)
@@ -159,14 +154,14 @@ int
 virStrToLong_ulp(char const *s, char **end_ptr, int base,
                  unsigned long *result)
 {
-    unsigned long int val;
+    unsigned long long val;
     char *p;
     int err;
 
     errno = 0;
-    val = strtoul(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoull(s, &p, base);
     err = (memchr(s, '-', p - s) ||
-           errno || (!end_ptr && *p) || p == s);
+           errno || (!end_ptr && *p) || p == s || (unsigned long) val != val);
     if (end_ptr)
         *end_ptr = p;
     if (err)
@@ -184,7 +179,7 @@ virStrToLong_ll(char const *s, char **end_ptr, int base, long long *result)
     int err;
 
     errno = 0;
-    val = strtoll(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoll(s, &p, base);
     err = (errno || (!end_ptr && *p) || p == s);
     if (end_ptr)
         *end_ptr = p;
@@ -206,7 +201,7 @@ virStrToLong_ull(char const *s, char **end_ptr, int base,
     int err;
 
     errno = 0;
-    val = strtoull(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoull(s, &p, base);
     err = (errno || (!end_ptr && *p) || p == s);
     if (end_ptr)
         *end_ptr = p;
@@ -227,7 +222,7 @@ virStrToLong_ullp(char const *s, char **end_ptr, int base,
     int err;
 
     errno = 0;
-    val = strtoull(s, &p, base); /* exempt from syntax-check */
+    val = g_ascii_strtoull(s, &p, base);
     err = (memchr(s, '-', p - s) ||
            errno || (!end_ptr && *p) || p == s);
     if (end_ptr)
@@ -489,17 +484,23 @@ virTrimSpaces(char *str, char **endp)
  * but spaces.
  */
 void
-virSkipSpacesBackwards(const char *str, char **endp)
+virSkipSpacesBackwards(const char *str,
+                       const char **endp)
 {
-    /* Casting away const is safe, since virTrimSpaces does not
-     * modify string with this particular usage.  */
-    char *s = (char*) str;
+    const char *end;
 
     if (!*endp)
-        *endp = s + strlen(s);
-    virTrimSpaces(s, endp);
-    if (s == *endp)
+        end = str + strlen(str);
+    else
+        end = *endp;
+
+    while (end > str && g_ascii_isspace(end[-1]))
+        end--;
+
+    if (str == end)
         *endp = NULL;
+    else
+        *endp = end;
 }
 
 /**
@@ -523,9 +524,11 @@ virStringIsEmpty(const char *str)
  * virStringSortCompare:
  *
  * A comparator function for sorting strings in
- * normal order with qsort().
+ * normal order with g_qsort_with_data().
  */
-int virStringSortCompare(const void *a, const void *b)
+int virStringSortCompare(const void *a,
+                         const void *b,
+                         void *opaque G_GNUC_UNUSED)
 {
     const char **sa = (const char**)a;
     const char **sb = (const char**)b;
@@ -537,9 +540,11 @@ int virStringSortCompare(const void *a, const void *b)
  * virStringSortRevCompare:
  *
  * A comparator function for sorting strings in
- * reverse order with qsort().
+ * reverse order with g_qsort_with_data().
  */
-int virStringSortRevCompare(const void *a, const void *b)
+int virStringSortRevCompare(const void *a,
+                            const void *b,
+                            void *opaque G_GNUC_UNUSED)
 {
     const char **sa = (const char**)a;
     const char **sb = (const char**)b;
@@ -1065,4 +1070,51 @@ virStringParseVersion(unsigned long long *version,
     *version = 1000000 * major + 1000 * minor + micro;
 
     return 0;
+}
+
+
+/**
+ * virStringListRemoveDuplicates:
+ * @list: pointer to a sorted NULL-terminated string list
+ *
+ * Replace the list pointed to by @list with a new list without duplicate
+ * strings. The original list has to be sorted.
+ */
+void
+virStringListRemoveDuplicates(char ***list)
+{
+    size_t len = g_strv_length(*list);
+    char **unique = g_new0(char *, len + 1);
+    size_t n = 0;
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        if (n > 0 && STREQ_NULLABLE(unique[n - 1], (*list)[i]))
+            g_free((*list)[i]);
+        else
+            unique[n++] = (*list)[i];
+    }
+
+    g_free(*list);
+    *list = g_renew(char *, unique, n + 1);
+}
+
+/**
+ * virStringFormatHex:
+ * @buf: buffer to format
+ * @len: length of the buffer
+ *
+ * Format a byte array into a hexadecimal string and return it. It's caller's
+ * responsibility to free returned string.
+ */
+char *
+virStringFormatHex(const unsigned char *buf, size_t len)
+{
+    char *hex = g_new0(char, len * 2 + 1);
+    size_t i;
+
+    for (i = 0; i < len; i++)
+        g_snprintf(hex + i * 2, 3, "%02x", buf[i]);
+
+    return g_steal_pointer(&hex);
 }

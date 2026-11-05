@@ -111,6 +111,7 @@ libxlActionFromVirLifecycle(virDomainLifecycleAction action)
     case VIR_DOMAIN_LIFECYCLE_ACTION_COREDUMP_RESTART:
         return LIBXL_ACTION_ON_SHUTDOWN_COREDUMP_RESTART;
 
+    case VIR_DOMAIN_LIFECYCLE_ACTION_PRESERVE_RUNNING:
     case VIR_DOMAIN_LIFECYCLE_ACTION_LAST:
         break;
     }
@@ -397,7 +398,7 @@ libxlMakeDomBuildInfo(virDomainDef *def,
     }
 
     for (i = 0; i < clock.ntimers; i++) {
-        switch ((virDomainTimerNameType) clock.timers[i]->name) {
+        switch (clock.timers[i]->name) {
         case VIR_DOMAIN_TIMER_NAME_TSC:
             switch (clock.timers[i]->mode) {
             case VIR_DOMAIN_TIMER_MODE_NATIVE:
@@ -550,9 +551,7 @@ libxlMakeDomBuildInfo(virDomainDef *def,
         }
 
         if (def->cpu && def->cpu->mode == VIR_CPU_MODE_CUSTOM) {
-            VIR_WARN("Ignoring CPU with mode=custom, update your config to "
-                     "mode=host-passthrough to avoid risk of changed guest "
-                     "semantics when mode=custom is supported in the future");
+            VIR_WARN("Ignoring CPU with mode=custom, update your config to mode=host-passthrough to avoid risk of changed guest semantics when mode=custom is supported in the future");
         }
     }
 
@@ -582,9 +581,98 @@ libxlMakeDomBuildInfo(virDomainDef *def,
                           VIR_TRISTATE_SWITCH_ON);
 #endif
 
-        /* copy SLIC table path to acpi_firmware */
-        if (def->os.slic_table)
-            b_info->u.hvm.acpi_firmware = g_strdup(def->os.slic_table);
+#ifdef LIBXL_HAVE_BUILDINFO_HVM_VIRIDIAN_ENABLE_DISABLE
+        if (def->features[VIR_DOMAIN_FEATURE_HYPERV] != VIR_DOMAIN_HYPERV_MODE_NONE) {
+            libxl_bitmap_alloc(ctx, &b_info->u.hvm.viridian_enable,
+                               LIBXL_BUILDINFO_HVM_VIRIDIAN_ENABLE_DISABLE_WIDTH);
+
+            switch ((virDomainHyperVMode) def->features[VIR_DOMAIN_FEATURE_HYPERV]) {
+            case VIR_DOMAIN_HYPERV_MODE_CUSTOM:
+                /* Base is required by Xen to enable any other flag */
+                libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                 LIBXL_VIRIDIAN_ENLIGHTENMENT_BASE);
+                /* Enable crash ctl register by default to allow guest logs to reach Xen */
+                libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                 LIBXL_VIRIDIAN_ENLIGHTENMENT_CRASH_CTL);
+                break;
+            case VIR_DOMAIN_HYPERV_MODE_PASSTHROUGH:
+                libxl_bitmap_set_any(&b_info->u.hvm.viridian_enable);
+                break;
+            case VIR_DOMAIN_HYPERV_MODE_HOST_MODEL:
+            case VIR_DOMAIN_HYPERV_MODE_NONE:
+            case VIR_DOMAIN_HYPERV_MODE_LAST:
+            default:
+                virReportEnumRangeError(virDomainHyperVMode,
+                                        def->features[VIR_DOMAIN_FEATURE_HYPERV]);
+                return -1;
+            }
+
+            for (i = 0; i < VIR_DOMAIN_HYPERV_LAST; i++) {
+                if (def->hyperv.features[i] != VIR_TRISTATE_SWITCH_ON)
+                    continue;
+
+                switch ((virDomainHyperv) i) {
+                case VIR_DOMAIN_HYPERV_VPINDEX:
+                case VIR_DOMAIN_HYPERV_RELAXED:
+                    /* Already set by base flag */
+                    break;
+                case VIR_DOMAIN_HYPERV_SYNIC:
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_SYNIC);
+                    break;
+                case VIR_DOMAIN_HYPERV_STIMER:
+                    /* STIMER implies synic and clock features */
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_STIMER);
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_SYNIC);
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_TIME_REF_COUNT);
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_REFERENCE_TSC);
+                    break;
+                case VIR_DOMAIN_HYPERV_VAPIC:
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_APIC_ASSIST);
+                    break;
+                case VIR_DOMAIN_HYPERV_FREQUENCIES:
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_FREQ);
+                    break;
+                case VIR_DOMAIN_HYPERV_TLBFLUSH:
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_HCALL_REMOTE_TLB_FLUSH);
+                    break;
+                case VIR_DOMAIN_HYPERV_IPI:
+                    libxl_bitmap_set(&b_info->u.hvm.viridian_enable,
+                                     LIBXL_VIRIDIAN_ENLIGHTENMENT_HCALL_IPI);
+                    break;
+                case VIR_DOMAIN_HYPERV_SPINLOCKS:
+                case VIR_DOMAIN_HYPERV_VENDOR_ID:
+                    VIR_WARN("Hyper-v flag '%s' specified per-domain but is a global Xen setting and will be ignored.",
+                             virDomainHypervTypeToString(i));
+                    break;
+                case VIR_DOMAIN_HYPERV_RUNTIME:
+                case VIR_DOMAIN_HYPERV_RESET:
+                case VIR_DOMAIN_HYPERV_REENLIGHTENMENT:
+                case VIR_DOMAIN_HYPERV_EVMCS:
+                case VIR_DOMAIN_HYPERV_AVIC:
+                case VIR_DOMAIN_HYPERV_EMSR_BITMAP:
+                case VIR_DOMAIN_HYPERV_XMM_INPUT:
+                    virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                                   _("Hyper-v enlightenment feature '%1$s' is not supported for Xen domains."),
+                                   virDomainHypervTypeToString(i));
+                    break;
+                case VIR_DOMAIN_HYPERV_LAST:
+                    break;
+                }
+            }
+        }
+#endif
+
+        /* copy the table path to acpi_firmware */
+        if (def->os.nacpiTables)
+            b_info->u.hvm.acpi_firmware = g_strdup(def->os.acpiTables[0]->path);
 
         if (def->nsounds > 0) {
             /*
@@ -654,11 +742,16 @@ libxlMakeDomBuildInfo(virDomainDef *def,
             b_info->u.hvm.system_firmware = g_strdup(def->os.loader->path);
         }
 
-        if (def->os.loader && def->os.loader->format != VIR_STORAGE_FILE_RAW) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("Unsupported loader format '%1$s'"),
-                           virStorageFileFormatTypeToString(def->os.loader->format));
-            return -1;
+        if (def->os.loader) {
+            if (!def->os.loader->format)
+                def->os.loader->format = VIR_STORAGE_FILE_RAW;
+
+            if (def->os.loader->format != VIR_STORAGE_FILE_RAW) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                               _("Unsupported loader format '%1$s'"),
+                               virStorageFileFormatTypeToString(def->os.loader->format));
+                return -1;
+            }
         }
 
         if (def->emulator) {
@@ -688,7 +781,7 @@ libxlMakeDomBuildInfo(virDomainDef *def,
                     0)
                     return -1;
             } else {
-                b_info->u.hvm.serial_list = *g_new0(libxl_string_list, def->nserials + 1);
+                b_info->u.hvm.serial_list = g_new0(char *, def->nserials + 1);
                 for (i = 0; i < def->nserials; i++) {
                     if (libxlMakeChrdevStr(def->serials[i],
                                            &b_info->u.hvm.serial_list[i]) < 0)
@@ -962,7 +1055,7 @@ libxlMakeNetworkDiskSrcStr(virStorageSource *src,
     g_auto(virBuffer) buf = VIR_BUFFER_INITIALIZER;
     size_t i;
 
-    switch ((virStorageNetProtocol) src->protocol) {
+    switch (src->protocol) {
     case VIR_STORAGE_NET_PROTOCOL_NBD:
     case VIR_STORAGE_NET_PROTOCOL_HTTP:
     case VIR_STORAGE_NET_PROTOCOL_HTTPS:
@@ -990,15 +1083,14 @@ libxlMakeNetworkDiskSrcStr(virStorageSource *src,
             return NULL;
         }
 
-        virBufferStrcat(&buf, "rbd:", src->volume, "/", src->path, NULL);
+        virBufferStrcat(&buf, "rbd:", src->path, NULL);
 
         if (username) {
             virBufferEscape(&buf, '\\', ":", ":id=%s", username);
-            virBufferEscape(&buf, '\\', ":",
-                            ":key=%s:auth_supported=cephx\\;none",
-                            secret);
+            virBufferEscape(&buf, '\\', ":", ":key=%s", secret);
+            virBufferAddLit(&buf, ":auth_client_required=cephx\\;none");
         } else {
-            virBufferAddLit(&buf, ":auth_supported=none");
+            virBufferAddLit(&buf, ":auth_client_required=none");
         }
 
         if (src->nhosts > 0) {
@@ -1193,8 +1285,7 @@ libxlMakeDisk(virDomainDiskDef *l_disk, libxl_device_disk *x_disk)
         return -1;
     }
 
-    if (l_disk->domain_name)
-        x_disk->backend_domname = g_strdup(l_disk->domain_name);
+    x_disk->backend_domname = g_strdup(l_disk->domain_name);
 
     return 0;
 }
@@ -1279,8 +1370,7 @@ libxlMakeNic(virDomainDef *def,
     if (l_nic->script && !(actual_type == VIR_DOMAIN_NET_TYPE_BRIDGE ||
                            actual_type == VIR_DOMAIN_NET_TYPE_ETHERNET)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("specifying a script is only supported with "
-                         "interface types bridge and ethernet"));
+                       _("specifying a script is only supported with interface types bridge and ethernet"));
         return -1;
     }
 
@@ -1305,8 +1395,7 @@ libxlMakeNic(virDomainDef *def,
             def->os.type == VIR_DOMAIN_OSTYPE_XENPVH) &&
             l_nic->model != VIR_DOMAIN_NET_MODEL_NETFRONT) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("only model 'netfront' is supported for "
-                             "Xen PV(H) domains"));
+                           _("only model 'netfront' is supported for Xen PV(H) domains"));
             return -1;
         }
         x_nic->model = g_strdup(virDomainNetGetModelString(l_nic));
@@ -1371,7 +1460,7 @@ libxlMakeNic(virDomainDef *def,
             break;
         case VIR_DOMAIN_NET_TYPE_NETWORK:
         {
-            if (!(conn = virConnectOpen("xen:///system")))
+            if (!(conn = virGetConnectNetwork()))
                 goto cleanup;
 
             if (!(network =
@@ -1505,18 +1594,18 @@ libxlMakeVfb(virPortAllocatorRange *graphicsports,
     virDomainGraphicsListenDef *glisten = NULL;
 
     libxl_device_vfb_init(x_vfb);
+    libxl_defbool_set(&x_vfb->sdl.enable, 0);
+    libxl_defbool_set(&x_vfb->vnc.enable, 0);
 
     switch (l_vfb->type) {
         case VIR_DOMAIN_GRAPHICS_TYPE_SDL:
             libxl_defbool_set(&x_vfb->sdl.enable, 1);
-            libxl_defbool_set(&x_vfb->vnc.enable, 0);
             libxl_defbool_set(&x_vfb->sdl.opengl, 0);
             x_vfb->sdl.display = g_strdup(l_vfb->data.sdl.display);
             x_vfb->sdl.xauthority = g_strdup(l_vfb->data.sdl.xauth);
             break;
         case  VIR_DOMAIN_GRAPHICS_TYPE_VNC:
             libxl_defbool_set(&x_vfb->vnc.enable, 1);
-            libxl_defbool_set(&x_vfb->sdl.enable, 0);
             /* driver handles selection of free port */
             libxl_defbool_set(&x_vfb->vnc.findunused, 0);
             if (l_vfb->data.vnc.autoport) {
@@ -1541,13 +1630,18 @@ libxlMakeVfb(virPortAllocatorRange *graphicsports,
             x_vfb->keymap = g_strdup(l_vfb->data.vnc.keymap);
             break;
 
+        case VIR_DOMAIN_GRAPHICS_TYPE_SPICE:
+            break;
+
         case VIR_DOMAIN_GRAPHICS_TYPE_RDP:
         case VIR_DOMAIN_GRAPHICS_TYPE_DESKTOP:
-        case VIR_DOMAIN_GRAPHICS_TYPE_SPICE:
         case VIR_DOMAIN_GRAPHICS_TYPE_EGL_HEADLESS:
         case VIR_DOMAIN_GRAPHICS_TYPE_DBUS:
         case VIR_DOMAIN_GRAPHICS_TYPE_LAST:
-            break;
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("unsupported graphics type %1$s"),
+                           virDomainGraphicsTypeToString(l_vfb->type));
+            return -1;
     }
 
     return 0;
@@ -1797,14 +1891,12 @@ libxlDriverConfigInit(libxlDriverConfig *cfg)
     }
 
     if (libxl_ctx_alloc(&cfg->ctx, LIBXL_VERSION, 0, (xentoollog_logger *)cfg->logger)) {
-        VIR_ERROR(_("cannot initialize libxenlight context, probably not "
-                    "running in a Xen Dom0, disabling driver"));
+        VIR_ERROR(_("cannot initialize libxenlight context, probably not running in a Xen Dom0, disabling driver"));
         return -1;
     }
 
     if ((cfg->verInfo = libxl_get_version_info(cfg->ctx)) == NULL) {
-        VIR_ERROR(_("cannot version information from libxenlight, "
-                    "disabling driver"));
+        VIR_ERROR(_("cannot version information from libxenlight, disabling driver"));
         return -1;
     }
     cfg->version = (cfg->verInfo->xen_version_major * 1000000) +
@@ -2098,9 +2190,7 @@ libxlMakeDefaultUSBControllers(virDomainDef *def,
     x_controllers = g_new0(libxl_device_usbctrl, ncontrollers);
 
     for (i = 0; i < ncontrollers; i++) {
-        if (!(l_controller = virDomainControllerDefNew(VIR_DOMAIN_CONTROLLER_TYPE_USB)))
-            goto error;
-
+        l_controller = virDomainControllerDefNew(VIR_DOMAIN_CONTROLLER_TYPE_USB);
         l_controller->model = VIR_DOMAIN_CONTROLLER_MODEL_USB_QUSB2;
         l_controller->idx = i;
         l_controller->opts.usbopts.ports = 8;

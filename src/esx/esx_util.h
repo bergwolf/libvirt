@@ -22,6 +22,7 @@
 #pragma once
 
 #include "internal.h"
+#include "virbuffer.h"
 #include "viruri.h"
 
 #define ESX_VI_CHECK_ARG_LIST(val) \
@@ -44,6 +45,8 @@ struct _esxUtil_ParsedUri {
     char *proxy_hostname;
     int proxy_port;
     char *path;
+    char *cacert;
+    bool legacy_uuid;
 };
 
 int esxUtil_ParseUri(esxUtil_ParsedUri **parsedUri, virURI *uri);
@@ -66,3 +69,5 @@ void esxUtil_ReplaceSpecialWindowsPathChars(char *string);
 char *esxUtil_EscapeDatastoreItem(const char *string);
 
 char *esxUtil_EscapeForXml(const char *string);
+
+void esxUtil_EscapeInventoryObject(virBuffer *buf, const char *string);

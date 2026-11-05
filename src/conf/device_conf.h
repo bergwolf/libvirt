@@ -25,14 +25,33 @@
 #include <libxml/xpath.h>
 
 #include "internal.h"
+#include "virconftypes.h"
 #include "virbuffer.h"
 #include "virccw.h"
 #include "virpci.h"
 #include "virnetdev.h"
 #include "virenum.h"
 
+/* the backend driver used for PCI hostdev devices */
 typedef enum {
-    VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE,
+    VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_DEFAULT = 0, /* detect automatically, prefer VFIO */
+    VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_KVM,    /* force legacy kvm style */
+    VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_VFIO,   /* force vfio */
+    VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_XEN,    /* force legacy xen style, use pciback */
+
+    VIR_DEVICE_HOSTDEV_PCI_DRIVER_NAME_LAST
+} virDeviceHostdevPCIDriverName;
+
+VIR_ENUM_DECL(virDeviceHostdevPCIDriverName);
+
+struct _virDeviceHostdevPCIDriverInfo {
+    virDeviceHostdevPCIDriverName name;
+    char *model;
+    virTristateBool iommufd;
+};
+
+typedef enum {
+    VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE = 0,
     VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI,
     VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DRIVE,
     VIR_DOMAIN_DEVICE_ADDRESS_TYPE_VIRTIO_SERIAL,
@@ -116,7 +135,7 @@ struct _virDomainDeviceDimmAddress {
 typedef struct _virDomainDeviceInfo virDomainDeviceInfo;
 struct _virDomainDeviceInfo {
     char *alias;
-    int type; /* virDomainDeviceAddressType */
+    virDomainDeviceAddressType type;
     union {
         virPCIDeviceAddress pci;
         virDomainDeviceDriveAddress drive;
@@ -167,7 +186,18 @@ struct _virDomainDeviceInfo {
      * cases we might want to prevent that from happening by
      * locking the isolation group */
     bool isolationGroupLocked;
+
+    /* NUMA nodeset affinity for this device */
+    virBitmap *acpiNodeset;
 };
+
+int virDeviceHostdevPCIDriverInfoParseXML(xmlNodePtr node,
+                                          virDeviceHostdevPCIDriverInfo *driver);
+
+int virDeviceHostdevPCIDriverInfoFormat(virBuffer *buf,
+                                        const virDeviceHostdevPCIDriverInfo *driver);
+
+void virDeviceHostdevPCIDriverInfoClear(virDeviceHostdevPCIDriverInfo *driver);
 
 void virDomainDeviceInfoClear(virDomainDeviceInfo *info);
 void virDomainDeviceInfoFree(virDomainDeviceInfo *info);

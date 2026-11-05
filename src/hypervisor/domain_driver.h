@@ -22,6 +22,9 @@
 
 #include "node_device_conf.h"
 #include "virhostdev.h"
+#include "virpci.h"
+#include "virdomainobjlist.h"
+#include "virenum.h"
 
 char *
 virDomainDriverGenerateRootHash(const char *drivername,
@@ -58,6 +61,7 @@ int virDomainDriverNodeDeviceReAttach(virNodeDevicePtr dev,
 
 int virDomainDriverNodeDeviceDetachFlags(virNodeDevicePtr dev,
                                          virHostdevManager *hostdevMgr,
+                                         virPCIStubDriver driverType,
                                          const char *driverName);
 
 int virDomainDriverAddIOThreadCheck(virDomainDef *def,
@@ -69,3 +73,48 @@ int virDomainDriverDelIOThreadCheck(virDomainDef *def,
 int virDomainDriverGetIOThreadsConfig(virDomainDef *targetDef,
                                       virDomainIOThreadInfoPtr **info,
                                       unsigned int bitmap_size);
+
+/*
+ * Will be called with 'vm' locked and ref count held,
+ * which will be released when this returns.
+ */
+typedef void (*virDomainDriverAutoStartCallback)(virDomainObj *vm,
+                                                 void *opaque);
+
+typedef struct _virDomainDriverAutoStartConfig {
+    const char *stateDir;
+    virDomainDriverAutoStartCallback callback;
+    void *opaque;
+    unsigned int delayMS; /* milliseconds to wait between initiating the
+                           * startup of each guest */
+} virDomainDriverAutoStartConfig;
+
+void virDomainDriverAutoStart(virDomainObjList *domains,
+                              virDomainDriverAutoStartConfig *cfg);
+
+typedef enum {
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_NONE,
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_PERSISTENT,
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_TRANSIENT,
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_ALL,
+
+    VIR_DOMAIN_DRIVER_AUTO_SHUTDOWN_SCOPE_LAST,
+} virDomainDriverAutoShutdownScope;
+
+VIR_ENUM_DECL(virDomainDriverAutoShutdownScope);
+
+typedef struct _virDomainDriverAutoShutdownConfig {
+    const char *uri;
+    virDomainDriverAutoShutdownScope trySave;
+    virDomainDriverAutoShutdownScope tryShutdown;
+    virDomainDriverAutoShutdownScope poweroff;
+    unsigned int waitShutdownSecs; /* Seconds to wait for VM to shutdown
+                                    * before moving onto next action.
+                                    * If 0 a default is used (currently 30 secs)
+                                    */
+    bool saveBypassCache;
+    bool autoRestore;
+} virDomainDriverAutoShutdownConfig;
+
+bool virDomainDriverAutoShutdownActive(virDomainDriverAutoShutdownConfig *cfg);
+void virDomainDriverAutoShutdown(virDomainDriverAutoShutdownConfig *cfg);

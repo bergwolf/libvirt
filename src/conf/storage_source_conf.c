@@ -47,7 +47,9 @@ VIR_ENUM_IMPL(virStorage,
               "network",
               "volume",
               "nvme",
-              "vhostuser"
+              "vhostuser",
+              "vhostvdpa",
+              "ctl",
 );
 
 
@@ -68,6 +70,7 @@ VIR_ENUM_IMPL(virStorageFileFeature,
               VIR_STORAGE_FILE_FEATURE_LAST,
               "lazy_refcounts",
               "extended_l2",
+              "data_file",
 );
 
 
@@ -95,6 +98,7 @@ VIR_ENUM_IMPL(virStorageNetHostTransport,
               "tcp",
               "unix",
               "rdma",
+              "fd",
 );
 
 
@@ -140,17 +144,6 @@ virStorageSourceHasBacking(const virStorageSource *src)
 
 
 void
-virStorageNetHostDefClear(virStorageNetHostDef *def)
-{
-    if (!def)
-        return;
-
-    VIR_FREE(def->name);
-    VIR_FREE(def->socket);
-}
-
-
-void
 virStorageNetHostDefFree(size_t nhosts,
                          virStorageNetHostDef *hosts)
 {
@@ -159,8 +152,12 @@ virStorageNetHostDefFree(size_t nhosts,
     if (!hosts)
         return;
 
-    for (i = 0; i < nhosts; i++)
-        virStorageNetHostDefClear(&hosts[i]);
+    for (i = 0; i < nhosts; i++) {
+        g_free(hosts[i].name);
+        g_free(hosts[i].socket);
+        g_free(hosts[i].fdgroup);
+        g_free(hosts[i].qemu_fdname);
+    }
 
     g_free(hosts);
 }
@@ -334,6 +331,11 @@ virStoragePRDefParseXML(xmlXPathContextPtr ctxt)
                                &prd->managed) < 0)
         goto cleanup;
 
+    if (virXMLPropTristateBool(ctxt->node, "migration",
+                               VIR_XML_PROP_NONZERO,
+                               &prd->migration) < 0)
+        goto cleanup;
+
     type = virXPathString("string(./source[1]/@type)", ctxt);
     path = virXPathString("string(./source[1]/@path)", ctxt);
     mode = virXPathString("string(./source[1]/@mode)", ctxt);
@@ -388,6 +390,11 @@ virStoragePRDefFormat(virBuffer *buf,
 {
     virBufferAsprintf(buf, "<reservations managed='%s'",
                       virTristateBoolTypeToString(prd->managed));
+
+    if (prd->migration != VIR_TRISTATE_BOOL_ABSENT)
+        virBufferAsprintf(buf, " migration='%s'",
+                          virTristateBoolTypeToString(prd->migration));
+
     if (prd->path &&
         (prd->managed == VIR_TRISTATE_BOOL_NO || !migratable)) {
         virBufferAddLit(buf, ">\n");
@@ -764,7 +771,7 @@ virStorageSourceSliceCopy(const virStorageSourceSlice *src)
 }
 
 
-static void
+void
 virStorageSourceSliceFree(virStorageSourceSlice *slice)
 {
     if (!slice)
@@ -809,6 +816,7 @@ virStorageSourceCopy(const virStorageSource *src,
     def->cachemode = src->cachemode;
     def->discard = src->discard;
     def->detect_zeroes = src->detect_zeroes;
+    def->discard_no_unref = src->discard_no_unref;
     def->sslverify = src->sslverify;
     def->readahead = src->readahead;
     def->timeout = src->timeout;
@@ -818,21 +826,26 @@ virStorageSourceCopy(const virStorageSource *src,
     /* storage driver metadata are not copied */
     def->drv = NULL;
 
+    /* flag to avoid seclabel remember is not copied */
+    def->seclabelSkipRemember = false;
+
     def->path = g_strdup(src->path);
     def->fdgroup = g_strdup(src->fdgroup);
-    def->volume = g_strdup(src->volume);
     def->relPath = g_strdup(src->relPath);
     def->backingStoreRaw = g_strdup(src->backingStoreRaw);
     def->backingStoreRawFormat = src->backingStoreRawFormat;
+    def->dataFileRaw = g_strdup(src->dataFileRaw);
     def->snapshot = g_strdup(src->snapshot);
     def->configFile = g_strdup(src->configFile);
-    def->nodeformat = g_strdup(src->nodeformat);
-    def->nodestorage = g_strdup(src->nodestorage);
+    def->nodenameformat = g_strdup(src->nodenameformat);
+    def->nodenamestorage = g_strdup(src->nodenamestorage);
     def->compat = g_strdup(src->compat);
     def->tlsAlias = g_strdup(src->tlsAlias);
     def->tlsCertdir = g_strdup(src->tlsCertdir);
+    def->tlsPriority = g_strdup(src->tlsPriority);
     def->tlsHostname = g_strdup(src->tlsHostname);
     def->query = g_strdup(src->query);
+    def->vdpadev = g_strdup(src->vdpadev);
 
     if (src->sliceStorage)
         def->sliceStorage = virStorageSourceSliceCopy(src->sliceStorage);
@@ -888,17 +901,28 @@ virStorageSourceCopy(const virStorageSource *src,
             return NULL;
     }
 
+    if (src->dataFileStore) {
+        if (!(def->dataFileStore = virStorageSourceCopy(src->dataFileStore,
+                                                        false)))
+            return NULL;
+    }
+
     if (src->fdtuple)
         def->fdtuple = g_object_ref(src->fdtuple);
 
     /* ssh config passthrough for libguestfs */
     def->ssh_host_key_check_disabled = src->ssh_host_key_check_disabled;
     def->ssh_user = g_strdup(src->ssh_user);
+    def->ssh_known_hosts_file = g_strdup(src->ssh_known_hosts_file);
+    def->ssh_keyfile = g_strdup(src->ssh_keyfile);
+    def->ssh_agent = g_strdup(src->ssh_agent);
 
     def->nfs_user = g_strdup(src->nfs_user);
     def->nfs_group = g_strdup(src->nfs_group);
     def->nfs_uid = src->nfs_uid;
     def->nfs_gid = src->nfs_gid;
+
+    /* 'ioerror_timestamp' and 'ioerror_message' are deliberately not copied */
 
     return g_steal_pointer(&def);
 }
@@ -932,7 +956,6 @@ virStorageSourceIsSameLocation(virStorageSource *a,
         return false;
 
     if (STRNEQ_NULLABLE(a->path, b->path) ||
-        STRNEQ_NULLABLE(a->volume, b->volume) ||
         STRNEQ_NULLABLE(a->snapshot, b->snapshot))
         return false;
 
@@ -957,12 +980,14 @@ virStorageSourceIsSameLocation(virStorageSource *a,
         break;
 
     case VIR_STORAGE_TYPE_VHOST_USER:
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
     case VIR_STORAGE_TYPE_NONE:
     case VIR_STORAGE_TYPE_FILE:
     case VIR_STORAGE_TYPE_BLOCK:
     case VIR_STORAGE_TYPE_DIR:
     case VIR_STORAGE_TYPE_LAST:
     case VIR_STORAGE_TYPE_VOLUME:
+    case VIR_STORAGE_TYPE_CTL:
         /* nothing to do */
         break;
     }
@@ -1045,6 +1070,7 @@ virStorageSourceIsLocalStorage(const virStorageSource *src)
     case VIR_STORAGE_TYPE_FILE:
     case VIR_STORAGE_TYPE_BLOCK:
     case VIR_STORAGE_TYPE_DIR:
+    case VIR_STORAGE_TYPE_CTL:
         return true;
 
     case VIR_STORAGE_TYPE_NETWORK:
@@ -1053,6 +1079,7 @@ virStorageSourceIsLocalStorage(const virStorageSource *src)
          * Therefore, we have to return false here. */
     case VIR_STORAGE_TYPE_NVME:
     case VIR_STORAGE_TYPE_VHOST_USER:
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
     case VIR_STORAGE_TYPE_LAST:
     case VIR_STORAGE_TYPE_NONE:
         return false;
@@ -1137,7 +1164,7 @@ virStorageSourceClear(virStorageSource *def)
 
     VIR_FREE(def->path);
     VIR_FREE(def->fdgroup);
-    VIR_FREE(def->volume);
+    VIR_FREE(def->vdpadev);
     VIR_FREE(def->snapshot);
     VIR_FREE(def->configFile);
     VIR_FREE(def->query);
@@ -1159,16 +1186,23 @@ virStorageSourceClear(virStorageSource *def)
     virStorageAuthDefFree(def->auth);
     virObjectUnref(def->privateData);
 
-    VIR_FREE(def->nodestorage);
-    VIR_FREE(def->nodeformat);
+    VIR_FREE(def->nodenamestorage);
+    VIR_FREE(def->nodenameformat);
+
+    VIR_FREE(def->dataFileRaw);
+    g_clear_pointer(&def->dataFileStore, virObjectUnref);
 
     virStorageSourceBackingStoreClear(def);
 
     VIR_FREE(def->tlsAlias);
     VIR_FREE(def->tlsCertdir);
+    VIR_FREE(def->tlsPriority);
     VIR_FREE(def->tlsHostname);
 
     VIR_FREE(def->ssh_user);
+    VIR_FREE(def->ssh_known_hosts_file);
+    VIR_FREE(def->ssh_keyfile);
+    VIR_FREE(def->ssh_agent);
 
     VIR_FREE(def->nfs_user);
     VIR_FREE(def->nfs_group);
@@ -1176,6 +1210,9 @@ virStorageSourceClear(virStorageSource *def)
     virStorageSourceInitiatorClear(&def->initiator);
 
     g_clear_pointer(&def->fdtuple, g_object_unref);
+
+    VIR_FREE(def->ioerror_timestamp);
+    VIR_FREE(def->ioerror_message);
 
     /* clear everything except the class header as the object APIs
      * will break otherwise */
@@ -1239,12 +1276,14 @@ virStorageSourceIsRelative(virStorageSource *src)
     case VIR_STORAGE_TYPE_FILE:
     case VIR_STORAGE_TYPE_BLOCK:
     case VIR_STORAGE_TYPE_DIR:
+    case VIR_STORAGE_TYPE_CTL:
         return !g_path_is_absolute(src->path);
 
     case VIR_STORAGE_TYPE_NETWORK:
     case VIR_STORAGE_TYPE_VOLUME:
     case VIR_STORAGE_TYPE_NVME:
     case VIR_STORAGE_TYPE_VHOST_USER:
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
     case VIR_STORAGE_TYPE_NONE:
     case VIR_STORAGE_TYPE_LAST:
         return false;
@@ -1334,8 +1373,7 @@ int
 virStorageSourcePrivateDataFormatRelPath(virStorageSource *src,
                                          virBuffer *buf)
 {
-    if (src->relPath)
-        virBufferEscapeString(buf, "<relPath>%s</relPath>\n", src->relPath);
+    virBufferEscapeString(buf, "<relPath>%s</relPath>\n", src->relPath);
 
     return 0;
 }
@@ -1379,44 +1417,78 @@ virStorageSourceInitiatorClear(virStorageSourceInitiatorDef *initiator)
     VIR_FREE(initiator->iqn);
 }
 
-G_DEFINE_TYPE(virStorageSourceFDTuple, vir_storage_source_fd_tuple, G_TYPE_OBJECT);
 
-static void
-vir_storage_source_fd_tuple_init(virStorageSourceFDTuple *fdt G_GNUC_UNUSED)
+/**
+ * virStorageSourceNetworkProtocolPathSplit:
+ * @path: path to split
+ * @protocol: protocol
+ * @pool: filled with pool name (may be NULL)
+ * @namespace: filed with namespace (may be NULL)
+ * @image: filled with image name (may be NULL)
+ *
+ * Historically libvirt accepted the specification of Gluster's volume and
+ * RBD's pool as part of the 'path' field, but internally many places require
+ * individual components.
+ *
+ * This helper validates and splits the path as appropriate for given protocol.
+ * It's useful for 'gluster' and 'rbd' protocol but for validation can be called
+ * with any protocol.
+ */
+int
+virStorageSourceNetworkProtocolPathSplit(const char *path,
+                                         virStorageNetProtocol protocol,
+                                         char **pool,
+                                         char **namespace,
+                                         char **image)
 {
-}
-
-
-static void
-virStorageSourceFDTupleFinalize(GObject *object)
-{
-    virStorageSourceFDTuple *fdt = VIR_STORAGE_SOURCE_FD_TUPLE(object);
+    g_auto(GStrv) tokens = NULL;
+    int components_max = 2;
+    size_t ncomponents = 0;
     size_t i;
 
-    if (!fdt)
-        return;
+    if (protocol != VIR_STORAGE_NET_PROTOCOL_GLUSTER &&
+        protocol != VIR_STORAGE_NET_PROTOCOL_RBD) {
 
-    for (i = 0; i < fdt->nfds; i++)
-        VIR_FORCE_CLOSE(fdt->fds[i]);
+        if (image)
+            *image = g_strdup(path);
 
-    g_free(fdt->fds);
-    g_free(fdt->testfds);
-    g_free(fdt->selinuxLabel);
-    G_OBJECT_CLASS(vir_storage_source_fd_tuple_parent_class)->finalize(object);
-}
+        return 0;
+    }
 
+    if (protocol == VIR_STORAGE_NET_PROTOCOL_RBD) {
+        /* the name of rbd can be <pool>/<image> or <pool>/<namespace>/<image> */
+        components_max = 3;
+    }
 
-static void
-vir_storage_source_fd_tuple_class_init(virStorageSourceFDTupleClass *klass)
-{
-    GObjectClass *obj = G_OBJECT_CLASS(klass);
+    if ((tokens = g_strsplit(path, "/", components_max)))
+        ncomponents = g_strv_length(tokens);
 
-    obj->finalize = virStorageSourceFDTupleFinalize;
-}
+    if (ncomponents < 2)
+        goto error;
 
+    for (i = 0; i < ncomponents; i++) {
+        if (*tokens[i] == '\0')
+            goto error;
+    }
 
-virStorageSourceFDTuple *
-virStorageSourceFDTupleNew(void)
-{
-    return g_object_new(vir_storage_source_fd_tuple_get_type(), NULL);
+    if (pool)
+        *pool = g_strdup(tokens[0]);
+
+    if (namespace) {
+        if (ncomponents == 3)
+            *namespace = g_strdup(tokens[1]);
+        else
+            *namespace = NULL;
+    }
+
+    if (image)
+        *image = g_strdup(tokens[ncomponents - 1]);
+
+    return 0;
+
+ error:
+    virReportError(VIR_ERR_XML_ERROR,
+                   _("failed to split path '%1$s' into 'pool/image' or 'pool/namespace/image' components"),
+                   path);
+    return -1;
 }

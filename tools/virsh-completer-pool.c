@@ -93,13 +93,16 @@ virshPoolTypeCompleter(vshControl *ctl,
     g_auto(GStrv) tmp = NULL;
     const char *type_str = NULL;
 
-    virCheckFlags(0, NULL);
+    virCheckFlags(VIRSH_POOL_TYPE_COMPLETER_COMMA, NULL);
+
+    tmp = vshEnumComplete(VIR_STORAGE_POOL_LAST,
+                          virStoragePoolTypeToString);
+
+    if (!(flags & VIRSH_POOL_TYPE_COMPLETER_COMMA))
+        return g_steal_pointer(&tmp);
 
     if (vshCommandOptStringQuiet(ctl, cmd, "type", &type_str) < 0)
         return NULL;
 
-    tmp = virshEnumComplete(VIR_STORAGE_POOL_LAST,
-                            virStoragePoolTypeToString);
-
-    return virshCommaStringListComplete(type_str, (const char **)tmp);
+    return vshCommaStringListComplete(type_str, (const char **)tmp);
 }

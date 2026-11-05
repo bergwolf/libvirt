@@ -19,8 +19,11 @@
 
 #include <config.h>
 
+#include "domain_event.h"
 #include "qemu/qemu_alias.h"
 #include "qemu/qemu_conf.h"
+#define LIBVIRT_QEMU_DRIVERPRIV_H_ALLOW
+#include "qemu/qemu_driverpriv.h"
 #include "qemu/qemu_hotplug.h"
 #include "qemumonitortestutils.h"
 #include "testutils.h"
@@ -28,6 +31,10 @@
 #include "testutilsqemuschema.h"
 #include "virhostdev.h"
 #include "virfile.h"
+#include "virthread.h"
+#include "virthreadpool.h"
+#include "virtime.h"
+#include "qemufakedrivers.h"
 
 #define LIBVIRT_QEMU_CAPSPRIV_H_ALLOW
 #include "qemu/qemu_capspriv.h"
@@ -43,6 +50,7 @@ enum {
 };
 
 #define QEMU_HOTPLUG_TEST_DOMAIN_ID 7
+#define QEMU_HOTPLUG_TEST_DOMAIN_PID 12345
 
 struct qemuHotplugTestData {
     const char *domain_filename;
@@ -152,7 +160,7 @@ testQemuHotplug(const void *data)
     const char *const *tmp;
     bool fail = test->fail;
     bool keep = test->keep;
-    unsigned int device_parse_flags = 0;
+    unsigned int device_parse_flags = VIR_DOMAIN_DEF_PARSE_ABI_UPDATE;
     virDomainObj *vm = NULL;
     g_autoptr(virDomainDeviceDef) dev = NULL;
     g_autoptr(qemuMonitorTest) test_mon = NULL;
@@ -191,7 +199,7 @@ testQemuHotplug(const void *data)
     }
 
     if (test->action == ATTACH)
-        device_parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE;
+        device_parse_flags |= VIR_DOMAIN_DEF_PARSE_INACTIVE;
 
     if (!(dev = virDomainDeviceDefParse(device_xml, vm->def,
                                         driver.xmlopt, NULL,
@@ -276,7 +284,6 @@ struct testQemuHotplugCpuData {
 
     virDomainObj *vm;
     qemuMonitorTest *mon;
-    bool modern;
 };
 
 
@@ -317,13 +324,152 @@ struct testQemuHotplugCpuParams {
     int newcpus;
     const char *cpumap;
     bool state;
-    bool modern;
     bool fail;
     const char *arch;
     GHashTable *capsLatestFiles;
     GHashTable *capsCache;
     GHashTable *schemaCache;
 };
+
+
+struct testQemuHotplugCpuAsyncParams {
+    const char *test;
+    int newcpus;
+    const char *cpumap;
+    virConnectPtr conn;
+    const char **deviceDeletedAliases;
+    size_t ndeviceDeletedAliases;
+    const char *removedVcpus;
+    const char *arch;
+    GHashTable *capsLatestFiles;
+    GHashTable *capsCache;
+    GHashTable *schemaCache;
+};
+
+
+struct testQemuHotplugCpuAsyncData {
+    int eventCallbackID;
+    virMutex lock;
+    virCond cond;
+    bool lockInitialized;
+    bool condInitialized;
+    virBitmap *removedVcpusExpected;
+    virBitmap *removedVcpusActual;
+    bool removedVcpusInvalid;
+    bool removedVcpusDuplicate;
+    bool ownsWorkerPool;
+};
+
+
+static int
+testQemuHotplugCpuAsyncDataInit(struct testQemuHotplugCpuAsyncData *asyncData,
+                                const char *test)
+{
+    asyncData->eventCallbackID = -1;
+
+    if (driver.workerPool) {
+        VIR_TEST_VERBOSE("stale qemu worker pool in async cpu test '%s'",
+                         test);
+        return -1;
+    }
+
+    if (virMutexInit(&asyncData->lock) < 0)
+        return -1;
+    asyncData->lockInitialized = true;
+
+    if (virCondInit(&asyncData->cond) < 0)
+        return -1;
+    asyncData->condInitialized = true;
+
+    if (!(driver.workerPool = virThreadPoolNewFull(0, 1, 0,
+                                                   qemuProcessEventHandler,
+                                                   "qemuProcessEventHandler",
+                                                   NULL, &driver)))
+        return -1;
+
+    asyncData->ownsWorkerPool = true;
+
+    return 0;
+}
+
+
+static void
+testQemuHotplugCpuAsyncDataClear(struct testQemuHotplugCpuAsyncData *asyncData,
+                                 virConnectPtr conn)
+{
+    if (asyncData->eventCallbackID >= 0)
+        virObjectEventStateDeregisterID(conn, driver.domainEventState,
+                                        asyncData->eventCallbackID, true);
+
+    if (asyncData->ownsWorkerPool)
+        g_clear_pointer(&driver.workerPool, virThreadPoolFree);
+
+    if (asyncData->condInitialized)
+        virCondDestroy(&asyncData->cond);
+    if (asyncData->lockInitialized)
+        virMutexDestroy(&asyncData->lock);
+
+    g_clear_pointer(&asyncData->removedVcpusExpected, virBitmapFree);
+    g_clear_pointer(&asyncData->removedVcpusActual, virBitmapFree);
+}
+
+
+static int
+testQemuHotplugCpuWaitVcpuRemoved(struct testQemuHotplugCpuAsyncData *asyncData)
+{
+    g_autofree char *expected = NULL;
+    g_autofree char *actual = NULL;
+    unsigned long long now;
+    unsigned long long deadline;
+    size_t expectedCount = virBitmapCountBits(asyncData->removedVcpusExpected);
+    size_t actualCount;
+    int ret = -1;
+
+    if (virTimeMillisNow(&now) < 0)
+        return -1;
+    deadline = now + 1000;
+
+    virMutexLock(&asyncData->lock);
+    while (virBitmapCountBits(asyncData->removedVcpusActual) < expectedCount) {
+        if (virCondWaitUntil(&asyncData->cond, &asyncData->lock, deadline) < 0)
+            break;
+    }
+
+    actualCount = virBitmapCountBits(asyncData->removedVcpusActual);
+
+    if (asyncData->removedVcpusInvalid) {
+        VIR_TEST_VERBOSE("async cpu test reported an unexpected vCPU id");
+        goto cleanup;
+    }
+
+    if (asyncData->removedVcpusDuplicate) {
+        VIR_TEST_VERBOSE("async cpu test received duplicate vcpu-removed events");
+        goto cleanup;
+    }
+
+    if (actualCount < expectedCount) {
+        VIR_TEST_VERBOSE("timed out waiting for vcpu-removed events"
+                         " (%zu/%zu received)",
+                         actualCount, expectedCount);
+        goto cleanup;
+    }
+
+    if (!virBitmapEqual(asyncData->removedVcpusExpected,
+                        asyncData->removedVcpusActual)) {
+        expected = virBitmapFormat(asyncData->removedVcpusExpected);
+        actual = virBitmapFormat(asyncData->removedVcpusActual);
+        VIR_TEST_VERBOSE("expected removed vCPUs '%s', got '%s'",
+                         NULLSTR(expected), NULLSTR(actual));
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    virMutexUnlock(&asyncData->lock);
+
+    return ret;
+}
 
 
 static struct testQemuHotplugCpuData *
@@ -337,8 +483,6 @@ testQemuHotplugCpuPrepare(const struct testQemuHotplugCpuParams *params)
     prefix = g_strdup_printf("%s/qemuhotplugtestcpus/%s", abs_srcdir, params->test);
 
     data = g_new0(struct testQemuHotplugCpuData, 1);
-
-    data->modern = params->modern;
 
     data->file_xml_dom = g_strdup_printf("%s-domain.xml", prefix);
     data->file_xml_res_live = g_strdup_printf("%s-result-live.xml", prefix);
@@ -360,18 +504,12 @@ testQemuHotplugCpuPrepare(const struct testQemuHotplugCpuParams *params)
 
     priv = data->vm->privateData;
 
-    if (data->modern)
-        virQEMUCapsSet(priv->qemuCaps, QEMU_CAPS_QUERY_HOTPLUGGABLE_CPUS);
-
     if (!(data->mon = qemuMonitorTestNewFromFileFull(data->file_json_monitor,
                                                      &driver, data->vm, schema)))
         goto error;
 
     if (params->fail)
         qemuMonitorTestAllowUnusedCommands(data->mon);
-
-    if (!data->modern)
-        qemuMonitorTestSkipDeprecatedValidation(data->mon, true);
 
     priv->mon = qemuMonitorTestGetMonitor(data->mon);
     virObjectUnlock(priv->mon);
@@ -416,6 +554,124 @@ testQemuHotplugCpuFinalize(struct testQemuHotplugCpuData *data)
 }
 
 
+static void
+testQemuHotplugCpuVcpuRemoved(virConnectPtr conn G_GNUC_UNUSED,
+                              virDomainPtr dom G_GNUC_UNUSED,
+                              unsigned int vcpuid,
+                              void *opaque)
+{
+    struct testQemuHotplugCpuAsyncData *asyncData = opaque;
+
+    virMutexLock(&asyncData->lock);
+
+    if (virBitmapIsBitSet(asyncData->removedVcpusActual, vcpuid))
+        asyncData->removedVcpusDuplicate = true;
+
+    if (virBitmapSetBit(asyncData->removedVcpusActual, vcpuid) < 0)
+        asyncData->removedVcpusInvalid = true;
+
+    virCondBroadcast(&asyncData->cond);
+    virMutexUnlock(&asyncData->lock);
+}
+
+
+static int
+testQemuHotplugCpuRegisterVcpuRemoved(struct testQemuHotplugCpuData *data,
+                                      const struct testQemuHotplugCpuAsyncParams *async,
+                                      struct testQemuHotplugCpuAsyncData *asyncData)
+{
+    g_autoptr(virBitmap) expected = NULL;
+    size_t maxvcpus = virDomainDefGetVcpusMax(data->vm->def);
+
+    if (!async->removedVcpus) {
+        VIR_TEST_VERBOSE("async cpu test '%s' is missing expected removed vCPUs",
+                         async->test);
+        return -1;
+    }
+
+    if (virBitmapParse(async->removedVcpus, &expected, maxvcpus) < 0)
+        return -1;
+
+    if (!(asyncData->removedVcpusActual = virBitmapNew(maxvcpus)))
+        return -1;
+
+    asyncData->removedVcpusExpected = g_steal_pointer(&expected);
+
+    if (virDomainEventStateRegisterID(async->conn,
+                                      driver.domainEventState,
+                                      NULL,
+                                      VIR_DOMAIN_EVENT_ID_VCPU_REMOVED,
+                                      VIR_DOMAIN_EVENT_CALLBACK(testQemuHotplugCpuVcpuRemoved),
+                                      asyncData,
+                                      NULL,
+                                      &asyncData->eventCallbackID) < 0)
+        return -1;
+
+    return 0;
+}
+
+
+static int
+testQemuHotplugCpuCompleteAsync(struct testQemuHotplugCpuData *data,
+                                const struct testQemuHotplugCpuAsyncParams *async,
+                                struct testQemuHotplugCpuAsyncData *asyncData)
+{
+    g_autofree char *activeXML = NULL;
+    g_autofree char *pendingLiveFile = NULL;
+    size_t i;
+    bool vmUnlocked = false;
+    int ret = -1;
+
+    if (!async->deviceDeletedAliases ||
+        async->ndeviceDeletedAliases == 0) {
+        VIR_TEST_VERBOSE("async cpu test '%s' is missing DEVICE_DELETED aliases",
+                         async->test);
+        return -1;
+    }
+
+    if (!(activeXML = virDomainDefFormat(data->vm->def, driver.xmlopt,
+                                         VIR_DOMAIN_DEF_FORMAT_SECURE)))
+        return -1;
+
+    pendingLiveFile = g_strdup_printf("%s/qemuhotplugtestcpus/%s-result-pending-live.xml",
+                                      abs_srcdir, async->test);
+
+    if (virTestCompareToFile(activeXML, pendingLiveFile) < 0)
+        return -1;
+
+    if (testQemuHotplugCpuRegisterVcpuRemoved(data, async, asyncData) < 0)
+        return -1;
+
+    /* qemuDomainRefreshVcpuInfo() validates vCPU TIDs against the emulator
+     * PID. A running QEMU process always has a non-zero PID, so mirror that
+     * before DEVICE_DELETED processing reports unplugged vCPUs with tid == 0. */
+    data->vm->pid = QEMU_HOTPLUG_TEST_DOMAIN_PID;
+
+    virObjectUnlock(data->vm);
+    vmUnlocked = true;
+
+    for (i = 0; i < async->ndeviceDeletedAliases; i++)
+        qemuMonitorTestEmitDeviceDeleted(data->mon,
+                                         async->deviceDeletedAliases[i]);
+
+    if (testQemuHotplugCpuWaitVcpuRemoved(asyncData) < 0)
+        goto cleanup;
+
+    virThreadPoolDrain(driver.workerPool);
+
+    virObjectLock(data->vm);
+    vmUnlocked = false;
+
+    ret = 0;
+
+ cleanup:
+    if (vmUnlocked)
+        virObjectLock(data->vm);
+
+    return ret;
+}
+
+
 static int
 testQemuHotplugCpuGroup(const void *opaque)
 {
@@ -429,7 +685,7 @@ testQemuHotplugCpuGroup(const void *opaque)
 
     rc = qemuDomainSetVcpusInternal(&driver, data->vm, data->vm->def,
                                     data->vm->newDef, params->newcpus,
-                                    params->modern);
+                                    true, false);
 
     if (params->fail) {
         if (rc == 0)
@@ -452,6 +708,71 @@ testQemuHotplugCpuGroup(const void *opaque)
 
 
 static int
+testQemuHotplugCpuAsync(const struct testQemuHotplugCpuAsyncParams *async,
+                        bool group)
+{
+    struct testQemuHotplugCpuData *data = NULL;
+    struct testQemuHotplugCpuAsyncData asyncData = { .eventCallbackID = -1 };
+    struct testQemuHotplugCpuParams params = {
+        .test = async->test,
+        .arch = async->arch,
+        .capsLatestFiles = async->capsLatestFiles,
+        .capsCache = async->capsCache,
+        .schemaCache = async->schemaCache,
+    };
+    g_autoptr(virBitmap) map = NULL;
+    int ret = -1;
+    int rc;
+
+    if (!(data = testQemuHotplugCpuPrepare(&params)))
+        return -1;
+
+    if (testQemuHotplugCpuAsyncDataInit(&asyncData, async->test) < 0)
+        goto cleanup;
+
+    if (group) {
+        rc = qemuDomainSetVcpusInternal(&driver, data->vm, data->vm->def,
+                                        data->vm->newDef, async->newcpus,
+                                        true, true);
+    } else {
+        if (virBitmapParse(async->cpumap, &map, 128) < 0)
+            goto cleanup;
+
+        rc = qemuDomainSetVcpuInternal(&driver, data->vm, data->vm->def,
+                                       data->vm->newDef, map, false,
+                                       true);
+    }
+
+    if (rc < 0)
+        goto cleanup;
+
+    if (testQemuHotplugCpuCompleteAsync(data, async, &asyncData) < 0)
+        goto cleanup;
+
+    ret = testQemuHotplugCpuFinalize(data);
+
+ cleanup:
+    testQemuHotplugCpuAsyncDataClear(&asyncData, async->conn);
+    testQemuHotplugCpuDataFree(data);
+    return ret;
+}
+
+
+static int
+testQemuHotplugCpuGroupAsync(const void *opaque)
+{
+    return testQemuHotplugCpuAsync(opaque, true);
+}
+
+
+static int
+testQemuHotplugCpuIndividualAsync(const void *opaque)
+{
+    return testQemuHotplugCpuAsync(opaque, false);
+}
+
+
+static int
 testQemuHotplugCpuIndividual(const void *opaque)
 {
     const struct testQemuHotplugCpuParams *params = opaque;
@@ -467,7 +788,8 @@ testQemuHotplugCpuIndividual(const void *opaque)
         goto cleanup;
 
     rc = qemuDomainSetVcpuInternal(&driver, data->vm, data->vm->def,
-                                   data->vm->newDef, map, params->state);
+                                   data->vm->newDef, map, params->state,
+                                   false);
 
     if (params->fail) {
         if (rc == 0)
@@ -493,6 +815,7 @@ static int
 mymain(void)
 {
     int ret = 0;
+    g_autoptr(virConnect) conn = NULL;
     g_autoptr(virQEMUDriverConfig) cfg = NULL;
     g_autoptr(GHashTable) capsLatestFiles = testQemuGetLatestCaps();
     g_autoptr(GHashTable) capsCache = virHashNew(virObjectUnref);
@@ -509,10 +832,21 @@ mymain(void)
 
     cfg = virQEMUDriverGetConfig(&driver);
 
-    virEventRegisterDefaultImpl();
-
-    if (!(driver.domainEventState = virObjectEventStateNew()))
+    if (!(conn = virGetConnect()))
         return EXIT_FAILURE;
+
+    conn->secretDriver = testQemuGetFakeSecretDriver();
+    conn->storageDriver = testQemuGetFakeStorageDriver();
+    conn->nwfilterDriver = testQemuGetFakeNWFilterDriver();
+    conn->networkDriver = testQemuGetFakeNetworkDriver();
+
+    virSetConnectInterface(conn);
+    virSetConnectNetwork(conn);
+    virSetConnectNWFilter(conn);
+    virSetConnectNodeDev(conn);
+    virSetConnectSecret(conn);
+    virSetConnectStorage(conn);
+    virEventRegisterDefaultImpl();
 
     driver.lockManager = virLockManagerPluginNew("nop", "qemu",
                                                  driver.config->configBaseDir,
@@ -554,7 +888,6 @@ mymain(void)
 
 
 #define QMP_OK      "{\"return\": {}}"
-#define QMP_EMPTY_ARRAY "{\"return\": []}"
 
 #define QMP_DEVICE_DELETED(dev) \
     "{" \
@@ -592,38 +925,29 @@ mymain(void)
 
     DO_TEST_ATTACH("x86_64", "base-live", "disk-virtio", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-virtio", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-virtio", false, false,
                    "device_del", QMP_DEVICE_DELETED("virtio-disk4") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-live", "disk-usb", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-usb", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-usb", false, false,
                    "device_del", QMP_DEVICE_DELETED("usb-disk16") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-live", "disk-scsi", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-scsi", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-scsi", false, false,
                    "device_del", QMP_DEVICE_DELETED("scsi0-0-0-5") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-without-scsi-controller-live", "disk-scsi-2", false, true,
@@ -633,27 +957,21 @@ mymain(void)
                    "device_add", QMP_OK,
                    "device_add", QMP_OK,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-with-scsi-controller-live", "disk-scsi-2", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-with-scsi-controller-live", "disk-scsi-2", false, false,
                    "device_del", QMP_DEVICE_DELETED("scsi3-0-6") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-live", "disk-scsi-multipath", false, true,
                    "object-add", QMP_OK,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-scsi-multipath", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "disk-scsi-multipath", false, false,
                    "device_del", QMP_DEVICE_DELETED("scsi0-0-0-0") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK,
                    "object-del", QMP_OK);
 
@@ -667,51 +985,38 @@ mymain(void)
 
     DO_TEST_ATTACH("s390x", "base-ccw-live", "ccw-virtio", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("s390x", "base-ccw-live", "ccw-virtio", false, false,
                    "device_del", QMP_DEVICE_DELETED("virtio-disk4") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("s390x", "base-ccw-live-with-ccw-virtio", "ccw-virtio-2", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
 
     DO_TEST_DETACH("s390x", "base-ccw-live-with-ccw-virtio", "ccw-virtio-2", false, false,
                    "device_del", QMP_DEVICE_DELETED("virtio-disk0") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("s390x", "base-ccw-live-with-ccw-virtio", "ccw-virtio-2-explicit", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
 
     DO_TEST_DETACH("s390x", "base-ccw-live-with-ccw-virtio", "ccw-virtio-2-explicit", false, false,
                    "device_del", QMP_DEVICE_DELETED("virtio-disk0") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     /* Attach a second device, then detach the first one. Then attach the first one again. */
     DO_TEST_ATTACH("s390x", "base-ccw-live-with-ccw-virtio", "ccw-virtio-2-explicit", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
 
     DO_TEST_DETACH("s390x", "base-ccw-live-with-2-ccw-virtio", "ccw-virtio-1-explicit", false, true,
                    "device_del", QMP_DEVICE_DELETED("virtio-disk4") QMP_OK);
 
     DO_TEST_ATTACH("s390x", "base-ccw-live-with-2-ccw-virtio", "ccw-virtio-1-reverse", false, false,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-live", "ivshmem-plain", false, true,
                    "object-add", QMP_OK,
@@ -728,9 +1033,7 @@ mymain(void)
     DO_TEST_ATTACH("x86_64", "base-live+disk-scsi-wwn",
                    "disk-scsi-duplicate-wwn", false, false,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-live", "hostdev-pci", false, true,
                    "device_add", QMP_OK);
@@ -741,6 +1044,22 @@ mymain(void)
     DO_TEST_DETACH("ppc64", "pseries-base-live", "hostdev-pci", false, false,
                    "device_del", QMP_DEVICE_DELETED("hostdev0") QMP_OK);
 
+#ifdef __linux__
+    /* While <interface type='hostdev'/> is nearly the same as <hostdev/>,
+     * there are subtle differences, e.g. checking that PCI device specified in
+     * <interface/> is a VF. Checks like these are done by walking sysfs which
+     * is limited to Linux, obviously. And while our virpcimock creates
+     * necessary structure, on non-Linux the virpci.c is compiled with stubs
+     * that do nothing but report an error. */
+    DO_TEST_ATTACH("x86_64", "base-live", "interface-hostdev", false, true,
+                   "device_add", QMP_OK);
+    DO_TEST_DETACH("x86_64", "base-live", "interface-hostdev", false, false,
+                   "device_del", QMP_DEVICE_DELETED("hostdev0") QMP_OK);
+    DO_TEST_ATTACH("x86_64", "base-live", "interface-network-hostdev", false, true,
+                   "device_add", QMP_OK);
+    DO_TEST_DETACH("x86_64", "base-live", "interface-network-hostdev", false, false,
+                   "device_del", QMP_DEVICE_DELETED("hostdev0") QMP_OK);
+#endif
     DO_TEST_ATTACH("x86_64", "base-live", "interface-vdpa", false, true,
                    "query-fdsets", "{\"return\":[{\"fdset-id\":99999}]}",
                    "add-fd", "{ \"return\": { \"fdset-id\": 1, \"fd\": 95 }}",
@@ -777,66 +1096,109 @@ mymain(void)
 
     DO_TEST_ATTACH("x86_64", "base-live", "cdrom-usb", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
                    "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK,
+                   "qom-set", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "cdrom-usb", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "cdrom-usb", false, false,
                    "device_del", QMP_DEVICE_DELETED("usb-disk4") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
     DO_TEST_ATTACH("x86_64", "base-live", "cdrom-scsi", false, true,
                    "blockdev-add", QMP_OK,
-                   "blockdev-add", QMP_OK,
-                   "device_add", QMP_OK,
-                   "query-block", QMP_EMPTY_ARRAY);
+                   "device_add", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "cdrom-scsi", true, true,
                    "device_del", QMP_OK);
     DO_TEST_DETACH("x86_64", "base-live", "cdrom-scsi", false, false,
                    "device_del", QMP_DEVICE_DELETED("scsi0-0-0-4") QMP_OK,
-                   "blockdev-del", QMP_OK,
                    "blockdev-del", QMP_OK);
 
-#define DO_TEST_CPU_GROUP(archname, prefix, vcpus, modernhp, expectfail) \
+    DO_TEST_ATTACH("x86_64", "base-live", "input-evdev", false, true,
+                   "object-add", QMP_OK);
+    DO_TEST_DETACH("x86_64", "base-live", "input-evdev", false, false,
+                   "object-del", QMP_OK);
+
+#define DO_TEST_CPU_GROUP(archname, prefix, vcpus, expectfail) \
     do { \
         cpudata.test = prefix; \
         cpudata.arch = archname; \
         cpudata.newcpus = vcpus; \
-        cpudata.modern = modernhp; \
         cpudata.fail = expectfail; \
         if (virTestRun("hotplug vcpus group " prefix, \
                        testQemuHotplugCpuGroup, &cpudata) < 0) \
             ret = -1; \
     } while (0)
 
-    DO_TEST_CPU_GROUP("x86_64", "x86-modern-bulk", 7, true, false);
-    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 24, true, false);
-    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 15, true, true);
-    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 23, true, true);
-    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 25, true, true);
+    DO_TEST_CPU_GROUP("x86_64", "x86-modern-bulk", 7, false);
+    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 24, false);
+    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 15, true);
+    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 23, true);
+    DO_TEST_CPU_GROUP("ppc64", "ppc64-modern-bulk", 25, true);
 
-#define DO_TEST_CPU_INDIVIDUAL(archname, prefix, mapstr, statefl, modernhp, expectfail) \
+#define DO_TEST_CPU_INDIVIDUAL(archname, prefix, mapstr, statefl, expectfail) \
     do { \
         cpudata.test = prefix; \
         cpudata.arch = archname; \
         cpudata.cpumap = mapstr; \
         cpudata.state = statefl; \
-        cpudata.modern = modernhp; \
         cpudata.fail = expectfail; \
         if (virTestRun("hotplug vcpus group " prefix, \
                        testQemuHotplugCpuIndividual, &cpudata) < 0) \
             ret = -1; \
     } while (0)
 
-    DO_TEST_CPU_INDIVIDUAL("x86_64", "x86-modern-individual-add", "7", true, true, false);
-    DO_TEST_CPU_INDIVIDUAL("x86_64", "x86-modern-individual-add", "6,7", true, true, true);
-    DO_TEST_CPU_INDIVIDUAL("x86_64", "x86-modern-individual-add", "7", false, true, true);
+#define DO_TEST_CPU_INDIVIDUAL_ASYNC(archname, prefix, mapstr, alias, removed) \
+    do { \
+        const char *aliases[] = { alias }; \
+        const struct testQemuHotplugCpuAsyncParams async = { \
+            .test = prefix, \
+            .cpumap = mapstr, \
+            .conn = conn, \
+            .deviceDeletedAliases = aliases, \
+            .ndeviceDeletedAliases = G_N_ELEMENTS(aliases), \
+            .removedVcpus = removed, \
+            .arch = archname, \
+            .capsLatestFiles = capsLatestFiles, \
+            .capsCache = capsCache, \
+            .schemaCache = schemaCache, \
+        }; \
+        if (virTestRun("hotplug vcpus individual async " prefix, \
+                       testQemuHotplugCpuIndividualAsync, &async) < 0) \
+            ret = -1; \
+    } while (0)
 
-    DO_TEST_CPU_INDIVIDUAL("ppc64", "ppc64-modern-individual", "16-23", true, true, false);
-    DO_TEST_CPU_INDIVIDUAL("ppc64", "ppc64-modern-individual", "16-22", true, true, true);
-    DO_TEST_CPU_INDIVIDUAL("ppc64", "ppc64-modern-individual", "17", true, true, true);
+    DO_TEST_CPU_INDIVIDUAL("x86_64", "x86-modern-individual-add", "7", true, false);
+    DO_TEST_CPU_INDIVIDUAL("x86_64", "x86-modern-individual-add", "6,7", true, true);
+    DO_TEST_CPU_INDIVIDUAL("x86_64", "x86-modern-individual-add", "7", false, true);
+    DO_TEST_CPU_INDIVIDUAL_ASYNC("x86_64", "x86-modern-individual-del-async",
+                                 "7", "vcpu7", "7");
+
+    DO_TEST_CPU_INDIVIDUAL("ppc64", "ppc64-modern-individual", "16-23", true, false);
+    DO_TEST_CPU_INDIVIDUAL("ppc64", "ppc64-modern-individual", "16-22", true, true);
+    DO_TEST_CPU_INDIVIDUAL("ppc64", "ppc64-modern-individual", "17", true, true);
+    DO_TEST_CPU_INDIVIDUAL_ASYNC("ppc64", "ppc64-modern-individual-del-async",
+                                 "16-23", "vcpu16", "16-23");
+
+    do {
+        const char *aliases[] = { "vcpu7", "vcpu6", "vcpu5", "vcpu4" };
+        const struct testQemuHotplugCpuAsyncParams async = {
+            .test = "x86-modern-bulk-downscale-async",
+            .newcpus = 4,
+            .conn = conn,
+            .deviceDeletedAliases = aliases,
+            .ndeviceDeletedAliases = G_N_ELEMENTS(aliases),
+            .removedVcpus = "4-7",
+            .arch = "x86_64",
+            .capsLatestFiles = capsLatestFiles,
+            .capsCache = capsCache,
+            .schemaCache = schemaCache,
+        };
+
+        if (virTestRun("hotplug vcpus group async x86-modern-bulk-downscale-async",
+                       testQemuHotplugCpuGroupAsync, &async) < 0)
+            ret = -1;
+    } while (0);
 
     qemuTestDriverFree(&driver);
     virObjectUnref(data.vm);
@@ -844,8 +1206,8 @@ mymain(void)
 }
 
 VIR_TEST_MAIN_PRELOAD(mymain,
-                      VIR_TEST_MOCK("virhostdev"),
                       VIR_TEST_MOCK("virpci"),
                       VIR_TEST_MOCK("domaincaps"),
                       VIR_TEST_MOCK("virprocess"),
-                      VIR_TEST_MOCK("qemuhotplug"));
+                      VIR_TEST_MOCK("qemuhotplug"),
+                      VIR_TEST_MOCK("virnetdev"));

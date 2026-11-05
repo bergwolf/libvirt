@@ -92,6 +92,11 @@
           <ref name="positiveInteger"/>
         </attribute>
       </optional>
+      <optional>
+        <attribute name="clusters">
+          <ref name="positiveInteger"/>
+        </attribute>
+      </optional>
       <attribute name="cores">
         <ref name="positiveInteger"/>
       </attribute>
@@ -401,7 +406,7 @@
           <element name="feature">
             <attribute name="name">
               <data type="string">
-                <param name="pattern">[a-zA-Z0-9\-_]+</param>
+                <param name="pattern">[a-zA-Z0-9\-_.]+</param>
               </data>
             </attribute>
             <empty/>
@@ -433,6 +438,11 @@
       </optional>
       <optional>
         <ref name="cpuCheck"/>
+      </optional>
+      <optional>
+        <attribute name="deprecated_features">
+          <ref name="virOnOff"/>
+        </attribute>
       </optional>
       <optional>
         <attribute name="migratable">

@@ -23,7 +23,7 @@
 #include "testutilsqemu.h"
 #include "qemumonitortestutils.h"
 #include "qemu/qemu_conf.h"
-#include "qemu/qemu_agent.h"
+#include "hypervisor/qemu_agent.h"
 #include "virerror.h"
 
 
@@ -1095,69 +1095,64 @@ testQemuAgentUsers(const void *data)
 {
     virDomainXMLOption *xmlopt = (virDomainXMLOption *)data;
     g_autoptr(qemuMonitorTest) test = qemuMonitorTestNewAgent(xmlopt);
-    virTypedParameterPtr params = NULL;
-    int nparams = 0;
-    int maxparams = 0;
-    int ret = -1;
+    g_autoptr(virTypedParamList) list = virTypedParamListNew();
+    virTypedParameterPtr params;
+    size_t nparams = 0;
     unsigned int count;
 
     if (!test)
         return -1;
 
     if (qemuMonitorTestAddAgentSyncResponse(test) < 0)
-        goto cleanup;
+        return -1;
 
     if (qemuMonitorTestAddItem(test, "guest-get-users",
                                testQemuAgentUsersResponse) < 0)
-        goto cleanup;
+        return -1;
 
-    /* get users */
-    if (qemuAgentGetUsers(qemuMonitorTestGetAgent(test),
-                          &params, &nparams, &maxparams, true) < 0)
-        goto cleanup;
+    if (qemuAgentGetUsers(qemuMonitorTestGetAgent(test), list, true) < 0)
+        return -1;
+
+    if (virTypedParamListFetch(list, &params, &nparams) < 0)
+        return -1;
 
     if (virTypedParamsGetUInt(params, nparams, "user.count", &count) < 0)
-        goto cleanup;
+        return -1;
     if (count != 2) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        "Expected '2' users, got '%u'", count);
-        goto cleanup;
+        return -1;
     }
 
     if (checkUserInfo(params, nparams, 0, "test", NULL, 1561739203584) < 0 ||
         checkUserInfo(params, nparams, 1, "test2", NULL, 1561739229190) < 0)
-        goto cleanup;
+        return -1;
+
+    g_clear_pointer(&list, virTypedParamListFree);
+    list = virTypedParamListNew();
 
     if (qemuMonitorTestAddItem(test, "guest-get-users",
                                testQemuAgentUsersResponse2) < 0)
-        goto cleanup;
+        return -1;
 
-    virTypedParamsFree(params, nparams);
-    params = NULL;
-    nparams = 0;
-    maxparams = 0;
+    if (qemuAgentGetUsers(qemuMonitorTestGetAgent(test), list, true) < 0)
+        return -1;
 
-    /* get users with domain */
-    if (qemuAgentGetUsers(qemuMonitorTestGetAgent(test),
-                          &params, &nparams, &maxparams, true) < 0)
-        goto cleanup;
+    if (virTypedParamListFetch(list, &params, &nparams) < 0)
+        return -1;
 
     if (virTypedParamsGetUInt(params, nparams, "user.count", &count) < 0)
-        goto cleanup;
+        return -1;
     if (count != 1) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        "Expected '1' user, got '%u'", count);
-        goto cleanup;
+        return -1;
     }
 
     if (checkUserInfo(params, nparams, 0, "test", "DOMAIN", 1561739203584) < 0)
-        goto cleanup;
+        return -1;
 
-    ret = 0;
-
- cleanup:
-    virTypedParamsFree(params, nparams);
-    return ret;
+    return 0;
 }
 
 static const char testQemuAgentOSInfoResponse[] =
@@ -1191,30 +1186,31 @@ testQemuAgentOSInfo(const void *data)
 {
     virDomainXMLOption *xmlopt = (virDomainXMLOption *)data;
     g_autoptr(qemuMonitorTest) test = qemuMonitorTestNewAgent(xmlopt);
-    virTypedParameterPtr params = NULL;
-    int nparams = 0;
-    int maxparams = 0;
-    int ret = -1;
+    g_autoptr(virTypedParamList) list = virTypedParamListNew();
+    virTypedParameterPtr params;
+    size_t nparams;
 
     if (!test)
         return -1;
 
     if (qemuMonitorTestAddAgentSyncResponse(test) < 0)
-        goto cleanup;
+        return -1;
 
     if (qemuMonitorTestAddItem(test, "guest-get-osinfo",
                                testQemuAgentOSInfoResponse) < 0)
-        goto cleanup;
+        return -1;
 
     /* get osinfo */
-    if (qemuAgentGetOSInfo(qemuMonitorTestGetAgent(test),
-                           &params, &nparams, &maxparams, true) < 0)
-        goto cleanup;
+    if (qemuAgentGetOSInfo(qemuMonitorTestGetAgent(test), list, true) < 0)
+        return -1;
+
+    if (virTypedParamListFetch(list, &params, &nparams) < 0)
+        return -1;
 
     if (nparams != 8) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "Expected 8 params, got %d", nparams);
-        goto cleanup;
+                       "Expected 8 params, got %zu", nparams);
+        return -1;
     }
 #define VALIDATE_PARAM(param_name_, expected_) \
     do { \
@@ -1222,12 +1218,12 @@ testQemuAgentOSInfo(const void *data)
         if (virTypedParamsGetString(params, nparams, param_name_, &value_) < 0 || \
             value_ == NULL) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, "missing param '%s'", param_name_); \
-            goto cleanup; \
+            return -1; \
         } \
         if (STRNEQ(value_, expected_)) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, \
                            "Expected name '%s', got '%s'", expected_, value_); \
-            goto cleanup; \
+            return -1; \
         } \
     } while (0)
 
@@ -1239,24 +1235,25 @@ testQemuAgentOSInfo(const void *data)
     VALIDATE_PARAM("os.kernel-release", "3.10.0-862.14.4.el7.x86_64");
     VALIDATE_PARAM("os.kernel-version", "#1 SMP Wed Sep 26 15:12:11 UTC 2018");
     VALIDATE_PARAM("os.machine", "x86_64");
-    virTypedParamsFree(params, nparams);
-    params = NULL;
-    nparams = 0;
-    maxparams = 0;
+
+    g_clear_pointer(&list, virTypedParamListFree);
+    list = virTypedParamListNew();
 
     if (qemuMonitorTestAddItem(test, "guest-get-osinfo",
                                testQemuAgentOSInfoResponse2) < 0)
-        goto cleanup;
+        return -1;
 
     /* get users with domain */
-    if (qemuAgentGetOSInfo(qemuMonitorTestGetAgent(test),
-                           &params, &nparams, &maxparams, true) < 0)
-        goto cleanup;
+    if (qemuAgentGetOSInfo(qemuMonitorTestGetAgent(test), list, true) < 0)
+        return -1;
+
+    if (virTypedParamListFetch(list, &params, &nparams) < 0)
+        return -1;
 
     if (nparams != 10) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       "Expected 10 params, got %d", nparams);
-        goto cleanup;
+                       "Expected 10 params, got %zu", nparams);
+        return -1;
     }
 
     VALIDATE_PARAM("os.id", "mswindows");
@@ -1270,11 +1267,7 @@ testQemuAgentOSInfo(const void *data)
     VALIDATE_PARAM("os.kernel-version", "6.1");
     VALIDATE_PARAM("os.machine", "x86_64");
 
-    ret = 0;
-
- cleanup:
-    virTypedParamsFree(params, nparams);
-    return ret;
+    return 0;
 }
 
 static const char testQemuAgentTimezoneResponse1[] =
@@ -1291,57 +1284,54 @@ testQemuAgentTimezone(const void *data)
 {
     virDomainXMLOption *xmlopt = (virDomainXMLOption *)data;
     g_autoptr(qemuMonitorTest) test = qemuMonitorTestNewAgent(xmlopt);
-    virTypedParameterPtr params = NULL;
-    int nparams = 0;
-    int ret = -1;
 
     if (!test)
         return -1;
 
     if (qemuMonitorTestAddAgentSyncResponse(test) < 0)
-        goto cleanup;
+        return -1;
 
 #define VALIDATE_TIMEZONE(response_, expected_name_, expected_offset_) \
     do { \
-        int maxparams_ = 0; \
+        g_autoptr(virTypedParamList) list = virTypedParamListNew(); \
+        virTypedParameterPtr params; \
+        size_t nparams; \
         const char *name_ = NULL; \
         int offset_; \
         if (qemuMonitorTestAddItem(test, "guest-get-timezone", \
                                    response_) < 0) \
-            goto cleanup; \
-        virTypedParamsFree(params, nparams); \
-        params = NULL; \
-        nparams = 0; \
-        if (qemuAgentGetTimezone(qemuMonitorTestGetAgent(test), \
-                                 &params, &nparams, &maxparams_, true) < 0) \
-            goto cleanup; \
+            return -1; \
+        if (qemuAgentGetTimezone(qemuMonitorTestGetAgent(test), list, true) < 0) \
+            return -1; \
+        if (virTypedParamListFetch(list, &params, &nparams) < 0) \
+            return -1; \
         if (nparams != 2) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, \
-                           "Expected 2 params, got %d", nparams); \
-            goto cleanup; \
+                           "Expected 2 params, got %zu", nparams); \
+            return -1; \
         } \
         if (virTypedParamsGetString(params, nparams, \
                                     "timezone.name", &name_) < 0) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, "missing param '%s'", \
                            "tiemzone.name"); \
-            goto cleanup; \
+            return -1; \
         } \
         if (STRNEQ(name_, expected_name_)) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, \
                            "Expected name '%s', got '%s'", expected_name_, name_); \
-            goto cleanup; \
+            return -1; \
         } \
         if (virTypedParamsGetInt(params, nparams, \
                                  "timezone.offset", &offset_) < 0) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, "missing param '%s'", \
                            "tiemzone.offset"); \
-            goto cleanup; \
+            return -1; \
         } \
         if (offset_ != expected_offset_) { \
             virReportError(VIR_ERR_INTERNAL_ERROR, \
                            "Expected offset '%i', got '%i'", offset_, \
                            expected_offset_); \
-            goto cleanup; \
+            return -1; \
         } \
     } while (0)
 
@@ -1350,18 +1340,196 @@ testQemuAgentTimezone(const void *data)
     VALIDATE_TIMEZONE(testQemuAgentTimezoneResponse3, "NDT", -9000);
     VALIDATE_TIMEZONE(testQemuAgentTimezoneResponse4, "PDT", -25200);
 
-    ret = 0;
+    return 0;
+}
 
+
+static const char testQemuAgentGetLoadAvgResponse[] =
+    "{"
+    "  \"return\": {"
+    "    \"load15m\": 0.03564453125,"
+    "    \"load5m\": 0.064453125,"
+    "    \"load1m\": 0.00390625"
+    "  }"
+    "}";
+
+static int
+testQemuAgentGetLoadAvg(const void *data)
+{
+    virDomainXMLOption *xmlopt = (virDomainXMLOption *)data;
+    g_autoptr(qemuMonitorTest) test = qemuMonitorTestNewAgent(xmlopt);
+    double load1m = 0;
+    double load5m = 0;
+    double load15m = 0;
+
+    if (!test)
+        return -1;
+
+    if (qemuMonitorTestAddAgentSyncResponse(test) < 0)
+        return -1;
+
+    if (qemuMonitorTestAddItem(test, "guest-get-load",
+                               testQemuAgentGetLoadAvgResponse) < 0)
+        return -1;
+
+    if (qemuAgentGetLoadAvg(qemuMonitorTestGetAgent(test),
+                            &load1m, &load5m, &load15m, true) < 0)
+        return -1;
+
+#define VALIDATE_LOAD(value_, expected_) \
+    do { \
+        if (value_ != expected_) { \
+            virReportError(VIR_ERR_INTERNAL_ERROR, \
+                           "Expected " #value_ " '%.11f', got '%.11f'", \
+                           expected_, value_); \
+            return -1; \
+        } \
+    } while (0)
+
+    VALIDATE_LOAD(load1m, 0.00390625);
+    VALIDATE_LOAD(load5m, 0.064453125);
+    VALIDATE_LOAD(load15m, 0.03564453125);
+
+    return 0;
+}
+
+
+static const char *testQemuAgentGetGuestDeviceInfoResponse =
+"{"
+"  \"return\": ["
+"    {"
+"      \"driver-date\": 1736726400000000000,"
+"      \"driver-name\": \"Red Hat VirtIO Ethernet Adapter\","
+"      \"driver-version\": \"100.100.104.27100\","
+"      \"id\": {"
+"        \"device-id\": 4161,"
+"        \"vendor-id\": 6900,"
+"        \"type\": \"pci\""
+"      }"
+"    },"
+"    {"
+"      \"driver-name\": \"VirtIO Serial Driver\","
+"      \"driver-version\": \"100.100.104.27100\","
+"      \"id\": {"
+"        \"device-id\": 4163,"
+"        \"vendor-id\": 6900,"
+"        \"type\": \"pci\""
+"      }"
+"    },"
+"    {"
+"      \"driver-date\": 1736726400000000000,"
+"      \"driver-name\": \"VirtIO Balloon Driver\","
+"      \"id\": {"
+"        \"device-id\": 4165,"
+"        \"vendor-id\": 6900,"
+"        \"type\": \"pci\""
+"      }"
+"    },"
+"    {"
+"      \"driver-date\": 1736726400000000000,"
+"      \"driver-name\": \"Red Hat VirtIO GPU DOD controller\","
+"      \"driver-version\": \"100.100.104.27100\""
+"    }"
+"  ]"
+"}";
+
+
+static int
+testQemuAgentGetGuestDeviceInfo(const void *data)
+{
+    virDomainXMLOption *xmlopt = (virDomainXMLOption *)data;
+    g_autoptr(qemuMonitorTest) test = qemuMonitorTestNewAgent(xmlopt);
+    qemuAgentGuestDeviceInfo **devices = NULL;
+    int ret = -1;
+    size_t i;
+    int ndevices;
+
+    if (!test)
+        return -1;
+
+    if (qemuMonitorTestAddAgentSyncResponse(test) < 0)
+        return -1;
+
+    if (qemuMonitorTestAddItem(test, "guest-get-devices",
+                               testQemuAgentGetGuestDeviceInfoResponse) < 0)
+        return -1;
+
+    ndevices = qemuAgentGetGuestDeviceInfo(qemuMonitorTestGetAgent(test),
+                                           &devices, true);
+
+    if (ndevices < 0)
+        return -1;
+
+    if (ndevices != 4) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       "unexpected number of guest devices returned (%d), expected 4",
+                       ndevices);
+        goto cleanup;
+    }
+
+    if (STRNEQ(devices[0]->driverName, "Red Hat VirtIO Ethernet Adapter") ||
+        STRNEQ(devices[0]->driverVersion, "100.100.104.27100") ||
+        devices[0]->driverDate != 1736726400000000000LL ||
+        devices[0]->pci->vendorID != 6900 ||
+        devices[0]->pci->deviceID != 4161) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       "unexpected device info returned for device #0");
+        goto cleanup;
+    }
+
+    if (STRNEQ(devices[1]->driverName, "VirtIO Serial Driver") ||
+        STRNEQ(devices[1]->driverVersion, "100.100.104.27100") ||
+        devices[1]->driverDate != -1LL ||
+        devices[1]->pci->vendorID != 6900 ||
+        devices[1]->pci->deviceID != 4163) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       "unexpected device info returned for device #1");
+        goto cleanup;
+    }
+
+    if (STRNEQ(devices[2]->driverName, "VirtIO Balloon Driver") ||
+        devices[2]->driverVersion ||
+        devices[2]->driverDate != 1736726400000000000LL ||
+        devices[2]->pci->vendorID != 6900 ||
+        devices[2]->pci->deviceID != 4165) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       "unexpected device info returned for device #2");
+        goto cleanup;
+    }
+
+    if (STRNEQ(devices[3]->driverName, "Red Hat VirtIO GPU DOD controller") ||
+        STRNEQ(devices[3]->driverVersion, "100.100.104.27100") ||
+        devices[3]->driverDate != 1736726400000000000LL ||
+        devices[3]->pci) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       "unexpected device info returned for device #3");
+        goto cleanup;
+    }
+
+    ret = 0;
  cleanup:
-    virTypedParamsFree(params, nparams);
+    for (i = 0; i < ndevices; i++) {
+        qemuAgentGuestDeviceInfoFree(devices[i]);
+    }
+    g_free(devices);
     return ret;
 }
+
+
 static int
 mymain(void)
 {
+    g_autoptr(GHashTable) capslatest = testQemuGetLatestCaps();
+    g_autoptr(GHashTable) capscache = virHashNew(virObjectUnref);
     int ret = 0;
 
     if (qemuTestDriverInit(&driver) < 0)
+        return EXIT_FAILURE;
+
+    /* Some test cases need a real definition thus parse a XML. We need
+     * qemu capabilities for that. */
+    if (testQemuInsertRealCaps(driver.qemuCapsCache, "x86_64", "latest", "",
+                               capslatest, capscache, NULL, NULL) < 0)
         return EXIT_FAILURE;
 
     virEventRegisterDefaultImpl();
@@ -1384,6 +1552,8 @@ mymain(void)
     DO_TEST(Timezone);
     DO_TEST(SSHKeys);
     DO_TEST(GetDisks);
+    DO_TEST(GetLoadAvg);
+    DO_TEST(GetGuestDeviceInfo);
 
     DO_TEST(Timeout); /* Timeout should always be called last */
 

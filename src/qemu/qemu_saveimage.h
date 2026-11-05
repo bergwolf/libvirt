@@ -20,8 +20,8 @@
 
 #include "virconftypes.h"
 
-#include "qemu_conf.h"
 #include "qemu_domain.h"
+#include "qemu_saveimage_format.h"
 
 /* It would be nice to replace 'Qemud' with 'Qemu' but
  * this magic string is ABI, so it can't be changed
@@ -32,13 +32,16 @@
 
 G_STATIC_ASSERT(sizeof(QEMU_SAVE_MAGIC) == sizeof(QEMU_SAVE_PARTIAL));
 
+/* enum virQEMUSaveFormat is declared in qemu_saveimage_format.h */
+VIR_ENUM_DECL(qemuSaveFormat);
+
 typedef struct _virQEMUSaveHeader virQEMUSaveHeader;
 struct _virQEMUSaveHeader {
     char magic[sizeof(QEMU_SAVE_MAGIC)-1];
     uint32_t version;
     uint32_t data_len;
     uint32_t was_running;
-    uint32_t compressed;
+    uint32_t format;
     uint32_t cookieOffset;
     uint32_t unused[14];
 };
@@ -64,38 +67,67 @@ qemuSaveImageStartVM(virConnectPtr conn,
                      int *fd,
                      virQEMUSaveData *data,
                      const char *path,
+                     qemuMigrationParams *restoreParams,
                      bool start_paused,
                      bool reset_nvram,
                      virDomainAsyncJob asyncJob)
     ATTRIBUTE_NONNULL(4) ATTRIBUTE_NONNULL(5) ATTRIBUTE_NONNULL(6);
 
-int
-qemuSaveImageOpen(virQEMUDriver *driver,
-                  virQEMUCaps *qemuCaps,
-                  const char *path,
-                  virDomainDef **ret_def,
-                  virQEMUSaveData **ret_data,
-                  bool bypass_cache,
-                  virFileWrapperFd **wrapperFd,
-                  bool open_write,
-                  bool unlink_corrupt)
-    ATTRIBUTE_NONNULL(3) ATTRIBUTE_NONNULL(4);
-
-int
-qemuSaveImageGetCompressionProgram(const char *imageFormat,
-                                   virCommand **compressor,
-                                   const char *styleFormat,
-                                   bool use_raw_on_fail)
+bool
+qemuSaveImageIsCorrupt(virQEMUDriver *driver,
+                       const char *path)
     ATTRIBUTE_NONNULL(2);
 
 int
-qemuSaveImageCreate(virQEMUDriver *driver,
-                    virDomainObj *vm,
+qemuSaveImageGetMetadata(virQEMUDriver *driver,
+                         virQEMUCaps *qemuCaps,
+                         const char *path,
+                         int (*ensureACL)(virConnectPtr, virDomainDef *),
+                         virConnectPtr conn,
+                         virDomainDef **ret_def,
+                         virQEMUSaveData **ret_data)
+    ATTRIBUTE_NONNULL(6) ATTRIBUTE_NONNULL(7);
+
+int
+qemuSaveImageOpen(virQEMUDriver *driver,
+                  const char *path,
+                  bool bypass_cache,
+                  virFileWrapperFd **wrapperFd,
+                  bool open_write)
+    ATTRIBUTE_NONNULL(2);
+
+int
+qemuSaveImageGetCompressionProgram(virQEMUSaveFormat format,
+                                   virCommand **compressor,
+                                   const char *styleFormat)
+    ATTRIBUTE_NONNULL(2);
+
+int
+qemuSaveImageDecompressionStart(virQEMUSaveData *data,
+                                int *fd,
+                                int *intermediatefd,
+                                char **errbuf,
+                                virCommand **retcmd);
+
+int
+qemuSaveImageDecompressionStop(virCommand *cmd,
+                               int *fd,
+                               int *intermediatefd,
+                               char *errbuf,
+                               bool started,
+                               const char *path);
+
+int
+qemuSaveImageCreate(virDomainObj *vm,
                     const char *path,
                     virQEMUSaveData *data,
                     virCommand *compressor,
+                    qemuMigrationParams *saveParams,
                     unsigned int flags,
                     virDomainAsyncJob asyncJob);
+
+int
+qemuSaveImageFDSkipHeader(int fd);
 
 int
 virQEMUSaveDataWrite(virQEMUSaveData *data,
@@ -106,7 +138,7 @@ virQEMUSaveData *
 virQEMUSaveDataNew(char *domXML,
                    qemuDomainSaveCookie *cookieObj,
                    bool running,
-                   int compressed,
+                   virQEMUSaveFormat format,
                    virDomainXMLOption *xmlopt);
 
 void

@@ -41,6 +41,8 @@
 #include "viraccessapicheck.h"
 #include "secret_event.h"
 #include "virutil.h"
+#include "virinhibitor.h"
+#include "secret_config.h"
 
 #define VIR_FROM_THIS VIR_FROM_SECRET
 
@@ -67,9 +69,12 @@ struct _virSecretDriverState {
     /* Immutable pointer, self-locking APIs */
     virObjectEventState *secretEventState;
 
-    /* Immutable pointers. Caller must provide locking */
-    virStateInhibitCallback inhibitCallback;
-    void *inhibitOpaque;
+    /* Immutable pointer, self-locking APIs */
+    virInhibitor *inhibitor;
+
+    /* Require lock to get reference on 'config',
+     * then lockless thereafter */
+    virSecretDaemonConfig *config;
 };
 
 static virSecretDriverState *driver;
@@ -87,23 +92,6 @@ secretObjFromSecret(virSecretPtr secret)
         return NULL;
     }
     return obj;
-}
-
-
-static bool
-secretNumOfEphemeralSecretsHelper(virConnectPtr conn G_GNUC_UNUSED,
-                                  virSecretDef *def)
-{
-    return def->isephemeral;
-}
-
-
-static int
-secretNumOfEphemeralSecrets(void)
-{
-    return virSecretObjListNumOfSecrets(driver->secrets,
-                                        secretNumOfEphemeralSecretsHelper,
-                                        NULL);
 }
 
 
@@ -241,7 +229,10 @@ secretDefineXML(virConnectPtr conn,
 
     if (!objDef->isephemeral) {
         if (backup && backup->isephemeral) {
-            if (virSecretObjSaveData(obj) < 0)
+            if (virSecretObjSaveData(obj,
+                                     driver->configDir,
+                                     driver->config->secretsEncryptionKey,
+                                     driver->config->secretsKeyLen) < 0)
                 goto restore_backup;
         }
 
@@ -271,6 +262,10 @@ secretDefineXML(virConnectPtr conn,
                        objDef->uuid,
                        objDef->usage_type,
                        objDef->usage_id);
+
+    if (objDef->isephemeral)
+        virInhibitorHold(driver->inhibitor);
+
     goto cleanup;
 
  restore_backup:
@@ -288,8 +283,6 @@ secretDefineXML(virConnectPtr conn,
     virSecretDefFree(def);
     virSecretObjEndAPI(&obj);
 
-    if (secretNumOfEphemeralSecrets() > 0)
-        driver->inhibitCallback(true, driver->inhibitOpaque);
 
     virObjectEventStateQueue(driver->secretEventState, event);
 
@@ -343,7 +336,10 @@ secretSetValue(virSecretPtr secret,
     if (virSecretSetValueEnsureACL(secret->conn, def) < 0)
         goto cleanup;
 
-    if (virSecretObjSetValue(obj, value, value_size) < 0)
+    if (virSecretObjSetValue(obj, value, value_size,
+                             driver->configDir,
+                             driver->config->secretsEncryptionKey,
+                             driver->config->secretsKeyLen) < 0)
         goto cleanup;
 
     event = virSecretEventValueChangedNew(def->uuid,
@@ -440,6 +436,9 @@ secretUndefine(virSecretPtr secret)
                                        VIR_SECRET_EVENT_UNDEFINED,
                                        0);
 
+    if (def->isephemeral)
+        virInhibitorRelease(driver->inhibitor);
+
     virSecretObjDeleteData(obj);
 
     virSecretObjListRemove(driver->secrets, obj);
@@ -449,9 +448,6 @@ secretUndefine(virSecretPtr secret)
 
  cleanup:
     virSecretObjEndAPI(&obj);
-
-    if (secretNumOfEphemeralSecrets() == 0)
-        driver->inhibitCallback(false, driver->inhibitOpaque);
 
     virObjectEventStateQueue(driver->secretEventState, event);
 
@@ -469,6 +465,8 @@ secretStateCleanupLocked(void)
     VIR_FREE(driver->configDir);
 
     virObjectUnref(driver->secretEventState);
+    virObjectUnref(driver->config);
+    virInhibitorFree(driver->inhibitor);
 
     if (driver->lockFD != -1)
         virPidFileRelease(driver->stateDir, "driver", driver->lockFD);
@@ -488,7 +486,7 @@ secretStateCleanup(void)
 }
 
 
-static int
+static virDrvStateInitResult
 secretStateInitialize(bool privileged,
                       const char *root,
                       bool monolithic G_GNUC_UNUSED,
@@ -502,8 +500,6 @@ secretStateInitialize(bool privileged,
     driver->lockFD = -1;
     driver->secretEventState = virObjectEventStateNew();
     driver->privileged = privileged;
-    driver->inhibitCallback = callback;
-    driver->inhibitOpaque = opaque;
 
     if (root) {
         driver->embeddedRoot = g_strdup(root);
@@ -534,6 +530,16 @@ secretStateInitialize(bool privileged,
                              driver->stateDir);
         goto error;
     }
+    if (!(driver->config = virSecretDaemonConfigNew(driver->privileged)))
+        goto error;
+
+    driver->inhibitor = virInhibitorNew(
+        VIR_INHIBITOR_WHAT_NONE,
+        _("Libvirt Secret"),
+        _("Ephemeral secrets are loaded"),
+        VIR_INHIBITOR_MODE_DELAY,
+        callback,
+        opaque);
 
     if ((driver->lockFD =
          virPidFileAcquire(driver->stateDir, "driver", getpid())) < 0)
@@ -542,7 +548,9 @@ secretStateInitialize(bool privileged,
     if (!(driver->secrets = virSecretObjListNew()))
         goto error;
 
-    if (virSecretLoadAllConfigs(driver->secrets, driver->configDir) < 0)
+    if (virSecretLoadAllConfigs(driver->secrets, driver->configDir,
+                                driver->config->secretsEncryptionKey,
+                                driver->config->secretsKeyLen) < 0)
         goto error;
 
     return VIR_DRV_STATE_INIT_COMPLETE;
@@ -561,7 +569,12 @@ secretStateReload(void)
     if (!driver)
         return -1;
 
-    ignore_value(virSecretLoadAllConfigs(driver->secrets, driver->configDir));
+    if (!(driver->config = virSecretDaemonConfigNew(driver->privileged)))
+        return -1;
+
+    ignore_value(virSecretLoadAllConfigs(driver->secrets, driver->configDir,
+                                         driver->config->secretsEncryptionKey,
+                                         driver->config->secretsKeyLen));
 
     return 0;
 }

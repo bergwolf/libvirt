@@ -50,13 +50,6 @@ struct _virZPCIDeviceAddress {
     /* Don't forget to update virPCIDeviceAddressCopy if needed. */
 };
 
-#define VIR_PCI_DEVICE_ADDRESS_FMT "%04x:%02x:%02x.%d"
-
-/* Represents format of PF's phys_port_name in switchdev mode:
- * 'p%u' or 'p%us%u'. New line checked since value is read from sysfs file.
- */
-#define VIR_PF_PHYS_PORT_NAME_REGEX  "(p[0-9]+$)|(p[0-9]+s[0-9]+$)"
-
 struct _virPCIDeviceAddress {
     unsigned int domain;
     unsigned int bus;
@@ -131,16 +124,21 @@ int virPCIDeviceReset(virPCIDevice *dev,
                       virPCIDeviceList *activeDevs,
                       virPCIDeviceList *inactiveDevs);
 
+int virPCIDeviceFindBestVFIOVariant(virPCIDevice *dev, char **moduleName) ATTRIBUTE_MOCKABLE;
+
 void virPCIDeviceSetManaged(virPCIDevice *dev,
                             bool managed);
 bool virPCIDeviceGetManaged(virPCIDevice *dev);
-void virPCIDeviceSetStubDriver(virPCIDevice *dev,
-                               virPCIStubDriver driver);
-virPCIStubDriver virPCIDeviceGetStubDriver(virPCIDevice *dev);
+void virPCIDeviceSetStubDriverType(virPCIDevice *dev,
+                                   virPCIStubDriver driverType);
+virPCIStubDriver virPCIDeviceGetStubDriverType(virPCIDevice *dev);
+void virPCIDeviceSetStubDriverName(virPCIDevice *dev,
+                                   const char *driverName);
+const char *virPCIDeviceGetStubDriverName(virPCIDevice *dev);
 virPCIDeviceAddress *virPCIDeviceGetAddress(virPCIDevice *dev);
-int virPCIDeviceSetUsedBy(virPCIDevice *dev,
-                          const char *drv_name,
-                          const char *dom_name);
+void virPCIDeviceSetUsedBy(virPCIDevice *dev,
+                           const char *drv_name,
+                           const char *dom_name);
 void virPCIDeviceGetUsedBy(virPCIDevice *dev,
                            const char **drv_name,
                            const char **dom_name);
@@ -272,14 +270,16 @@ int virPCIGetVirtualFunctionInfo(const char *vf_sysfs_device_path,
                                  char **pfname,
                                  int *vf_index);
 
-bool virPCIDeviceHasVPD(virPCIDevice *dev);
 virPCIVPDResource * virPCIDeviceGetVPD(virPCIDevice *dev);
 
 int virPCIDeviceUnbind(virPCIDevice *dev);
 int virPCIDeviceRebind(virPCIDevice *dev);
-int virPCIDeviceGetDriverPathAndName(virPCIDevice *dev,
-                                     char **path,
-                                     char **name);
+int virPCIDeviceGetCurrentDriverPathAndName(virPCIDevice *dev,
+                                            char **path,
+                                            char **name);
+int virPCIDeviceGetCurrentDriverNameAndType(virPCIDevice *dev,
+                                            char **drvName,
+                                            virPCIStubDriver *drvType);
 
 int virPCIDeviceIsPCIExpress(virPCIDevice *dev);
 int virPCIDeviceHasPCIExpressLink(virPCIDevice *dev);
@@ -295,6 +295,10 @@ int virPCIGetHeaderType(virPCIDevice *dev, int *hdrType);
 void virPCIEDeviceInfoFree(virPCIEDeviceInfo *dev);
 
 void virPCIDeviceAddressFree(virPCIDeviceAddress *address);
+
+int virPCIDeviceGetVfioPath(virPCIDevice *pci, char **vfioPath);
+
+int virPCIDeviceOpenVfioFd(virPCIDeviceAddress *addr);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virPCIDevice, virPCIDeviceFree);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(virPCIDeviceAddress, virPCIDeviceAddressFree);

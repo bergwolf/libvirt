@@ -23,6 +23,8 @@
 #include "qemu_domain.h"
 #include "qemu_alias.h"
 #include "qemu_security.h"
+#include "qemu_process.h"
+#include "qemu_chardev.h"
 
 #include "storage_source.h"
 #include "viralloc.h"
@@ -53,6 +55,119 @@ qemuBlockNodeNameValidate(const char *nn)
 
 
 /**
+ * qemuBlockStorageSourceSetStorageNodename:
+ * @src: virStorageSource to set the storage nodename
+ * @nodename: The node name to set (stolen)
+ *
+ * Sets @nodename as the storage node name of @src. Using NULL @nodename clears
+ * the nodename. @src takes ownership of @nodename.
+ */
+void
+qemuBlockStorageSourceSetStorageNodename(virStorageSource *src,
+                                         char *nodename)
+{
+    g_free(src->nodenamestorage);
+    src->nodenamestorage = nodename;
+}
+
+
+/**
+ * qemuBlockStorageSourceSetFormatNodename:
+ * @src: virStorageSource to set the format nodename
+ * @nodename: The node name to set (stolen)
+ *
+ * Sets @nodename as the format node name of @src. Using NULL @nodename clears
+ * the nodename. @src takes ownership of @nodename.
+ */
+void
+qemuBlockStorageSourceSetFormatNodename(virStorageSource *src,
+                                        char *nodename)
+{
+    g_free(src->nodenameformat);
+    src->nodenameformat = nodename;
+}
+
+
+/**
+ * qemuBlockStorageSourceGetEffectiveNodename:
+ * @src: virStorageSource to get the effective nodename of
+ *
+ * Gets the nodename that exposes the guest visible data. This function always
+ * returns a name.
+ */
+const char *
+qemuBlockStorageSourceGetEffectiveNodename(virStorageSource *src)
+{
+    if (src->nodenameformat)
+        return src->nodenameformat;
+
+    return qemuBlockStorageSourceGetEffectiveStorageNodename(src);
+}
+
+
+/**
+ * qemuBlockStorageSourceGetSliceNodename:
+ *
+ * Gets the nodename corresponding to the storage slice layer. Returns NULL
+ * when there is no explicit storage slice layer.
+ */
+const char *
+qemuBlockStorageSourceGetSliceNodename(virStorageSource *src)
+{
+    if (!src->sliceStorage)
+        return NULL;
+
+    return src->sliceStorage->nodename;
+}
+
+
+/**
+ * qemuBlockStorageSourceGetEffectiveStorageNodename:
+ * @src: virStorageSource to get the effective nodename of
+ *
+ * Gets the nodename that exposes the storage corresponding to @src, without
+ * the format driver applied. This function always returns a name.
+ */
+const char *
+qemuBlockStorageSourceGetEffectiveStorageNodename(virStorageSource *src)
+{
+    const char *slice = qemuBlockStorageSourceGetSliceNodename(src);
+
+    if (slice)
+        return slice;
+
+    return src->nodenamestorage;
+}
+
+
+/**
+ * qemuBlockStorageSourceGetStorageNodename:
+ * @src: virStorageSource to get the effective nodename of
+ *
+ * Gets the nodename corresponding to the real backing storage format layer.
+ */
+const char *
+qemuBlockStorageSourceGetStorageNodename(virStorageSource *src)
+{
+    return src->nodenamestorage;
+}
+
+
+/**
+ * qemuBlockStorageSourceGetFormatNodename:
+ * @src: virStorageSource to get the effective nodename of
+ *
+ * Gets the nodename corresponding to the format layer. Useful when accessing
+ * format specific features. Returns NULL if there is no format layer.
+ */
+const char *
+qemuBlockStorageSourceGetFormatNodename(virStorageSource *src)
+{
+    return src->nodenameformat;
+}
+
+
+/**
  * qemuBlockStorageSourceSupportsConcurrentAccess:
  * @src: disk storage source
  *
@@ -63,7 +178,7 @@ bool
 qemuBlockStorageSourceSupportsConcurrentAccess(virStorageSource *src)
 {
     /* no need to check in backing chain since only RAW storage supports this */
-    return src->format == VIR_STORAGE_FILE_RAW;
+    return qemuBlockStorageSourceIsRaw(src);
 }
 
 
@@ -98,13 +213,9 @@ qemuBlockStorageSourceGetURI(virStorageSource *src)
     }
 
     if (src->path) {
-        if (src->volume) {
-            uri->path = g_strdup_printf("/%s/%s", src->volume, src->path);
-        } else {
-            uri->path = g_strdup_printf("%s%s",
-                                        g_path_is_absolute(src->path) ? "" : "/",
-                                        src->path);
-        }
+        uri->path = g_strdup_printf("%s%s",
+                                    g_path_is_absolute(src->path) ? "" : "/",
+                                    src->path);
     }
 
     uri->query = g_strdup(src->query);
@@ -130,7 +241,7 @@ qemuBlockStorageSourceBuildJSONSocketAddress(virStorageNetHostDef *host)
     g_autoptr(virJSONValue) server = NULL;
     g_autofree char *port = NULL;
 
-    switch ((virStorageNetHostTransport) host->transport) {
+    switch (host->transport) {
     case VIR_STORAGE_NET_HOST_TRANS_TCP:
         port = g_strdup_printf("%u", host->port);
 
@@ -151,6 +262,7 @@ qemuBlockStorageSourceBuildJSONSocketAddress(virStorageNetHostDef *host)
         break;
 
     case VIR_STORAGE_NET_HOST_TRANS_RDMA:
+    case VIR_STORAGE_NET_HOST_TRANS_FD:
     case VIR_STORAGE_NET_HOST_TRANS_LAST:
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("transport protocol '%1$s' is not yet supported"),
@@ -285,8 +397,15 @@ qemuBlockStorageSourceGetGlusterProps(virStorageSource *src,
 {
     g_autoptr(virJSONValue) servers = NULL;
     g_autoptr(virJSONValue) props = NULL;
+    g_autofree char *volume = NULL;
+    g_autofree char *path = NULL;
 
     if (!(servers = qemuBlockStorageSourceBuildHostsJSONSocketAddress(src)))
+        return NULL;
+
+    if (virStorageSourceNetworkProtocolPathSplit(src->path,
+                                                 VIR_STORAGE_NET_PROTOCOL_GLUSTER,
+                                                 &volume, NULL, &path) < 0)
         return NULL;
 
      /* { driver:"gluster",
@@ -296,8 +415,8 @@ qemuBlockStorageSourceGetGlusterProps(virStorageSource *src,
       *            {type:"unix", socket:"/tmp/glusterd.socket"}, ...]}
       */
     if (virJSONValueObjectAdd(&props,
-                              "s:volume", src->volume,
-                              "s:path", src->path,
+                              "s:volume", volume,
+                              "s:path", path,
                               "a:server", &servers, NULL) < 0)
         return NULL;
 
@@ -311,45 +430,10 @@ qemuBlockStorageSourceGetGlusterProps(virStorageSource *src,
 
 
 static virJSONValue *
-qemuBlockStorageSourceGetVxHSProps(virStorageSource *src,
-                                   bool onlytarget)
-{
-    g_autoptr(virJSONValue) server = NULL;
-    const char *tlsAlias = src->tlsAlias;
-    virJSONValue *ret = NULL;
-
-    if (src->nhosts != 1) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("VxHS protocol accepts only one host"));
-        return NULL;
-    }
-
-    if (!(server = qemuBlockStorageSourceBuildJSONInetSocketAddress(&src->hosts[0])))
-        return NULL;
-
-    if (onlytarget)
-        tlsAlias = NULL;
-
-    /* VxHS disk specification example:
-     * { driver:"vxhs",
-     *   tls-creds:"objvirtio-disk0_tls0",
-     *   vdisk-id:"eb90327c-8302-4725-4e85ed4dc251",
-     *   server:{type:"tcp", host:"1.2.3.4", port:9999}}
-     */
-    ignore_value(virJSONValueObjectAdd(&ret,
-                                       "S:tls-creds", tlsAlias,
-                                       "s:vdisk-id", src->path,
-                                       "a:server", &server, NULL));
-
-    return ret;
-}
-
-
-static virJSONValue *
 qemuBlockStorageSourceGetNFSProps(virStorageSource *src)
 {
     g_autoptr(virJSONValue) server = NULL;
-    virJSONValue *ret = NULL;
+    g_autoptr(virJSONValue) ret = NULL;
 
     if (!(server = qemuBlockStorageSourceBuildJSONNFSServer(&src->hosts[0])))
         return NULL;
@@ -374,7 +458,7 @@ qemuBlockStorageSourceGetNFSProps(virStorageSource *src)
         virJSONValueObjectAdd(&ret, "i:group", src->nfs_gid, NULL) < 0)
         return NULL;
 
-    return ret;
+    return g_steal_pointer(&ret);
 }
 
 
@@ -439,6 +523,32 @@ qemuBlockStorageSourceGetCURLProps(virStorageSource *src,
 
 
 static virJSONValue *
+qemuBlockStorageSourceGetNbdkitProps(virStorageSource *src)
+{
+    qemuDomainStorageSourcePrivate *srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(src);
+    virJSONValue *ret = NULL;
+    g_autoptr(virJSONValue) serverprops = NULL;
+    virStorageNetHostDef host = { .transport = VIR_STORAGE_NET_HOST_TRANS_UNIX };
+
+    /* srcPriv->nbdkitProcess will already be initialized if we can use nbdkit
+     * to proxy this storage source */
+    if (!(srcPriv  && srcPriv->nbdkitProcess))
+        return NULL;
+
+    host.socket = srcPriv->nbdkitProcess->socketfile;
+    serverprops = qemuBlockStorageSourceBuildJSONSocketAddress(&host);
+
+    if (!serverprops)
+        return NULL;
+
+    if (virJSONValueObjectAdd(&ret, "a:server", &serverprops, NULL) < 0)
+        return NULL;
+
+    return ret;
+}
+
+
+static virJSONValue *
 qemuBlockStorageSourceGetISCSIProps(virStorageSource *src,
                                     bool onlytarget)
 {
@@ -461,6 +571,12 @@ qemuBlockStorageSourceGetISCSIProps(virStorageSource *src,
      *   initiator-name:"iqn.2017-04.com.example:client"
      * }
      */
+
+    if (src->nhosts != 1) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("iSCSI protocol accepts only one host"));
+        return NULL;
+    }
 
     target = g_strdup(src->path);
 
@@ -549,6 +665,14 @@ qemuBlockStorageSourceGetRBDProps(virStorageSource *src,
     const char *username = NULL;
     g_autoptr(virJSONValue) authmodes = NULL;
     const char *keysecret = NULL;
+    g_autofree char *pool = NULL;
+    g_autofree char *namespace = NULL;
+    g_autofree char *image = NULL;
+
+    if (virStorageSourceNetworkProtocolPathSplit(src->path,
+                                                 VIR_STORAGE_NET_PROTOCOL_RBD,
+                                                 &pool, &namespace, &image) < 0)
+        return NULL;
 
     if (src->nhosts > 0 &&
         !(servers = qemuBlockStorageSourceBuildHostsJSONInetSocketAddress(src)))
@@ -602,8 +726,9 @@ qemuBlockStorageSourceGetRBDProps(virStorageSource *src,
     }
 
     if (virJSONValueObjectAdd(&ret,
-                              "s:pool", src->volume,
-                              "s:image", src->path,
+                              "s:pool", pool,
+                              "S:namespace", namespace,
+                              "s:image", image,
                               "S:snapshot", src->snapshot,
                               "S:conf", src->configFile,
                               "A:server", &servers,
@@ -611,32 +736,6 @@ qemuBlockStorageSourceGetRBDProps(virStorageSource *src,
                               "S:user", username,
                               "A:auth-client-required", &authmodes,
                               "S:key-secret", keysecret,
-                              NULL) < 0)
-        return NULL;
-
-    return ret;
-}
-
-
-static virJSONValue *
-qemuBlockStorageSourceGetSheepdogProps(virStorageSource *src)
-{
-    g_autoptr(virJSONValue) serverprops = NULL;
-    virJSONValue *ret = NULL;
-
-    if (src->nhosts != 1) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("sheepdog protocol accepts only one host"));
-        return NULL;
-    }
-
-    if (!(serverprops = qemuBlockStorageSourceBuildJSONSocketAddress(&src->hosts[0])))
-        return NULL;
-
-    /* libvirt does not support the 'snap-id' and 'tag' properties */
-    if (virJSONValueObjectAdd(&ret,
-                              "a:server", &serverprops,
-                              "s:vdi", src->path,
                               NULL) < 0)
         return NULL;
 
@@ -687,9 +786,7 @@ qemuBlockStorageSourceGetSshProps(virStorageSource *src)
 
 static virJSONValue *
 qemuBlockStorageSourceGetFileProps(virStorageSource *src,
-                                   bool onlytarget,
-                                   virTristateBool *autoReadOnly,
-                                   virTristateBool *readOnly)
+                                   bool onlytarget)
 {
     const char *path = src->path;
     const char *iomode = NULL;
@@ -705,25 +802,8 @@ qemuBlockStorageSourceGetFileProps(virStorageSource *src,
         if (src->iomode != VIR_DOMAIN_DISK_IO_DEFAULT)
             iomode = virDomainDiskIoTypeToString(src->iomode);
 
-        if (srcpriv && srcpriv->fdpass) {
+        if (srcpriv && srcpriv->fdpass)
             path = qemuFDPassGetPath(srcpriv->fdpass);
-
-            /* when passing a FD to qemu via the /dev/fdset mechanism qemu
-             * fetches the appropriate FD from the fdset by checking that it has
-             * the correct accessmode. Now with 'auto-read-only' in effect qemu
-             * wants to use a read-only FD first. If the user didn't pass multiple
-             * FDs the feature will not work regardless, so we'll disable it. */
-            if (src->fdtuple->nfds == 1) {
-                *autoReadOnly = VIR_TRISTATE_BOOL_ABSENT;
-
-                /* now we setup the normal readonly flag. If user requested write
-                 * access honour it */
-                if (src->fdtuple->writable)
-                    *readOnly = VIR_TRISTATE_BOOL_NO;
-                else
-                    *readOnly = virTristateBoolFromBool(src->readonly);
-            }
-        }
     }
 
     ignore_value(virJSONValueObjectAdd(&ret,
@@ -778,27 +858,118 @@ qemuBlockStorageSourceGetNVMeProps(virStorageSource *src)
 }
 
 
+static virJSONValue *
+qemuBlockStorageSourceGetVhostVdpaProps(virStorageSource *src)
+{
+    virJSONValue *ret = NULL;
+    qemuDomainStorageSourcePrivate *srcpriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(src);
+
+    ignore_value(virJSONValueObjectAdd(&ret,
+                                       "s:driver", "virtio-blk-vhost-vdpa",
+                                       "s:path", qemuFDPassGetPath(srcpriv->fdpass),
+                                       NULL));
+    return ret;
+}
+
+
 static int
 qemuBlockStorageSourceGetBlockdevGetCacheProps(virStorageSource *src,
-                                               virJSONValue *props)
+                                               virJSONValue **cache)
 {
-    g_autoptr(virJSONValue) cacheobj = NULL;
     bool direct = false;
     bool noflush = false;
 
-    if (src->cachemode == VIR_DOMAIN_DISK_CACHE_DEFAULT)
+    if (!qemuDomainDiskCachemodeFlags(src->cachemode, NULL, &direct, &noflush))
         return 0;
 
-    if (qemuDomainDiskCachemodeFlags(src->cachemode, NULL, &direct, &noflush) < 0)
-        return -1;
-
-    if (virJSONValueObjectAdd(&cacheobj,
+    if (virJSONValueObjectAdd(cache,
                               "b:direct", direct,
                               "b:no-flush", noflush,
                               NULL) < 0)
         return -1;
 
-    if (virJSONValueObjectAppend(props, "cache", &cacheobj) < 0)
+    return 0;
+}
+
+
+/**
+ * qemuBlockStorageSourceAddBlockdevCommonProps:
+ * @props: JSON object to append the props to
+ * @src: storage source
+ * @nodename: nodename to use for @src
+ * @effective: Whether props for the effective(topmost) layer are to be formatted
+ *
+ * Add the common props (node name, read-only state, cache configuration, discard)
+ * to a JSON object for a -blockdev definition. If @effective is true,
+ * the props are configured for the topmost layer used to access the data,
+ * otherwise the props are configured for the storage protocol backing a format
+ * layer.
+ */
+static int
+qemuBlockStorageSourceAddBlockdevCommonProps(virJSONValue **props,
+                                             virStorageSource *src,
+                                             const char *nodename,
+                                             bool effective)
+{
+    virStorageType actualType = virStorageSourceGetActualType(src);
+    g_autoptr(virJSONValue) cache = NULL;
+    const char *detectZeroes = NULL;
+    const char *discard = NULL;
+    virTristateBool autoReadOnly = VIR_TRISTATE_BOOL_ABSENT;
+    virTristateBool readOnly = VIR_TRISTATE_BOOL_ABSENT;
+
+    if (qemuBlockNodeNameValidate(nodename) < 0)
+        return -1;
+
+    if (qemuBlockStorageSourceGetBlockdevGetCacheProps(src, &cache) < 0)
+        return -1;
+
+    if (effective) {
+        virDomainDiskDetectZeroes dz = virDomainDiskGetDetectZeroesMode(src->discard,
+                                                                        src->detect_zeroes);
+
+        if (src->discard != VIR_DOMAIN_DISK_DISCARD_DEFAULT)
+            discard = virDomainDiskDiscardTypeToString(src->discard);
+
+        if (dz != VIR_DOMAIN_DISK_DETECT_ZEROES_DEFAULT)
+            detectZeroes = virDomainDiskDetectZeroesTypeToString(dz);
+
+        autoReadOnly = VIR_TRISTATE_BOOL_ABSENT;
+        readOnly = virTristateBoolFromBool(src->readonly);
+    } else {
+        /* when passing a FD to qemu via the /dev/fdset mechanism qemu
+         * fetches the appropriate FD from the fdset by checking that it has
+         * the correct accessmode. Now with 'auto-read-only' in effect qemu
+         * wants to use a read-only FD first. If the user didn't pass multiple
+         * FDs the feature will not work regardless, so we'll not enable it. */
+        if ((actualType == VIR_STORAGE_TYPE_FILE || actualType == VIR_STORAGE_TYPE_BLOCK) &&
+            src->fdtuple && src->fdtuple->nfds == 1) {
+            autoReadOnly = VIR_TRISTATE_BOOL_ABSENT;
+
+            /* now we setup the normal readonly flag. If user requested write access honour it */
+            if (src->fdtuple->writable)
+                readOnly = VIR_TRISTATE_BOOL_NO;
+            else
+                readOnly = virTristateBoolFromBool(src->readonly);
+        } else {
+            autoReadOnly = VIR_TRISTATE_BOOL_YES;
+        }
+
+        discard = "unmap";
+    }
+
+    /* currently unhandled global properties:
+     * '*force-share': 'bool'
+     */
+
+    if (virJSONValueObjectAdd(props,
+                              "s:node-name", nodename,
+                              "T:read-only", readOnly,
+                              "T:auto-read-only", autoReadOnly,
+                              "S:discard", discard,
+                              "S:detect-zeroes", detectZeroes,
+                              "A:cache", &cache,
+                              NULL) < 0)
         return -1;
 
     return 0;
@@ -815,11 +986,8 @@ qemuBlockStorageSourceGetBlockdevGetCacheProps(virStorageSource *src,
  *      use legacy formatting of attributes (for -drive / old qemus)
  *  QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_TARGET_ONLY:
  *      omit any data which does not identify the image itself
- *  QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_AUTO_READONLY:
- *      use the auto-read-only feature of qemu
- *  QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_SKIP_UNMAP:
- *      don't enable 'discard:unmap' option for passing through discards
- *      (note that this is disabled also for _LEGACY and _TARGET_ONLY options)
+ *  QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_EFFECTIVE_NODE:
+ *      the 'protocol' node is used as the effective/top node of a virStorageSource
  *
  * Creates a JSON object describing the underlying storage or protocol of a
  * storage source. Returns NULL on error and reports an appropriate error message.
@@ -831,19 +999,8 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
     virStorageType actualType = virStorageSourceGetActualType(src);
     g_autoptr(virJSONValue) fileprops = NULL;
     const char *driver = NULL;
-    virTristateBool aro = VIR_TRISTATE_BOOL_ABSENT;
-    virTristateBool ro = VIR_TRISTATE_BOOL_ABSENT;
     bool onlytarget = flags & QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_TARGET_ONLY;
     bool legacy = flags & QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_LEGACY;
-
-    if (flags & QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_AUTO_READONLY) {
-        aro = VIR_TRISTATE_BOOL_YES;
-    } else {
-        if (src->readonly)
-            ro = VIR_TRISTATE_BOOL_YES;
-        else
-            ro = VIR_TRISTATE_BOOL_NO;
-    }
 
     switch (actualType) {
     case VIR_STORAGE_TYPE_BLOCK:
@@ -857,7 +1014,7 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
             driver = "file";
         }
 
-        if (!(fileprops = qemuBlockStorageSourceGetFileProps(src, onlytarget, &aro, &ro)))
+        if (!(fileprops = qemuBlockStorageSourceGetFileProps(src, onlytarget)))
             return NULL;
         break;
 
@@ -873,6 +1030,11 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
             return NULL;
         break;
 
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
+        if (!(fileprops = qemuBlockStorageSourceGetVhostVdpaProps(src)))
+            return NULL;
+        break;
+
     case VIR_STORAGE_TYPE_VHOST_USER:
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("unable to create blockdev props for vhostuser disk type"));
@@ -884,22 +1046,23 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
                        src->srcpool->pool, src->srcpool->volume);
         return NULL;
 
+    case VIR_STORAGE_TYPE_CTL:
     case VIR_STORAGE_TYPE_NONE:
     case VIR_STORAGE_TYPE_LAST:
         virReportEnumRangeError(virStorageType, actualType);
         return NULL;
 
     case VIR_STORAGE_TYPE_NETWORK:
-        switch ((virStorageNetProtocol) src->protocol) {
+        /* prefer using nbdkit if configured for sources that are supported */
+        if ((fileprops = qemuBlockStorageSourceGetNbdkitProps(src))) {
+            driver = "nbd";
+            break;
+        }
+
+        switch (src->protocol) {
         case VIR_STORAGE_NET_PROTOCOL_GLUSTER:
             driver = "gluster";
             if (!(fileprops = qemuBlockStorageSourceGetGlusterProps(src, onlytarget)))
-                return NULL;
-            break;
-
-        case VIR_STORAGE_NET_PROTOCOL_VXHS:
-            driver = "vxhs";
-            if (!(fileprops = qemuBlockStorageSourceGetVxHSProps(src, onlytarget)))
                 return NULL;
             break;
 
@@ -931,12 +1094,6 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
                 return NULL;
             break;
 
-        case VIR_STORAGE_NET_PROTOCOL_SHEEPDOG:
-            driver = "sheepdog";
-            if (!(fileprops = qemuBlockStorageSourceGetSheepdogProps(src)))
-                return NULL;
-            break;
-
         case VIR_STORAGE_NET_PROTOCOL_SSH:
             driver = "ssh";
             if (!(fileprops = qemuBlockStorageSourceGetSshProps(src)))
@@ -949,6 +1106,12 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
                 return NULL;
             break;
 
+        case VIR_STORAGE_NET_PROTOCOL_VXHS:
+        case VIR_STORAGE_NET_PROTOCOL_SHEEPDOG:
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("unsupported disk protocol"));
+            return NULL;
+
         case VIR_STORAGE_NET_PROTOCOL_NONE:
         case VIR_STORAGE_NET_PROTOCOL_LAST:
             virReportEnumRangeError(virStorageNetProtocol, src->protocol);
@@ -960,27 +1123,11 @@ qemuBlockStorageSourceGetBackendProps(virStorageSource *src,
     if (driver && virJSONValueObjectPrependString(fileprops, "driver", driver) < 0)
         return NULL;
 
-    if (!onlytarget) {
-        if (qemuBlockNodeNameValidate(src->nodestorage) < 0 ||
-            virJSONValueObjectAdd(&fileprops, "S:node-name", src->nodestorage, NULL) < 0)
-            return NULL;
-
-        if (!legacy) {
-            if (qemuBlockStorageSourceGetBlockdevGetCacheProps(src, fileprops) < 0)
+    if (!onlytarget && !legacy) {
+        if (qemuBlockStorageSourceAddBlockdevCommonProps(&fileprops, src,
+                                                         qemuBlockStorageSourceGetStorageNodename(src),
+                                                         !!(flags & QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_EFFECTIVE_NODE)) < 0)
                 return NULL;
-
-            if (virJSONValueObjectAdd(&fileprops,
-                                      "T:read-only", ro,
-                                      "T:auto-read-only", aro,
-                                      NULL) < 0)
-                return NULL;
-
-            if (!(flags & QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_SKIP_UNMAP) &&
-                virJSONValueObjectAdd(&fileprops,
-                                      "s:discard", "unmap",
-                                      NULL) < 0)
-                return NULL;
-        }
     }
 
     return g_steal_pointer(&fileprops);
@@ -1003,27 +1150,6 @@ qemuBlockStorageSourceGetFormatLUKSProps(virStorageSource *src,
     if (virJSONValueObjectAdd(&props,
                               "s:driver", "luks",
                               "s:key-secret", srcPriv->encinfo[0]->alias,
-                              NULL) < 0)
-        return -1;
-
-    return 0;
-}
-
-
-static int
-qemuBlockStorageSourceGetFormatRawProps(virStorageSource *src,
-                                        virJSONValue *props)
-{
-    if (virJSONValueObjectAdd(&props, "s:driver", "raw", NULL) < 0)
-        return -1;
-
-    /* Currently only storage slices are supported. We'll have to calculate
-     * the union of the slices here if we don't want to be adding needless
-     * 'raw' nodes. */
-    if (src->sliceStorage &&
-        virJSONValueObjectAdd(&props,
-                              "U:offset", src->sliceStorage->offset,
-                              "U:size", src->sliceStorage->size,
                               NULL) < 0)
         return -1;
 
@@ -1117,51 +1243,20 @@ qemuBlockStorageSourceGetFormatQcow2Props(virStorageSource *src,
      * see: qemu.git/docs/qcow2-cache.txt
      * https://git.qemu.org/?p=qemu.git;a=blob;f=docs/qcow2-cache.txt
      */
-    if (src->metadataCacheMaxSize > 0) {
+    if (virJSONValueObjectAdd(&props,
+                              "P:cache-size", src->metadataCacheMaxSize,
+                              "T:discard-no-unref", src->discard_no_unref,
+                              NULL) < 0)
+        return -1;
+
+    if (src->dataFileStore) {
         if (virJSONValueObjectAdd(&props,
-                                  "U:cache-size", src->metadataCacheMaxSize,
+                                  "s:data-file", qemuBlockStorageSourceGetEffectiveNodename(src->dataFileStore),
                                   NULL) < 0)
-            return -1;
+        return -1;
     }
 
     return 0;
-}
-
-
-static virJSONValue *
-qemuBlockStorageSourceGetBlockdevFormatCommonProps(virStorageSource *src)
-{
-    const char *detectZeroes = NULL;
-    const char *discard = NULL;
-    int detectZeroesMode = virDomainDiskGetDetectZeroesMode(src->discard,
-                                                            src->detect_zeroes);
-    g_autoptr(virJSONValue) props = NULL;
-
-    if (qemuBlockNodeNameValidate(src->nodeformat) < 0)
-        return NULL;
-
-    if (src->discard)
-        discard = virDomainDiskDiscardTypeToString(src->discard);
-
-    if (detectZeroesMode)
-        detectZeroes = virDomainDiskDetectZeroesTypeToString(detectZeroesMode);
-
-    /* currently unhandled global properties:
-     * '*force-share': 'bool'
-     */
-
-    if (virJSONValueObjectAdd(&props,
-                              "s:node-name", src->nodeformat,
-                              "b:read-only", src->readonly,
-                              "S:discard", discard,
-                              "S:detect-zeroes", detectZeroes,
-                              NULL) < 0)
-        return NULL;
-
-    if (qemuBlockStorageSourceGetBlockdevGetCacheProps(src, props) < 0)
-        return NULL;
-
-    return g_steal_pointer(&props);
 }
 
 
@@ -1171,22 +1266,25 @@ qemuBlockStorageSourceGetBlockdevFormatProps(virStorageSource *src)
     const char *driver = NULL;
     g_autoptr(virJSONValue) props = NULL;
 
-    if (!(props = qemuBlockStorageSourceGetBlockdevFormatCommonProps(src)))
+    if (qemuBlockStorageSourceAddBlockdevCommonProps(&props,
+                                                     src,
+                                                     qemuBlockStorageSourceGetFormatNodename(src),
+                                                     true) < 0)
         return NULL;
 
     switch ((virStorageFileFormat) src->format) {
     case VIR_STORAGE_FILE_FAT:
         /* The fat layer is emulated by the storage access layer, so we need to
          * put a raw layer on top */
+        driver = "raw";
+        break;
+
     case VIR_STORAGE_FILE_RAW:
-        if (src->encryption &&
-            src->encryption->engine == VIR_STORAGE_ENCRYPTION_ENGINE_QEMU &&
-            src->encryption->format == VIR_STORAGE_ENCRYPTION_FORMAT_LUKS) {
+        if (qemuBlockStorageSourceIsLUKS(src)) {
             if (qemuBlockStorageSourceGetFormatLUKSProps(src, props) < 0)
                 return NULL;
         } else {
-            if (qemuBlockStorageSourceGetFormatRawProps(src, props) < 0)
-                return NULL;
+            driver = "raw";
         }
         break;
 
@@ -1245,77 +1343,90 @@ qemuBlockStorageSourceGetBlockdevFormatProps(virStorageSource *src)
 
 
 /**
- * qemuBlockStorageSourceGetBlockdevProps:
+ * qemuBlockStorageSourceGetFormatProps:
  *
  * @src: storage source to format
  * @backingStore: a storage source to use as backing of @src
  *
- * Formats @src into a JSON object which can be used with blockdev-add or
- * -blockdev. The formatted object contains both the storage and format layer
- * in nested form including link to the backing chain layer if necessary.
+ * Formats properties of @src related to the format blockdev driver in qemu
+ * into a JSON object which can be used with blockdev-add or -blockdev.
  */
 virJSONValue *
-qemuBlockStorageSourceGetBlockdevProps(virStorageSource *src,
-                                       virStorageSource *backingStore)
+qemuBlockStorageSourceGetFormatProps(virStorageSource *src,
+                                     virStorageSource *backingStore)
 {
     g_autoptr(virJSONValue) props = NULL;
-    const char *storagenode = src->nodestorage;
+    const char *backingFormatterStr = NULL;
+    const char *backingNodename = NULL;
 
-    if (qemuBlockStorageSourceNeedsStorageSliceLayer(src))
-        storagenode = src->sliceStorage->nodename;
+    if (virStorageSourceIsBacking(backingStore) &&
+        src->format < VIR_STORAGE_FILE_BACKING) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("storage format '%1$s' does not support backing store"),
+                       virStorageFileFormatTypeToString(src->format));
+        return NULL;
+    }
+
+    if (backingStore &&
+        src->format >= VIR_STORAGE_FILE_BACKING) {
+        if (virStorageSourceIsBacking(backingStore)) {
+            backingFormatterStr = "s:backing";
+            backingNodename = qemuBlockStorageSourceGetEffectiveNodename(backingStore);
+        } else {
+            /* chain is terminated, indicate that no detection should happen in qemu */
+            backingFormatterStr = "n:backing";
+        }
+    }
 
     if (!(props = qemuBlockStorageSourceGetBlockdevFormatProps(src)))
         return NULL;
 
-    if (virJSONValueObjectAppendString(props, "file", storagenode) < 0)
-        return NULL;
-
-    if (backingStore) {
-        if (src->format >= VIR_STORAGE_FILE_BACKING) {
-            if (virStorageSourceIsBacking(backingStore)) {
-                if (virJSONValueObjectAppendString(props, "backing",
-                                                   backingStore->nodeformat) < 0)
-                    return NULL;
-            } else {
-                /* chain is terminated, indicate that no detection should happen
-                 * in qemu */
-                if (virJSONValueObjectAppendNull(props, "backing") < 0)
-                    return NULL;
-            }
-        } else {
-            if (virStorageSourceIsBacking(backingStore)) {
-                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                               _("storage format '%1$s' does not support backing store"),
-                               virStorageFileFormatTypeToString(src->format));
-                return NULL;
-            }
-        }
-    }
+    if (virJSONValueObjectAdd(&props,
+                              "s:file", qemuBlockStorageSourceGetEffectiveStorageNodename(src),
+                              backingFormatterStr, backingNodename,
+                              NULL) < 0)
+        return 0;
 
     return g_steal_pointer(&props);
 }
 
 
+/**
+ * qemuBlockStorageSourceGetBlockdevStorageSliceProps:
+ * @src: storage source object
+ * @effective: Whether this blockdev will be the 'effective' layer of @src
+ * @resize: If true, the 'size' and 'offset' parameters are not formatted
+ *
+ * Formats the JSON object representing -blockdev configuration required to
+ * configure a 'slice' of @src. If @effective is true, the slice layer is the
+ * topmost/effective blockdev layer of @src. If @resize is true the 'size' and
+ * 'offset' are not formatted, which is used to remove a slice restriction
+ * to resize the image.
+ */
 static virJSONValue *
-qemuBlockStorageSourceGetBlockdevStorageSliceProps(virStorageSource *src)
+qemuBlockStorageSourceGetBlockdevStorageSliceProps(virStorageSource *src,
+                                                   bool effective,
+                                                   bool resize)
 {
     g_autoptr(virJSONValue) props = NULL;
 
-    if (qemuBlockNodeNameValidate(src->sliceStorage->nodename) < 0)
-        return NULL;
-
     if (virJSONValueObjectAdd(&props,
                               "s:driver", "raw",
-                              "s:node-name", src->sliceStorage->nodename,
-                              "U:offset", src->sliceStorage->offset,
-                              "U:size", src->sliceStorage->size,
-                              "s:file", src->nodestorage,
-                              "b:auto-read-only", true,
-                              "s:discard", "unmap",
+                              "s:file", qemuBlockStorageSourceGetStorageNodename(src),
                               NULL) < 0)
         return NULL;
 
-    if (qemuBlockStorageSourceGetBlockdevGetCacheProps(src, props) < 0)
+    if (!resize &&
+        virJSONValueObjectAdd(&props,
+                              "U:offset", src->sliceStorage->offset,
+                              "U:size", src->sliceStorage->size,
+                              NULL) < 0)
+        return NULL;
+
+    if (qemuBlockStorageSourceAddBlockdevCommonProps(&props,
+                                                     src,
+                                                     src->sliceStorage->nodename,
+                                                     effective) < 0)
         return NULL;
 
     return g_steal_pointer(&props);
@@ -1371,32 +1482,37 @@ qemuBlockStorageSourceAttachDataFree(qemuBlockStorageSourceAttachData *data)
  */
 qemuBlockStorageSourceAttachData *
 qemuBlockStorageSourceAttachPrepareBlockdev(virStorageSource *src,
-                                            virStorageSource *backingStore,
-                                            bool autoreadonly)
+                                            virStorageSource *backingStore)
 {
     g_autoptr(qemuBlockStorageSourceAttachData) data = NULL;
+    bool effective = true;
     unsigned int backendpropsflags = 0;
-
-    if (autoreadonly)
-        backendpropsflags |= QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_AUTO_READONLY;
 
     data = g_new0(qemuBlockStorageSourceAttachData, 1);
 
-    if (!(data->formatProps = qemuBlockStorageSourceGetBlockdevProps(src,
-                                                                     backingStore)) ||
-        !(data->storageProps = qemuBlockStorageSourceGetBackendProps(src,
-                                                                     backendpropsflags)))
-        return NULL;
-
-    data->storageNodeName = src->nodestorage;
-    data->formatNodeName = src->nodeformat;
-
-    if (qemuBlockStorageSourceNeedsStorageSliceLayer(src)) {
-        if (!(data->storageSliceProps = qemuBlockStorageSourceGetBlockdevStorageSliceProps(src)))
+    if (qemuBlockStorageSourceGetFormatNodename(src)) {
+        if (!(data->formatProps = qemuBlockStorageSourceGetFormatProps(src, backingStore)))
             return NULL;
 
-        data->storageSliceNodeName = src->sliceStorage->nodename;
+        data->formatNodeName = qemuBlockStorageSourceGetFormatNodename(src);
+
+        effective = false;
     }
+
+    if ((data->storageSliceNodeName = qemuBlockStorageSourceGetSliceNodename(src))) {
+        if (!(data->storageSliceProps = qemuBlockStorageSourceGetBlockdevStorageSliceProps(src, effective, false)))
+            return NULL;
+
+        effective = false;
+    }
+
+    if (effective)
+        backendpropsflags = QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_EFFECTIVE_NODE;
+
+    if (!(data->storageProps = qemuBlockStorageSourceGetBackendProps(src, backendpropsflags)))
+        return NULL;
+
+    data->storageNodeName = qemuBlockStorageSourceGetStorageNodename(src);
 
     return g_steal_pointer(&data);
 }
@@ -1514,14 +1630,20 @@ qemuBlockStorageSourceAttachApply(qemuMonitor *mon,
                                   qemuBlockStorageSourceAttachData *data)
 {
     if (qemuBlockStorageSourceAttachApplyStorageDeps(mon, data) < 0 ||
+        qemuBlockStorageSourceAttachApplyFormatDeps(mon, data) < 0 ||
         qemuBlockStorageSourceAttachApplyStorage(mon, data) < 0 ||
         qemuBlockStorageSourceAttachApplyStorageSlice(mon, data) < 0 ||
-        qemuBlockStorageSourceAttachApplyFormatDeps(mon, data) < 0 ||
         qemuBlockStorageSourceAttachApplyFormat(mon, data) < 0)
         return -1;
 
     if (data->chardevDef) {
-        if (qemuMonitorAttachCharDev(mon, data->chardevAlias, data->chardevDef) < 0)
+        g_autoptr(virJSONValue) props = NULL;
+
+        if (qemuChardevGetBackendProps(data->chardevDef, false, data->qemuCaps,
+                                       data->chardevAlias, NULL, &props) < 0)
+            return -1;
+
+        if (qemuMonitorAttachCharDev(mon, &props, NULL) < 0)
             return -1;
 
         data->chardevAdded = true;
@@ -1607,18 +1729,14 @@ qemuBlockStorageSourceDetachPrepare(virStorageSource *src)
 
     data = g_new0(qemuBlockStorageSourceAttachData, 1);
 
-    data->formatNodeName = src->nodeformat;
-    data->formatAttached = true;
-    data->storageNodeName = src->nodestorage;
-    data->storageAttached = true;
+    if ((data->formatNodeName = qemuBlockStorageSourceGetFormatNodename(src)))
+        data->formatAttached = true;
 
-    /* 'raw' format doesn't need the extra 'raw' layer when slicing, thus
-     * the nodename is NULL */
-    if (src->sliceStorage &&
-        src->sliceStorage->nodename) {
-        data->storageSliceNodeName = src->sliceStorage->nodename;
+    if ((data->storageSliceNodeName = qemuBlockStorageSourceGetSliceNodename(src)))
         data->storageSliceAttached = true;
-    }
+
+    data->storageNodeName = qemuBlockStorageSourceGetStorageNodename(src);
+    data->storageAttached = true;
 
     if (src->pr &&
         !virStoragePRDefIsManaged(src->pr))
@@ -1695,6 +1813,13 @@ qemuBlockStorageSourceChainDetachPrepareBlockdev(virStorageSource *src)
             return NULL;
 
         VIR_APPEND_ELEMENT(data->srcdata, data->nsrcdata, backend);
+
+        if (n->dataFileStore) {
+            if (!(backend = qemuBlockStorageSourceDetachPrepare(n->dataFileStore)))
+                return NULL;
+
+            VIR_APPEND_ELEMENT(data->srcdata, data->nsrcdata, backend);
+        }
     }
 
     return g_steal_pointer(&data);
@@ -1770,6 +1895,9 @@ qemuBlockStorageSourceChainDetach(qemuMonitor *mon,
 {
     size_t i;
 
+    if (!data)
+        return;
+
     if (data->copyOnReadAttached)
         ignore_value(qemuMonitorBlockdevDel(mon, data->copyOnReadNodename));
 
@@ -1779,46 +1907,14 @@ qemuBlockStorageSourceChainDetach(qemuMonitor *mon,
 }
 
 
-/**
- * qemuBlockStorageSourceDetachOneBlockdev:
- * @driver: qemu driver object
- * @vm: domain object
- * @asyncJob: currently running async job
- * @src: storage source to detach
- *
- * Detaches one virStorageSource using blockdev-del. Note that this does not
- * detach any authentication/encryption objects. This function enters the
- * monitor internally.
- */
-int
-qemuBlockStorageSourceDetachOneBlockdev(virDomainObj *vm,
-                                        virDomainAsyncJob asyncJob,
-                                        virStorageSource *src)
-{
-    int ret;
-
-    if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
-        return -1;
-
-    ret = qemuMonitorBlockdevDel(qemuDomainGetMonitor(vm), src->nodeformat);
-
-    if (ret == 0)
-        ret = qemuMonitorBlockdevDel(qemuDomainGetMonitor(vm), src->nodestorage);
-
-    qemuDomainObjExitMonitor(vm);
-
-    return ret;
-}
-
-
 int
 qemuBlockSnapshotAddBlockdev(virJSONValue *actions,
                              virDomainDiskDef *disk,
                              virStorageSource *newsrc)
 {
     return qemuMonitorTransactionSnapshotBlockdev(actions,
-                                                  disk->src->nodeformat,
-                                                  newsrc->nodeformat);
+                                                  qemuBlockStorageSourceGetEffectiveNodename(disk->src),
+                                                  qemuBlockStorageSourceGetFormatNodename(newsrc));
 }
 
 
@@ -1837,7 +1933,7 @@ qemuBlockStorageGetCopyOnReadProps(virDomainDiskDef *disk)
     ignore_value(virJSONValueObjectAdd(&ret,
                                        "s:driver", "copy-on-read",
                                        "s:node-name", priv->nodeCopyOnRead,
-                                       "s:file", disk->src->nodeformat,
+                                       "s:file", qemuBlockStorageSourceGetEffectiveNodename(disk->src),
                                        "s:discard", "unmap",
                                        NULL));
 
@@ -1885,7 +1981,7 @@ qemuBlockGetBackingStoreString(virStorageSource *src,
             src->readahead == 0 &&
             src->reconnectDelay == 0) {
 
-            switch ((virStorageNetProtocol) src->protocol) {
+            switch (src->protocol) {
             case VIR_STORAGE_NET_PROTOCOL_NBD:
             case VIR_STORAGE_NET_PROTOCOL_HTTP:
             case VIR_STORAGE_NET_PROTOCOL_HTTPS:
@@ -1949,9 +2045,7 @@ qemuBlockStorageSourceCreateAddBacking(virStorageSource *backing,
         return 0;
 
     if (format) {
-        if (backing->format == VIR_STORAGE_FILE_RAW &&
-            backing->encryption &&
-            backing->encryption->format == VIR_STORAGE_ENCRYPTION_FORMAT_LUKS)
+        if (qemuBlockStorageSourceIsLUKS(backing))
             backingFormatStr = "luks";
         else
             backingFormatStr = virStorageFileFormatTypeToString(backing->format);
@@ -1980,7 +2074,7 @@ qemuBlockStorageSourceCreateGetFormatPropsGeneric(virStorageSource *src,
 
     if (virJSONValueObjectAdd(&props,
                               "s:driver", driver,
-                              "s:file", src->nodestorage,
+                              "s:file", qemuBlockStorageSourceGetEffectiveStorageNodename(src),
                               "U:size", src->capacity,
                               NULL) < 0)
         return -1;
@@ -2045,7 +2139,7 @@ qemuBlockStorageSourceCreateGetFormatPropsLUKS(virStorageSource *src,
 
     if (virJSONValueObjectAdd(&luksprops,
                               "s:driver", "luks",
-                              "s:file", src->nodestorage,
+                              "s:file", qemuBlockStorageSourceGetEffectiveStorageNodename(src),
                               "U:size", src->capacity,
                               NULL) < 0)
         return -1;
@@ -2102,7 +2196,7 @@ qemuBlockStorageSourceCreateGetFormatPropsQcow2(virStorageSource *src,
 
     if (virJSONValueObjectAdd(&qcow2props,
                               "s:driver", "qcow2",
-                              "s:file", src->nodestorage,
+                              "s:file", qemuBlockStorageSourceGetEffectiveStorageNodename(src),
                               "U:size", src->capacity,
                               "S:version", qcow2version,
                               "P:cluster-size", src->clusterSize,
@@ -2128,7 +2222,7 @@ qemuBlockStorageSourceCreateGetFormatPropsQcow(virStorageSource *src,
 
     if (virJSONValueObjectAdd(&qcowprops,
                               "s:driver", "qcow",
-                              "s:file", src->nodestorage,
+                              "s:file", qemuBlockStorageSourceGetEffectiveStorageNodename(src),
                               "U:size", src->capacity,
                               NULL) < 0)
         return -1;
@@ -2151,7 +2245,7 @@ qemuBlockStorageSourceCreateGetFormatPropsQed(virStorageSource *src,
 
     if (virJSONValueObjectAdd(&qedprops,
                               "s:driver", "qed",
-                              "s:file", src->nodestorage,
+                              "s:file", qemuBlockStorageSourceGetEffectiveStorageNodename(src),
                               "U:size", src->capacity,
                               NULL) < 0)
         return -1;
@@ -2182,8 +2276,7 @@ qemuBlockStorageSourceCreateGetFormatProps(virStorageSource *src,
 {
     switch ((virStorageFileFormat) src->format) {
     case VIR_STORAGE_FILE_RAW:
-        if (!src->encryption ||
-            src->encryption->format != VIR_STORAGE_ENCRYPTION_FORMAT_LUKS)
+        if (!qemuBlockStorageSourceIsLUKS(src))
             return 0;
 
         return qemuBlockStorageSourceCreateGetFormatPropsLUKS(src, props);
@@ -2262,6 +2355,7 @@ qemuBlockStorageSourceCreateGetStorageProps(virStorageSource *src,
     g_autoptr(virJSONValue) location = NULL;
     const char *driver = NULL;
     const char *filename = NULL;
+    qemuDomainStorageSourcePrivate *srcPriv = QEMU_DOMAIN_STORAGE_SOURCE_PRIVATE(src);
 
     switch (actualType) {
     case VIR_STORAGE_TYPE_FILE:
@@ -2270,7 +2364,7 @@ qemuBlockStorageSourceCreateGetStorageProps(virStorageSource *src,
         break;
 
     case VIR_STORAGE_TYPE_NETWORK:
-        switch ((virStorageNetProtocol) src->protocol) {
+        switch (src->protocol) {
         case VIR_STORAGE_NET_PROTOCOL_GLUSTER:
             driver = "gluster";
             if (!(location = qemuBlockStorageSourceGetGlusterProps(src, false)))
@@ -2283,13 +2377,14 @@ qemuBlockStorageSourceCreateGetStorageProps(virStorageSource *src,
                 return -1;
             break;
 
-        case VIR_STORAGE_NET_PROTOCOL_SHEEPDOG:
-            driver = "sheepdog";
-            if (!(location = qemuBlockStorageSourceGetSheepdogProps(src)))
-                return -1;
-            break;
-
         case VIR_STORAGE_NET_PROTOCOL_SSH:
+            if (srcPriv->nbdkitProcess) {
+                /* disk creation not yet supported with nbdkit, and even if it
+                 * was supported, it would not be done with blockdev-create
+                 * props */
+                return 0;
+            }
+
             driver = "ssh";
             if (!(location = qemuBlockStorageSourceGetSshProps(src)))
                 return -1;
@@ -2302,6 +2397,7 @@ qemuBlockStorageSourceCreateGetStorageProps(virStorageSource *src,
             break;
 
             /* unsupported/impossible */
+        case VIR_STORAGE_NET_PROTOCOL_SHEEPDOG:
         case VIR_STORAGE_NET_PROTOCOL_NBD:
         case VIR_STORAGE_NET_PROTOCOL_ISCSI:
         case VIR_STORAGE_NET_PROTOCOL_VXHS:
@@ -2321,6 +2417,8 @@ qemuBlockStorageSourceCreateGetStorageProps(virStorageSource *src,
     case VIR_STORAGE_TYPE_VOLUME:
     case VIR_STORAGE_TYPE_NVME:
     case VIR_STORAGE_TYPE_VHOST_USER:
+    case VIR_STORAGE_TYPE_VHOST_VDPA:
+    case VIR_STORAGE_TYPE_CTL:
         return 0;
 
     case VIR_STORAGE_TYPE_NONE:
@@ -2444,9 +2542,15 @@ qemuBlockStorageSourceCreateFormat(virDomainObj *vm,
     g_autoptr(virJSONValue) createformatprops = NULL;
     int ret;
 
-    if (src->format == VIR_STORAGE_FILE_RAW &&
-        !src->encryption)
+    /* we don't bother creating only a true 'raw' image */
+    if (qemuBlockStorageSourceIsRaw(src))
         return 0;
+
+    if (src->dataFileStore) {
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                       _("creation of storage images with <dataStore> feature is not supported"));
+        return -1;
+    }
 
     if (qemuBlockStorageSourceCreateGetFormatProps(src, backingStore,
                                                    &createformatprops) < 0)
@@ -2511,6 +2615,8 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
         goto cleanup;
 
     rc = qemuBlockStorageSourceAttachApplyStorageDeps(priv->mon, data);
+    if (rc == 0)
+        rc = qemuBlockStorageSourceAttachApplyFormatDeps(priv->mon, data);
 
     qemuDomainObjExitMonitor(vm);
     if (rc < 0)
@@ -2523,9 +2629,6 @@ qemuBlockStorageSourceCreate(virDomainObj *vm,
         goto cleanup;
 
     rc = qemuBlockStorageSourceAttachApplyStorage(priv->mon, data);
-
-    if (rc == 0)
-        rc = qemuBlockStorageSourceAttachApplyFormatDeps(priv->mon, data);
 
     qemuDomainObjExitMonitor(vm);
     if (rc < 0)
@@ -2583,10 +2686,10 @@ qemuBlockStorageSourceCreateDetectSize(GHashTable *blockNamedNodeData,
 {
     qemuBlockNamedNodeData *entry;
 
-    if (!(entry = virHashLookup(blockNamedNodeData, templ->nodeformat))) {
+    if (!(entry = virHashLookup(blockNamedNodeData, qemuBlockStorageSourceGetEffectiveNodename(templ)))) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("failed to update capacity data for block node '%1$s'"),
-                       templ->nodeformat);
+                       qemuBlockStorageSourceGetEffectiveNodename(templ));
         return -1;
     }
 
@@ -2603,7 +2706,7 @@ qemuBlockStorageSourceCreateDetectSize(GHashTable *blockNamedNodeData,
         }
     }
 
-    if (src->format == VIR_STORAGE_FILE_RAW) {
+    if (qemuBlockStorageSourceIsRaw(src)) {
         src->physical = entry->capacity;
     } else {
         src->physical = entry->physical;
@@ -2612,6 +2715,146 @@ qemuBlockStorageSourceCreateDetectSize(GHashTable *blockNamedNodeData,
     src->capacity = entry->capacity;
 
     return 0;
+}
+
+
+void
+qemuBlockThrottleFilterSetNodename(virDomainThrottleFilterDef *filter,
+                                   char *nodename)
+{
+    g_free(filter->nodename);
+    filter->nodename = nodename;
+}
+
+
+const char *
+qemuBlockThrottleFilterGetNodename(virDomainThrottleFilterDef *filter)
+{
+    return filter->nodename;
+}
+
+
+/**
+ * qemuBlockThrottleFilterGetProps:
+ * @filter: throttle filter
+ * @parentNodeName: parent nodename of @filter
+ *
+ * Build "arguments" part of "blockdev-add" QMP cmd.
+ */
+static virJSONValue *
+qemuBlockThrottleFilterGetProps(virDomainThrottleFilterDef *filter,
+                                const char *parentNodeName)
+{
+    g_autoptr(virJSONValue) props = NULL;
+    /* prefix group name with "throttle-" in QOM */
+    g_autofree char *prefixed_group_name = g_strdup_printf("throttle-%s", filter->group_name);
+    if (virJSONValueObjectAdd(&props,
+                              "s:driver", "throttle",
+                              "s:node-name", qemuBlockThrottleFilterGetNodename(filter),
+                              "s:throttle-group", prefixed_group_name,
+                              "s:file", parentNodeName,
+                              "s:discard", "unmap",
+                              NULL) < 0)
+        return NULL;
+
+    return g_steal_pointer(&props);
+}
+
+
+void
+qemuBlockThrottleFilterAttachDataFree(qemuBlockThrottleFilterAttachData *data)
+{
+    if (!data)
+        return;
+
+    virJSONValueFree(data->filterProps);
+    g_free(data);
+}
+
+
+qemuBlockThrottleFilterAttachData *
+qemuBlockThrottleFilterAttachPrepareBlockdev(virDomainThrottleFilterDef *filter,
+                                             const char *parentNodeName)
+{
+    g_autoptr(qemuBlockThrottleFilterAttachData) data = NULL;
+
+    data = g_new0(qemuBlockThrottleFilterAttachData, 1);
+
+    if (!(data->filterProps = qemuBlockThrottleFilterGetProps(filter, parentNodeName)))
+        return NULL;
+
+    data->filterNodeName = qemuBlockThrottleFilterGetNodename(filter);
+
+    return g_steal_pointer(&data);
+}
+
+
+void
+qemuBlockThrottleFilterAttachRollback(qemuMonitor *mon,
+                                      qemuBlockThrottleFilterAttachData *data)
+{
+    virErrorPtr orig_err;
+
+    virErrorPreserveLast(&orig_err);
+
+    if (data->filterAttached)
+        ignore_value(qemuMonitorBlockdevDel(mon, data->filterNodeName));
+
+    virErrorRestore(&orig_err);
+}
+
+
+void
+qemuBlockThrottleFiltersDataFree(qemuBlockThrottleFiltersData *data)
+{
+    size_t i;
+
+    if (!data)
+        return;
+
+    for (i = 0; i < data->nfilterdata; i++)
+        qemuBlockThrottleFilterAttachDataFree(data->filterdata[i]);
+
+    g_free(data->filterdata);
+    g_free(data);
+}
+
+
+/**
+ * qemuBlockThrottleFiltersAttach:
+ * @mon: monitor object
+ * @data: filter chain data
+ *
+ * Attach throttle filters.
+ * Caller must enter @mon prior calling this function.
+ */
+int
+qemuBlockThrottleFiltersAttach(qemuMonitor *mon,
+                               qemuBlockThrottleFiltersData *data)
+{
+    size_t i;
+
+    for (i = 0; i < data->nfilterdata; i++) {
+        if (qemuMonitorBlockdevAdd(mon, &data->filterdata[i]->filterProps) < 0)
+            return -1;
+        data->filterdata[i]->filterAttached = true;
+    }
+
+    return 0;
+}
+
+
+void
+qemuBlockThrottleFiltersDetach(qemuMonitor *mon,
+                               qemuBlockThrottleFiltersData *data)
+{
+    size_t i;
+
+    if (!data)
+        return;
+
+    for (i = data->nfilterdata; i > 0; i--)
+        qemuBlockThrottleFilterAttachRollback(mon, data->filterdata[i-1]);
 }
 
 
@@ -2626,8 +2869,7 @@ qemuBlockRemoveImageMetadata(virQEMUDriver *driver,
 
     for (n = src; virStorageSourceIsBacking(n); n = n->backingStore) {
         if (qemuSecurityMoveImageMetadata(driver, vm, n, NULL) < 0) {
-            VIR_WARN("Unable to remove disk metadata on "
-                     "vm %s from %s (disk target %s)",
+            VIR_WARN("Unable to remove disk metadata on vm %s from %s (disk target %s)",
                      vm->def->name,
                      NULLSTR(n->path),
                      diskTarget);
@@ -2655,7 +2897,8 @@ qemuBlockNamedNodeDataGetBitmapByName(GHashTable *blockNamedNodeData,
     qemuBlockNamedNodeData *nodedata;
     size_t i;
 
-    if (!(nodedata = virHashLookup(blockNamedNodeData, src->nodeformat)))
+    if (!(nodedata = virHashLookup(blockNamedNodeData,
+                                   qemuBlockStorageSourceGetEffectiveNodename(src))))
         return NULL;
 
     for (i = 0; i < nodedata->nbitmaps; i++) {
@@ -2711,7 +2954,7 @@ qemuBlockGetBitmapMergeActionsGetBitmaps(virStorageSource *topsrc,
     /* for now it doesn't make sense to consider bitmaps which are not present
      * in @topsrc as we can't recreate a bitmap for a layer if it's missing */
 
-    if (!(entry = virHashLookup(blockNamedNodeData, topsrc->nodeformat)))
+    if (!(entry = virHashLookup(blockNamedNodeData, qemuBlockStorageSourceGetEffectiveNodename(topsrc))))
         return NULL;
 
     for (i = 0; i < entry->nbitmaps; i++) {
@@ -2820,7 +3063,7 @@ qemuBlockGetBitmapMergeActions(virStorageSource *topsrc,
                 granularity = bitmap->granularity;
 
             if (qemuMonitorTransactionBitmapMergeSourceAddBitmap(merge,
-                                                                 n->nodeformat,
+                                                                 qemuBlockStorageSourceGetEffectiveNodename(n),
                                                                  bitmap->name) < 0)
                 return -1;
         }
@@ -2830,7 +3073,7 @@ qemuBlockGetBitmapMergeActions(virStorageSource *topsrc,
                                                              target, curbitmap))) {
 
             if (qemuMonitorTransactionBitmapAdd(act,
-                                                target->nodeformat,
+                                                qemuBlockStorageSourceGetEffectiveNodename(target),
                                                 mergebitmapname,
                                                 mergebitmappersistent,
                                                 mergebitmapdisabled,
@@ -2840,18 +3083,18 @@ qemuBlockGetBitmapMergeActions(virStorageSource *topsrc,
 
         if (writebitmapsrc &&
             qemuMonitorTransactionBitmapMergeSourceAddBitmap(merge,
-                                                             writebitmapsrc->nodeformat,
+                                                             qemuBlockStorageSourceGetEffectiveNodename(writebitmapsrc),
                                                              "libvirt-tmp-activewrite") < 0)
             return -1;
 
-        if (qemuMonitorTransactionBitmapMerge(act, target->nodeformat,
+        if (qemuMonitorTransactionBitmapMerge(act, qemuBlockStorageSourceGetEffectiveNodename(target),
                                               mergebitmapname, &merge) < 0)
             return -1;
     }
 
  done:
     if (writebitmapsrc &&
-        qemuMonitorTransactionBitmapRemove(act, writebitmapsrc->nodeformat,
+        qemuMonitorTransactionBitmapRemove(act, qemuBlockStorageSourceGetEffectiveNodename(writebitmapsrc),
                                            "libvirt-tmp-activewrite") < 0)
         return -1;
 
@@ -2935,6 +3178,11 @@ qemuBlockBitmapsHandleBlockcopy(virStorageSource *src,
 {
     virStorageSource *base = NULL;
 
+    /* if copy destination is a 'raw' image there's no point in attempting to
+     * merge the bitmaps into it */
+    if (mirror->format == VIR_STORAGE_FILE_RAW)
+        return 0;
+
     if (shallow)
         base = src->backingStore;
 
@@ -2968,6 +3216,11 @@ qemuBlockBitmapsHandleCommitFinish(virStorageSource *topsrc,
 {
     virStorageSource *writebitmapsrc = NULL;
 
+    /* if base is a 'raw' image there's no point in attempting to merge the
+     * bitmaps into it */
+    if (basesrc->format == VIR_STORAGE_FILE_RAW)
+        return 0;
+
     if (active)
         writebitmapsrc = basesrc;
 
@@ -2980,68 +3233,77 @@ qemuBlockBitmapsHandleCommitFinish(virStorageSource *topsrc,
 }
 
 
-int
-qemuBlockReopenFormatMon(qemuMonitor *mon,
-                         virStorageSource *src)
-{
-    g_autoptr(virJSONValue) reopenprops = NULL;
-    g_autoptr(virJSONValue) srcprops = NULL;
-    g_autoptr(virJSONValue) reopenoptions = virJSONValueNewArray();
-
-    if (!(srcprops = qemuBlockStorageSourceGetBlockdevProps(src, src->backingStore)))
-        return -1;
-
-    if (virJSONValueArrayAppend(reopenoptions, &srcprops) < 0)
-        return -1;
-
-    if (virJSONValueObjectAdd(&reopenprops,
-                              "a:options", &reopenoptions,
-                              NULL) < 0)
-        return -1;
-
-    if (qemuMonitorBlockdevReopen(mon, &reopenprops) < 0)
-        return -1;
-
-    return 0;
-}
-
-
 /**
- * qemuBlockReopenFormat:
+ * qemuBlockReopenAccess:
  * @vm: domain object
  * @src: storage source to reopen
+ * @readonly: requested readonly mode
  * @asyncJob: qemu async job type
  *
- * Invokes the 'blockdev-reopen' command on the format layer of @src. This means
- * that @src must be already properly configured for the desired outcome. The
- * nodenames of @src are used to identify the specific image in qemu.
+ * Reopen @src image to ensure that it is in @readonly. Does nothing if it is
+ * already in the requested state.
+ *
+ * Callers must use qemuBlockReopenReadWrite/qemuBlockReopenReadOnly functions.
  */
 static int
-qemuBlockReopenFormat(virDomainObj *vm,
+qemuBlockReopenAccess(virDomainObj *vm,
                       virStorageSource *src,
+                      bool readonly,
                       virDomainAsyncJob asyncJob)
 {
-    qemuDomainObjPrivate *priv = vm->privateData;
+    g_autoptr(virJSONValue) reopenoptions = virJSONValueNewArray();
+    g_autoptr(virJSONValue) srcprops = NULL;
     int rc;
+
+    VIR_DEBUG("nodename:'%s' current-ro:'%d requested-ro='%d'",
+              qemuBlockStorageSourceGetEffectiveNodename(src),
+              src->readonly, readonly);
+
+    if (src->readonly == readonly)
+        return 0;
 
     /* If we are lacking the object here, qemu might have opened an image with
      * a node name unknown to us */
-    if (!src->backingStore) {
+    if (src->format >= VIR_STORAGE_FILE_BACKING && !src->backingStore) {
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                        _("can't reopen image with unknown presence of backing store"));
         return -1;
     }
 
-    if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
-        return -1;
+    src->readonly = readonly;
+    /* from now on all error paths must use 'goto error' which restores the original state */
 
-    rc = qemuBlockReopenFormatMon(priv->mon, src);
+    /* based on which is the current 'effecitve' layer we must reopen the
+     * appropriate blockdev */
+    if (qemuBlockStorageSourceGetFormatNodename(src)) {
+        if (!(srcprops = qemuBlockStorageSourceGetFormatProps(src, src->backingStore)))
+            goto error;
+    } else if (qemuBlockStorageSourceGetSliceNodename(src)) {
+        if (!(srcprops = qemuBlockStorageSourceGetBlockdevStorageSliceProps(src, true, false)))
+            goto error;
+    } else {
+        if (!(srcprops = qemuBlockStorageSourceGetBackendProps(src,
+                                                               QEMU_BLOCK_STORAGE_SOURCE_BACKEND_PROPS_EFFECTIVE_NODE)))
+            goto error;
+    }
+
+    if (virJSONValueArrayAppend(reopenoptions, &srcprops) < 0)
+        goto error;
+
+    if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
+        goto error;
+
+    rc = qemuMonitorBlockdevReopen(qemuDomainGetMonitor(vm), &reopenoptions);
 
     qemuDomainObjExitMonitor(vm);
     if (rc < 0)
-        return -1;
+        goto error;
 
     return 0;
+
+ error:
+    src->readonly = !readonly;
+    return -1;
 }
 
 
@@ -3051,26 +3313,15 @@ qemuBlockReopenFormat(virDomainObj *vm,
  * @src: storage source to reopen
  * @asyncJob: qemu async job type
  *
- * Wrapper that reopens @src read-write. We currently depend on qemu
- * reopening the storage with 'auto-read-only' enabled for us.
- * After successful reopen @src's 'readonly' flag is modified. Does nothing
- * if @src is already read-write.
+ * Semantic wrapper that reopens @src read-write. After successful reopen @src's
+ * 'readonly' flag is modified. Does nothing if @src is already read-write.
  */
 int
 qemuBlockReopenReadWrite(virDomainObj *vm,
                          virStorageSource *src,
                          virDomainAsyncJob asyncJob)
 {
-    if (!src->readonly)
-        return 0;
-
-    src->readonly = false;
-    if (qemuBlockReopenFormat(vm, src, asyncJob) < 0) {
-        src->readonly = true;
-        return -1;
-    }
-
-    return 0;
+    return qemuBlockReopenAccess(vm, src, false, asyncJob);
 }
 
 
@@ -3080,27 +3331,124 @@ qemuBlockReopenReadWrite(virDomainObj *vm,
  * @src: storage source to reopen
  * @asyncJob: qemu async job type
  *
- * Wrapper that reopens @src read-only. We currently depend on qemu
- * reopening the storage with 'auto-read-only' enabled for us.
- * After successful reopen @src's 'readonly' flag is modified. Does nothing
- * if @src is already read-only.
+ * Semantic wrapper that reopens @src read-only. After successful reopen @src's
+ * 'readonly' flag is modified. Does nothing if @src is already read-only.
  */
 int
 qemuBlockReopenReadOnly(virDomainObj *vm,
                          virStorageSource *src,
                          virDomainAsyncJob asyncJob)
 {
-    if (src->readonly)
-        return 0;
+    return qemuBlockReopenAccess(vm, src, true, asyncJob);
+}
 
-    src->readonly = true;
-    if (qemuBlockReopenFormat(vm, src, asyncJob) < 0) {
-        src->readonly = false;
+
+/**
+ * qemuBlockStorageSourceIsLUKS:
+ * @src: storage source object
+ *
+ * Returns true if @src is an image in 'luks' format, which is to be decrypted
+ * in qemu (rather than transparently by the transport layer or host's kernel).
+ */
+bool
+qemuBlockStorageSourceIsLUKS(const virStorageSource *src)
+{
+    if (src->format != VIR_STORAGE_FILE_RAW)
+        return false;
+
+    if (src->encryption &&
+        src->encryption->engine == VIR_STORAGE_ENCRYPTION_ENGINE_QEMU &&
+        src->encryption->format == VIR_STORAGE_ENCRYPTION_FORMAT_LUKS)
+        return true;
+
+    return false;
+}
+
+
+/**
+ * qemuBlockStorageSourceIsRaw:
+ * @src: storage source object
+ *
+ * Returns true if @src is a true 'raw' image. This specifically excludes
+ * LUKS encrypted images to be decrypted by qemu.
+ */
+bool
+qemuBlockStorageSourceIsRaw(const virStorageSource *src)
+{
+    if (src->format != VIR_STORAGE_FILE_RAW)
+        return false;
+
+    if (qemuBlockStorageSourceIsLUKS(src))
+        return false;
+
+    return true;
+}
+
+
+/**
+ * qemuBlockReopenSliceExpand:
+ * @vm: domain object
+ * @src: storage source to reopen
+ *
+ * Reopen @src image to remove its storage slice. Note that this currently
+ * works only for 'raw' disks.
+ *
+ * Note: This changes transforms the definition such that the 'raw' driver
+ *       becomes the 'format' layer rather than the 'slice' layer, to be able
+ *       to free the slice definition.
+ */
+int
+qemuBlockReopenSliceExpand(virDomainObj *vm,
+                           virStorageSource *src)
+{
+    g_autoptr(virJSONValue) reopenoptions = virJSONValueNewArray();
+    g_autoptr(virJSONValue) srcprops = NULL;
+    int rc;
+
+    /* If we are lacking the object here, qemu might have opened an image with
+     * a node name unknown to us */
+    /* Note: This is currently dead code, as only 'raw' images are supported */
+    if (!src->backingStore) {
+        virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
+                       _("can't reopen image with unknown presence of backing store"));
         return -1;
     }
 
+    /* If there is an explicit storage slice 'raw' driver layer we need to modify that */
+    if (qemuBlockStorageSourceGetSliceNodename(src)) {
+        /* we need to know whether the slice layer is the "effective" layer */
+        bool isEffective = !qemuBlockStorageSourceGetSliceNodename(src);
+
+        if (!(srcprops = qemuBlockStorageSourceGetBlockdevStorageSliceProps(src, isEffective, true)))
+            return -1;
+    } else {
+        if (!(srcprops = qemuBlockStorageSourceGetFormatProps(src, src->backingStore)))
+            return -1;
+    }
+
+    if (virJSONValueArrayAppend(reopenoptions, &srcprops) < 0)
+        return -1;
+
+    if (qemuDomainObjEnterMonitorAsync(vm, VIR_ASYNC_JOB_NONE) < 0)
+        return -1;
+
+    rc = qemuMonitorBlockdevReopen(qemuDomainGetMonitor(vm), &reopenoptions);
+
+    qemuDomainObjExitMonitor(vm);
+    if (rc < 0)
+        return -1;
+
+    /* transform the 'slice' raw driver into a 'format' driver so that we don't
+     * have to add extra code */
+    if (qemuBlockStorageSourceGetSliceNodename(src))
+        qemuBlockStorageSourceSetFormatNodename(src, g_strdup(qemuBlockStorageSourceGetSliceNodename(src)));
+
+    /* get rid of the slice */
+    g_clear_pointer(&src->sliceStorage, virStorageSourceSliceFree);
+
     return 0;
 }
+
 
 /**
  * qemuBlockStorageSourceNeedSliceLayer:
@@ -3108,18 +3456,53 @@ qemuBlockReopenReadOnly(virDomainObj *vm,
  *
  * Returns true if @src requires an extra 'raw' layer for handling of the storage
  * slice.
+ *
+ * Important: This helper must be used only for decisions when setting up a
+ * '-blockdev' backend in which case the storage slice layer node name will be
+ * populated.
+ * Any cases when the backend can be already in use must decide based on the
+ * existence of the storage slice layer nodename.
  */
 bool
 qemuBlockStorageSourceNeedsStorageSliceLayer(const virStorageSource *src)
 {
-    if (!src->sliceStorage)
-        return false;
+    return !!src->sliceStorage;
+}
 
-    if (src->format != VIR_STORAGE_FILE_RAW)
+
+/**
+ * qemuBlockStorageSourceNeedsFormatLayer:
+ * @src: storage source
+ *
+ * Returns true if configuration of @src requires a 'format' layer -blockdev.
+ *
+ * Important: This helper must be used only for decisions when setting up a
+ * '-blockdev' backend in which case the format layer node name will be populated.
+ * Any cases when the backend can be already in use must decide based on the
+ * existence of the format layer nodename.
+ */
+bool
+qemuBlockStorageSourceNeedsFormatLayer(const virStorageSource *src,
+                                       virQEMUCaps *qemuCaps)
+{
+    virStorageType actualType = virStorageSourceGetActualType(src);
+
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_BLOCKJOB_BACKING_MASK_PROTOCOL))
         return true;
 
-    if (src->encryption &&
-        src->encryption->format == VIR_STORAGE_ENCRYPTION_FORMAT_LUKS)
+    if (!qemuBlockStorageSourceIsRaw(src))
+        return true;
+
+    /* when passing a FD to qemu via the /dev/fdset mechanism qemu
+     * fetches the appropriate FD from the fdset by checking that it has
+     * the correct accessmode. Now if a user passes an explicitly read-write fd
+     * but intends to use the disk in read-only mode we need to install a
+     * read-only raw driver on top as qemu wouldn't be able to pick the correct
+     * fd. */
+    if ((actualType == VIR_STORAGE_TYPE_FILE || actualType == VIR_STORAGE_TYPE_BLOCK) &&
+        src->fdtuple &&
+        src->fdtuple->nfds == 1 &&
+        src->fdtuple->writable)
         return true;
 
     return false;
@@ -3236,9 +3619,6 @@ qemuBlockExportGetNBDProps(const char *nodename,
  * @writable: whether the NBD export allows writes
  * @bitmap: (optional) block dirty bitmap to export along
  *
- * This function automatically selects the proper invocation of exporting a
- * block backend via NBD in qemu.
- *
  * This function must be called while in the monitor context.
  */
 int
@@ -3252,12 +3632,8 @@ qemuBlockExportAddNBD(virDomainObj *vm,
     g_autoptr(virJSONValue) nbdprops = NULL;
     const char *bitmaps[2] = { bitmap, NULL };
 
-    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_BLOCK_EXPORT_ADD))
-        return qemuMonitorNBDServerAdd(priv->mon, src->nodeformat,
-                                       exportname, writable, bitmap);
-
-    if (!(nbdprops = qemuBlockExportGetNBDProps(src->nodeformat, exportname,
-                                                writable, bitmaps)))
+    if (!(nbdprops = qemuBlockExportGetNBDProps(qemuBlockStorageSourceGetEffectiveNodename(src),
+                                                exportname, writable, bitmaps)))
         return -1;
 
     return qemuMonitorBlockExportAdd(priv->mon, &nbdprops);
@@ -3321,9 +3697,6 @@ qemuBlockCommit(virDomainObj *vm,
     }
 
     if (qemuDomainDiskBlockJobIsActive(disk))
-        return NULL;
-
-    if (qemuDomainSupportsCheckpointsBlockjobs(vm) < 0)
         return NULL;
 
     if (topSource == disk->src) {
@@ -3395,6 +3768,15 @@ qemuBlockCommit(virDomainObj *vm,
                                            false, false, false) < 0)
         goto cleanup;
 
+    if (baseSource->dataFileStore) {
+        if (qemuDomainStorageSourceAccessAllow(driver, vm, baseSource->dataFileStore,
+                                               false, false, false) < 0)
+            goto cleanup;
+
+        if (qemuBlockReopenReadWrite(vm, baseSource->dataFileStore, asyncJob) < 0)
+            goto cleanup;
+    }
+
     if (top_parent && top_parent != disk->src) {
         /* While top_parent is topmost image, we don't need to remember its
          * owner as it will be overwritten upon finishing the commit. Hence,
@@ -3402,6 +3784,15 @@ qemuBlockCommit(virDomainObj *vm,
         if (qemuDomainStorageSourceAccessAllow(driver, vm, top_parent,
                                                false, false, false) < 0)
             goto cleanup;
+
+        if (top_parent->dataFileStore) {
+            if (qemuDomainStorageSourceAccessAllow(driver, vm, top_parent->dataFileStore,
+                                                   false, false, false) < 0)
+                goto cleanup;
+
+            if (qemuBlockReopenReadWrite(vm, top_parent->dataFileStore, asyncJob) < 0)
+                goto cleanup;
+        }
     }
 
     if (!(job = qemuBlockJobDiskNewCommit(vm, disk, top_parent, topSource,
@@ -3426,8 +3817,8 @@ qemuBlockCommit(virDomainObj *vm,
     rc = qemuMonitorBlockCommit(priv->mon,
                                 qemuDomainDiskGetTopNodename(disk),
                                 job->name,
-                                topSource->nodeformat,
-                                baseSource->nodeformat,
+                                qemuBlockStorageSourceGetEffectiveNodename(topSource),
+                                qemuBlockStorageSourceGetEffectiveNodename(baseSource),
                                 backingPath, bandwidth,
                                 autofinalize);
 
@@ -3447,12 +3838,25 @@ qemuBlockCommit(virDomainObj *vm,
     if (rc < 0 && clean_access) {
         virErrorPtr orig_err;
         virErrorPreserveLast(&orig_err);
+
         /* Revert access to read-only, if possible.  */
+        if (baseSource->dataFileStore) {
+            qemuDomainStorageSourceAccessAllow(driver, vm, baseSource->dataFileStore,
+                                               true, false, false);
+            qemuBlockReopenReadOnly(vm, baseSource->dataFileStore, asyncJob);
+        }
         qemuDomainStorageSourceAccessAllow(driver, vm, baseSource,
                                            true, false, false);
-        if (top_parent && top_parent != disk->src)
+        if (top_parent && top_parent != disk->src) {
+            if (top_parent->dataFileStore) {
+                qemuDomainStorageSourceAccessAllow(driver, vm, top_parent->dataFileStore,
+                                                   true, false, false);
+
+                qemuBlockReopenReadWrite(vm, top_parent->dataFileStore, asyncJob);
+            }
             qemuDomainStorageSourceAccessAllow(driver, vm, top_parent,
                                                true, false, false);
+        }
 
         virErrorRestore(&orig_err);
     }
@@ -3497,6 +3901,9 @@ qemuBlockPivot(virDomainObj *vm,
     case QEMU_BLOCKJOB_TYPE_BACKUP:
     case QEMU_BLOCKJOB_TYPE_INTERNAL:
     case QEMU_BLOCKJOB_TYPE_CREATE:
+    case QEMU_BLOCKJOB_TYPE_SNAPSHOT_SAVE:
+    case QEMU_BLOCKJOB_TYPE_SNAPSHOT_DELETE:
+    case QEMU_BLOCKJOB_TYPE_SNAPSHOT_LOAD:
     case QEMU_BLOCKJOB_TYPE_BROKEN:
         virReportError(VIR_ERR_OPERATION_INVALID,
                        _("job type '%1$s' does not support pivot"),
@@ -3511,7 +3918,7 @@ qemuBlockPivot(virDomainObj *vm,
             bitmapactions = virJSONValueNewArray();
 
             if (qemuMonitorTransactionBitmapAdd(bitmapactions,
-                                                disk->mirror->nodeformat,
+                                                qemuBlockStorageSourceGetEffectiveNodename(disk->mirror),
                                                 "libvirt-tmp-activewrite",
                                                 false,
                                                 false,
@@ -3523,8 +3930,10 @@ qemuBlockPivot(virDomainObj *vm,
              * to copy data into the backing chain while the top image is being
              * copied shallow */
             if (reuse && shallow &&
-                virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_BLOCKDEV_SNAPSHOT_ALLOW_WRITE_ONLY) &&
                 virStorageSourceHasBacking(disk->mirror)) {
+
+                if (qemuProcessPrepareHostStorageSourceChain(vm, disk->mirror->backingStore) < 0)
+                    return -1;
 
                 if (!(chainattachdata = qemuBuildStorageSourceChainAttachPrepareBlockdev(disk->mirror->backingStore)))
                     return -1;
@@ -3532,8 +3941,8 @@ qemuBlockPivot(virDomainObj *vm,
                 reopenactions = virJSONValueNewArray();
 
                 if (qemuMonitorTransactionSnapshotBlockdev(reopenactions,
-                                                           disk->mirror->backingStore->nodeformat,
-                                                           disk->mirror->nodeformat))
+                                                           qemuBlockStorageSourceGetEffectiveNodename(disk->mirror->backingStore),
+                                                           qemuBlockStorageSourceGetFormatNodename(disk->mirror)))
                     return -1;
             }
 
@@ -3544,7 +3953,7 @@ qemuBlockPivot(virDomainObj *vm,
         bitmapactions = virJSONValueNewArray();
 
         if (qemuMonitorTransactionBitmapAdd(bitmapactions,
-                                            job->data.commit.base->nodeformat,
+                                            qemuBlockStorageSourceGetEffectiveNodename(job->data.commit.base),
                                             "libvirt-tmp-activewrite",
                                             false,
                                             false,
@@ -3614,4 +4023,56 @@ qemuBlockFinalize(virDomainObj *vm,
     qemuDomainObjExitMonitor(vm);
 
     return ret;
+}
+
+
+/**
+ * qemuBlockNodesEnsureActive:
+ * @vm: domain object
+ * @asyncJob: asynchronous job ID
+ *
+ * Checks if any block nodes are inactive and reactivates them. This is necessary
+ * to do before any blockjob as the block nodes could have been deactivated
+ * either by an aborted migration (before the VM switched to running mode) or
+ * after a snapshot with 'manual' disks (which deactivates them).
+ *
+ * Block nodes need to be reactivated prior to fetching the data
+ * via 'qemuBlockGetNamedNodeData' as qemu doesn't guarantee that the data
+ * fetched while nodes are inactive is accurate.
+ */
+int
+qemuBlockNodesEnsureActive(virDomainObj *vm,
+                           virDomainAsyncJob asyncJob)
+{
+    qemuDomainObjPrivate *priv = vm->privateData;
+    GHashTableIter htitr;
+    g_autoptr(GHashTable) blockNamedNodeData = NULL;
+    qemuBlockNamedNodeData *node;
+    bool has_inactive = false;
+    int rc = 0;
+
+    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_BLOCKDEV_SET_ACTIVE))
+        return 0;
+
+    if (!(blockNamedNodeData = qemuBlockGetNamedNodeData(vm, asyncJob)))
+        return -1;
+
+    g_hash_table_iter_init(&htitr, blockNamedNodeData);
+    while (g_hash_table_iter_next(&htitr, NULL, (void *) &node)) {
+        if (node->inactive) {
+            has_inactive = true;
+            break;
+        }
+    }
+
+    if (!has_inactive)
+        return 0;
+
+    if (qemuDomainObjEnterMonitorAsync(vm, asyncJob) < 0)
+        return -1;
+
+    rc = qemuMonitorBlockdevSetActive(priv->mon, NULL, true);
+    qemuDomainObjExitMonitor(vm);
+
+    return rc;
 }

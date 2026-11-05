@@ -88,10 +88,11 @@ struct _qemuMonitor {
     void *logOpaque;
     virFreeCallback logDestroy;
 
-    /* true if qemu no longer wants 'props' sub-object of object-add */
-    bool objectAddNoWrap;
-    /* query-named-block-nodes supports the 'flat' option */
-    bool queryNamedBlockNodesFlat;
+    /* use the backing-mask-protocol flag of block-commit/stream */
+    bool blockjobMaskProtocol;
+
+    /* 'query-block' supports flat mode */
+    bool queryBlockFlat;
 };
 
 
@@ -103,4 +104,4 @@ qemuMonitorIOWriteWithFD(qemuMonitor *mon,
                          const char *data,
                          size_t len,
                          int fd)
-    G_NO_INLINE;
+    ATTRIBUTE_MOCKABLE;

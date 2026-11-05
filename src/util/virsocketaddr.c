@@ -21,6 +21,7 @@
 #include "virsocketaddr.h"
 #include "virerror.h"
 #include "virbuffer.h"
+#include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
@@ -28,26 +29,23 @@
  * Helpers to extract the IP arrays from the virSocketAddr *
  * That part is the less portable of the module
  */
-typedef unsigned char virSocketAddrIPv4[4];
+typedef union {
+    uint32_t val;
+    unsigned char bytes[4];
+} virSocketAddrIPv4;
+
 typedef unsigned short virSocketAddrIPv6[8];
+typedef unsigned char virSocketAddrIPv6Bytes[16];
 typedef unsigned char virSocketAddrIPv6Nibbles[32];
 
 static int
 virSocketAddrGetIPv4Addr(const virSocketAddr *addr,
                          virSocketAddrIPv4 *tab)
 {
-    unsigned long val;
-    size_t i;
-
     if (!addr || !tab || addr->data.stor.ss_family != AF_INET)
         return -1;
 
-    val = ntohl(addr->data.inet4.sin_addr.s_addr);
-
-    for (i = 0; i < 4; i++) {
-        (*tab)[3 - i] = val & 0xFF;
-        val >>= 8;
-    }
+    tab->val = addr->data.inet4.sin_addr.s_addr;
 
     return 0;
 }
@@ -67,6 +65,23 @@ virSocketAddrGetIPv6Addr(const virSocketAddr *addr, virSocketAddrIPv6 *tab)
 
     return 0;
 }
+
+
+static int
+virSocketAddrGetIPv6Bytes(const virSocketAddr *addr,
+                          virSocketAddrIPv6Bytes *tab)
+{
+    size_t i;
+
+    if (!addr || !tab || addr->data.stor.ss_family != AF_INET6)
+        return -1;
+
+    for (i = 0; i < 16; i++)
+        (*tab)[i] = addr->data.inet6.sin6_addr.s6_addr[i];
+
+    return 0;
+}
+
 
 static int
 virSocketAddrGetIPv6Nibbles(const virSocketAddr *addr,
@@ -92,7 +107,7 @@ virSocketAddrParseInternal(struct addrinfo **res,
                            int ai_flags,
                            bool reportError)
 {
-    struct addrinfo hints;
+    struct addrinfo hints = { 0 };
     int err;
 
     if (val == NULL) {
@@ -101,7 +116,6 @@ virSocketAddrParseInternal(struct addrinfo **res,
         return -1;
     }
 
-    memset(&hints, 0, sizeof(hints));
     hints.ai_family = family;
     hints.ai_flags = ai_flags;
     if ((err = getaddrinfo(val, NULL, &hints, res)) != 0) {
@@ -240,11 +254,9 @@ virSocketAddrParseIPv6(virSocketAddr *addr, const char *val)
 int virSocketAddrResolveService(const char *service)
 {
     struct addrinfo *res, *tmp;
-    struct addrinfo hints;
+    struct addrinfo hints = { 0 };
     int err;
     int port = -1;
-
-    memset(&hints, 0, sizeof(hints));
 
     if ((err = getaddrinfo(NULL, service, &hints, &res)) != 0) {
         virReportError(VIR_ERR_SYSTEM_ERROR,
@@ -358,6 +370,8 @@ virSocketAddrEqual(const virSocketAddr *s1, const virSocketAddr *s2)
         return false;
 
     switch (s1->data.stor.ss_family) {
+    case AF_UNSPEC:
+        return true;
     case AF_INET:
         return (memcmp(&s1->data.inet4.sin_addr.s_addr,
                        &s2->data.inet4.sin_addr.s_addr,
@@ -516,17 +530,15 @@ virSocketAddrFormatFull(const virSocketAddr *addr,
  * @masked: true to mask off the host bits of the address
  *
  * Returns a string representation of the IP network described by
- * @netaddr/@prefix. If @masked is true, the address is masked to
- * remove the host bits according to prefix. So, for example, sending
- * f(1.2.3.4, 24, true) would return "1.2.3.0/24", but f(1.2.3.4, 24,
- * false) would return "1.2.3.4/24".
+ * @addr/@prefix. The address is masked to remove the host bits
+ * according to prefix. So, for example, sending
+ * f(1.2.3.4, 24) would return "1.2.3.0/24".
  *
- * returns false on failure (and logs an error message)
+ * Returns NULL on failure (and logs an error message)
  */
 char *
 virSocketAddrFormatWithPrefix(virSocketAddr *addr,
-                              unsigned int prefix,
-                              bool masked)
+                              unsigned int prefix)
 {
     virSocketAddr network;
     g_autofree char *netstr = NULL;
@@ -538,7 +550,7 @@ virSocketAddrFormatWithPrefix(virSocketAddr *addr,
         return NULL;
     }
 
-    if (masked && virSocketAddrMaskByPrefix(addr, prefix, &network) < 0) {
+    if (virSocketAddrMaskByPrefix(addr, prefix, &network) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Failure to mask address"));
         return NULL;
@@ -670,31 +682,34 @@ virSocketAddrMask(const virSocketAddr *addr,
                   const virSocketAddr *netmask,
                   virSocketAddr *network)
 {
-    memset(network, 0, sizeof(*network));
+    virSocketAddr tmp = { 0 };
+
     if (addr->data.stor.ss_family != netmask->data.stor.ss_family) {
         network->data.stor.ss_family = AF_UNSPEC;
         return -1;
     }
 
     if (addr->data.stor.ss_family == AF_INET) {
-        network->data.inet4.sin_addr.s_addr
+        tmp.data.inet4.sin_addr.s_addr
             = (addr->data.inet4.sin_addr.s_addr
                & netmask->data.inet4.sin_addr.s_addr);
-        network->data.inet4.sin_port = 0;
-        network->data.stor.ss_family = AF_INET;
-        network->len = addr->len;
+        tmp.data.inet4.sin_port = 0;
+        tmp.data.stor.ss_family = AF_INET;
+        tmp.len = addr->len;
+        *network = tmp;
         return 0;
     }
     if (addr->data.stor.ss_family == AF_INET6) {
         size_t i;
         for (i = 0; i < 16; i++) {
-            network->data.inet6.sin6_addr.s6_addr[i]
+            tmp.data.inet6.sin6_addr.s6_addr[i]
                 = (addr->data.inet6.sin6_addr.s6_addr[i]
                    & netmask->data.inet6.sin6_addr.s6_addr[i]);
         }
-        network->data.inet6.sin6_port = 0;
-        network->data.stor.ss_family = AF_INET6;
-        network->len = addr->len;
+        tmp.data.inet6.sin6_port = 0;
+        tmp.data.stor.ss_family = AF_INET6;
+        tmp.len = addr->len;
+        *network = tmp;
         return 0;
     }
     network->data.stor.ss_family = AF_UNSPEC;
@@ -819,10 +834,8 @@ int virSocketAddrCheckNetmask(virSocketAddr *addr1, virSocketAddr *addr2,
             (virSocketAddrGetIPv4Addr(netmask, &tm) < 0))
             return -1;
 
-        for (i = 0; i < 4; i++) {
-            if ((t1[i] & tm[i]) != (t2[i] & tm[i]))
-                return 0;
-        }
+        if ((t1.val & tm.val) != (t2.val & tm.val))
+            return 0;
 
     } else if (addr1->data.stor.ss_family == AF_INET6) {
         virSocketAddrIPv6 t1, t2, tm;
@@ -954,35 +967,35 @@ virSocketAddrGetRange(virSocketAddr *start, virSocketAddr *end,
     }
 
     if (VIR_SOCKET_ADDR_IS_FAMILY(start, AF_INET)) {
-        virSocketAddrIPv4 t1, t2;
+        virSocketAddrIPv4 startv4, endv4;
+        uint32_t startHost, endHost;
 
-        if (virSocketAddrGetIPv4Addr(start, &t1) < 0 ||
-            virSocketAddrGetIPv4Addr(end, &t2) < 0) {
+        if (virSocketAddrGetIPv4Addr(start, &startv4) < 0 ||
+            virSocketAddrGetIPv4Addr(end, &endv4) < 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("failed to get IPv4 address for start or end of range %1$s - %2$s"),
                            startStr, endStr);
             return -1;
         }
 
-        /* legacy check that everything except the last two bytes
-         * are the same
-         */
-        for (i = 0; i < 2; i++) {
-            if (t1[i] != t2[i]) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("range %1$s - %2$s is too large (> 65535)"),
-                               startStr, endStr);
-                return -1;
-            }
-        }
-        ret = (t2[2] - t1[2]) * 256 + (t2[3] - t1[3]);
-        if (ret < 0) {
+        startHost = ntohl(startv4.val);
+        endHost = ntohl(endv4.val);
+
+        if (endHost < startHost) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("range %1$s - %2$s is reversed "),
                            startStr, endStr);
             return -1;
         }
-        ret++;
+
+        if (endHost - startHost > 65535) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("range %1$s - %2$s is too large (> 65535)"),
+                           startStr, endStr);
+            return -1;
+        }
+
+        ret = endHost - startHost + 1;
     } else if (VIR_SOCKET_ADDR_IS_FAMILY(start, AF_INET6)) {
         virSocketAddrIPv6 t1, t2;
 
@@ -1046,7 +1059,7 @@ int virSocketAddrGetNumNetmaskBits(const virSocketAddr *netmask)
             return -1;
 
         for (i = 0; i < 4; i++)
-            if (tm[i] == 0xff)
+            if (tm.bytes[i] == 0xff)
                 c += 8;
             else
                 break;
@@ -1057,7 +1070,7 @@ int virSocketAddrGetNumNetmaskBits(const virSocketAddr *netmask)
         j = i << 3;
         while (j < (8 * 4)) {
             bit = 1 << (7 - (j & 7));
-            if ((tm[j >> 3] & bit))
+            if ((tm.bytes[j >> 3] & bit))
                 c++;
             else
                 break;
@@ -1066,7 +1079,7 @@ int virSocketAddrGetNumNetmaskBits(const virSocketAddr *netmask)
 
         while (j < (8 * 4)) {
             bit = 1 << (7 - (j & 7));
-            if ((tm[j >> 3] & bit))
+            if ((tm.bytes[j >> 3] & bit))
                 return -1;
             j++;
         }
@@ -1132,12 +1145,14 @@ virSocketAddrPrefixToNetmask(unsigned int prefix,
     netmask->data.stor.ss_family = AF_UNSPEC; /* assume failure */
 
     if (family == AF_INET) {
-        int ip;
+        unsigned int ip = 0;
 
         if (prefix > 32)
             return -1;
 
-        ip = prefix ? ~((1 << (32 - prefix)) - 1) : 0;
+        if (prefix > 0)
+            ip = ~((1U << (32 - prefix)) - 1);
+
         netmask->data.inet4.sin_addr.s_addr = htonl(ip);
         netmask->data.stor.ss_family = AF_INET;
         netmask->len = sizeof(struct sockaddr_in);
@@ -1250,6 +1265,58 @@ virSocketAddrNumericFamily(const char *address)
 }
 
 /**
+ * virSocketAddrSubnetToPrefix:
+ * @subnet: address to convert
+ *
+ * Converts subnet mask to prefix. If @subnet is of an IPv4
+ * format (NNN.NNN.NNN.NNN) then corresponding prefix length is
+ * returned (i.e. number of leading bits.). If @subnet is just a
+ * number (optionally prefixed with '/') then the number is
+ * parsed and returned. There is a corner case: if @subnet is
+ * valid IPv4 address but not valid subnet mask then a positive
+ * value is returned, but obviously it is not valid prefix.
+ *
+ * Returns: prefix corresponding to @subnet,
+ *          -1 otherwise.
+ */
+int
+virSocketAddrSubnetToPrefix(const char *subnet)
+{
+    struct addrinfo *ai = NULL;
+    unsigned int prefix = 0;
+    struct sockaddr_in in;
+    int ret = -1;
+
+    if (*subnet == '/') {
+        /* /NN format */
+        if (virStrToLong_ui(subnet + 1, NULL, 10, &prefix) < 0)
+            return -1;
+        return prefix;
+    }
+
+    if (virStrToLong_ui(subnet, NULL, 10, &prefix) >= 0) {
+        /* plain NN format */
+        return prefix;
+    }
+
+    if (virSocketAddrParseInternal(&ai, subnet, AF_INET, AI_NUMERICHOST, false) < 0)
+        return -1;
+
+    if (ai->ai_family != AF_INET) {
+        /* huh? */
+        goto cleanup;
+    }
+
+    memcpy(&in, ai->ai_addr, sizeof(in));
+    prefix = __builtin_popcount(in.sin_addr.s_addr);
+
+    ret = prefix;
+ cleanup:
+    freeaddrinfo(ai);
+    return ret;
+}
+
+/**
  * virSocketAddrIsNumericLocalhost:
  * @address: address to check
  *
@@ -1308,7 +1375,7 @@ virSocketAddrPTRDomain(const virSocketAddr *addr,
             return -1;
 
         for (i = prefix / 8; i > 0; i--)
-            virBufferAsprintf(&buf, "%u.", ip[i - 1]);
+            virBufferAsprintf(&buf, "%u.", ip.bytes[i - 1]);
 
         virBufferAddLit(&buf, VIR_SOCKET_ADDR_IPV4_ARPA);
     } else if (VIR_SOCKET_ADDR_IS_FAMILY(addr, AF_INET6)) {
@@ -1333,6 +1400,51 @@ virSocketAddrPTRDomain(const virSocketAddr *addr,
 
     return 0;
 }
+
+
+/**
+ * virSocketAddrBytes:
+ * @addr: address to convert to byte array
+ * @bytes: a preallocated array to store the address bytes to
+ * @maxBytes: the size of @bytes
+ *
+ * Extracts individual bytes of an IPv4 or IPv6 address in the provided @bytes
+ * array, which should be large enough to store 16 bytes (the size of an IPv6
+ * address). Bytes are stored in network order.
+ *
+ * Returns the number of bytes stored in @bytes on success or 0 when @bytes
+ * array is not big enough or @addr is not IPv4 or IPv6.
+ */
+int
+virSocketAddrBytes(const virSocketAddr *addr,
+                   unsigned char *bytes,
+                   int maxBytes)
+{
+    if (VIR_SOCKET_ADDR_IS_FAMILY(addr, AF_INET6)) {
+        virSocketAddrIPv6Bytes ip;
+
+        if (maxBytes < sizeof(ip))
+            return 0;
+
+        virSocketAddrGetIPv6Bytes(addr, &ip);
+        memcpy(bytes, ip, sizeof(ip));
+        return sizeof(ip);
+    }
+
+    if (VIR_SOCKET_ADDR_IS_FAMILY(addr, AF_INET)) {
+        virSocketAddrIPv4 ip;
+
+        if (maxBytes < sizeof(ip))
+            return 0;
+
+        virSocketAddrGetIPv4Addr(addr, &ip);
+        memcpy(bytes, &ip, sizeof(ip));
+        return sizeof(ip);
+    }
+
+    return 0;
+}
+
 
 void
 virSocketAddrFree(virSocketAddr *addr)

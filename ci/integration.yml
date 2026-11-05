@@ -1,47 +1,12 @@
 include:
   - 'ci/integration-template.yml'
 
-.centos-stream-8-tests:
-  variables:
-    # needed by libvirt-gitlab-executor
-    DISTRO: centos-stream-8
-    # can be overridden in forks to set a different runner tag
-    LIBVIRT_CI_INTEGRATION_RUNNER_TAG: redhat-vm-host
-  tags:
-    - $LIBVIRT_CI_INTEGRATION_RUNNER_TAG
-
-centos-stream-8-tests-prebuilt-env:
-  extends:
-    - .integration_tests_prebuilt_env
-    - .centos-stream-8-tests
-  needs:
-    - x86_64-centos-stream-8-prebuilt-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-centos-stream-8-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-centos-stream-8-prebuilt-env
-      ref: master
-      artifacts: true
-
-centos-stream-8-tests-local-env:
-  extends:
-    - .integration_tests_local_env
-    - .centos-stream-8-tests
-  needs:
-    - x86_64-centos-stream-8-local-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-centos-stream-8-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-centos-stream-8-prebuilt-env
-      ref: master
-      artifacts: true
-
-
-.centos-stream-9-tests:
+# NOTE The integration tests use artifacts produced by the libvirt-perl
+# and libvirt-python CI jobs, so the new target needs to be introduced
+# there before it can be used here. The VM template for the target
+# also needs to be created on the runner host.
+centos-stream-9-tests:
+  extends: .integration_tests
   variables:
     # needed by libvirt-gitlab-executor
     DISTRO: centos-stream-9
@@ -49,153 +14,61 @@ centos-stream-8-tests-local-env:
     LIBVIRT_CI_INTEGRATION_RUNNER_TAG: redhat-vm-host
   tags:
     - $LIBVIRT_CI_INTEGRATION_RUNNER_TAG
-
-centos-stream-9-tests-prebuilt-env:
-  extends:
-    - .integration_tests_prebuilt_env
-    - .centos-stream-9-tests
   needs:
-    - x86_64-centos-stream-9-prebuilt-env
+    - x86_64-centos-stream-9
     - project: libvirt/libvirt-perl
-      job: x86_64-centos-stream-9-prebuilt-env
+      job: x86_64-centos-stream-9
       ref: master
       artifacts: true
     - project: libvirt/libvirt-python
-      job: x86_64-centos-stream-9-prebuilt-env
+      job: x86_64-centos-stream-9
       ref: master
       artifacts: true
 
-centos-stream-9-tests-local-env:
-  extends:
-    - .integration_tests_local_env
-    - .centos-stream-9-tests
-  needs:
-    - x86_64-centos-stream-9-local-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-centos-stream-9-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-centos-stream-9-prebuilt-env
-      ref: master
-      artifacts: true
-
-
-.fedora-37-tests:
+# NOTE The integration tests use artifacts produced by the libvirt-perl
+# and libvirt-python CI jobs, so the new target needs to be introduced
+# there before it can be used here. The VM template for the target
+# also needs to be created on the runner host.
+fedora-43-tests:
+  extends: .integration_tests
   variables:
     # needed by libvirt-gitlab-executor
-    DISTRO: fedora-37
+    DISTRO: fedora-43
     # can be overridden in forks to set a different runner tag
     LIBVIRT_CI_INTEGRATION_RUNNER_TAG: redhat-vm-host
   tags:
     - $LIBVIRT_CI_INTEGRATION_RUNNER_TAG
-
-fedora-37-tests-prebuilt-env:
-  extends:
-    - .integration_tests_prebuilt_env
-    - .fedora-37-tests
   needs:
-    - x86_64-fedora-37-prebuilt-env
+    - x86_64-fedora-43
     - project: libvirt/libvirt-perl
-      job: x86_64-fedora-37-prebuilt-env
+      job: x86_64-fedora-43
       ref: master
       artifacts: true
     - project: libvirt/libvirt-python
-      job: x86_64-fedora-37-prebuilt-env
+      job: x86_64-fedora-43
       ref: master
       artifacts: true
 
-fedora-37-tests-local-env:
-  extends:
-    - .integration_tests_local_env
-    - .fedora-37-tests
-  needs:
-    - x86_64-fedora-37-local-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-fedora-37-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-fedora-37-prebuilt-env
-      ref: master
-      artifacts: true
-
-
-.fedora-38-tests:
+# NOTE The integration tests use artifacts produced by the libvirt-perl
+# and libvirt-python CI jobs, so the new target needs to be introduced
+# there before it can be used here. The VM template for the target
+# also needs to be created on the runner host.
+.fedora-43-upstream-qemu-tests:
+  extends: .integration_tests
   variables:
     # needed by libvirt-gitlab-executor
-    DISTRO: fedora-38
+    DISTRO: fedora-43
     # can be overridden in forks to set a different runner tag
     LIBVIRT_CI_INTEGRATION_RUNNER_TAG: redhat-vm-host
   tags:
     - $LIBVIRT_CI_INTEGRATION_RUNNER_TAG
-
-fedora-38-tests-prebuilt-env:
-  extends:
-    - .integration_tests_prebuilt_env
-    - .fedora-38-tests
   needs:
-    - x86_64-fedora-38-prebuilt-env
+    - x86_64-fedora-43
     - project: libvirt/libvirt-perl
-      job: x86_64-fedora-38-prebuilt-env
+      job: x86_64-fedora-43
       ref: master
       artifacts: true
     - project: libvirt/libvirt-python
-      job: x86_64-fedora-38-prebuilt-env
-      ref: master
-      artifacts: true
-
-fedora-38-tests-local-env:
-  extends:
-    - .integration_tests_local_env
-    - .fedora-38-tests
-  needs:
-    - x86_64-fedora-38-local-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-fedora-38-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-fedora-38-prebuilt-env
-      ref: master
-      artifacts: true
-
-
-.fedora-38-upstream-qemu-tests:
-  variables:
-    # needed by libvirt-gitlab-executor
-    DISTRO: fedora-38
-    # can be overridden in forks to set a different runner tag
-    LIBVIRT_CI_INTEGRATION_RUNNER_TAG: redhat-vm-host
-  tags:
-    - $LIBVIRT_CI_INTEGRATION_RUNNER_TAG
-
-fedora-38-upstream-qemu-tests-prebuilt-env:
-  extends:
-    - .integration_tests_prebuilt_env
-    - .fedora-38-upstream-qemu-tests
-  needs:
-    - x86_64-fedora-38-prebuilt-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-fedora-38-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-fedora-38-prebuilt-env
-      ref: master
-      artifacts: true
-
-fedora-38-upstream-qemu-tests-local-env:
-  extends:
-    - .integration_tests_local_env
-    - .fedora-38-upstream-qemu-tests
-  needs:
-    - x86_64-fedora-38-local-env
-    - project: libvirt/libvirt-perl
-      job: x86_64-fedora-38-prebuilt-env
-      ref: master
-      artifacts: true
-    - project: libvirt/libvirt-python
-      job: x86_64-fedora-38-prebuilt-env
+      job: x86_64-fedora-43
       ref: master
       artifacts: true

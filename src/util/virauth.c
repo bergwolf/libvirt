@@ -42,7 +42,7 @@ virAuthGetConfigFilePathURI(virURI *uri,
                             char **path)
 {
     size_t i;
-    const char *authenv = getenv("LIBVIRT_AUTH_FILE");
+    const char *authenv = g_getenv("LIBVIRT_AUTH_FILE");
     g_autofree char *userdir = NULL;
 
     *path = NULL;
@@ -135,7 +135,7 @@ virAuthGetUsernamePath(const char *path,
                        const char *hostname)
 {
     unsigned int ncred;
-    virConnectCredential cred;
+    virConnectCredential cred = { 0 };
     g_autofree char *prompt = NULL;
     char *ret = NULL;
 
@@ -149,8 +149,6 @@ virAuthGetUsernamePath(const char *path,
                        _("Missing authentication credentials"));
         return NULL;
     }
-
-    memset(&cred, 0, sizeof(virConnectCredential));
 
     if (defaultUsername != NULL) {
         prompt = g_strdup_printf(_("Enter username for %1$s [%2$s]"), hostname,
@@ -228,6 +226,12 @@ virAuthGetPasswordPath(const char *path,
     if (!auth) {
         virReportError(VIR_ERR_INVALID_ARG, "%s",
                        _("Missing authentication credentials"));
+        return NULL;
+    }
+
+    if (!auth->cb) {
+        virReportError(VIR_ERR_INVALID_ARG, "%s",
+                       _("Missing authentication callback"));
         return NULL;
     }
 

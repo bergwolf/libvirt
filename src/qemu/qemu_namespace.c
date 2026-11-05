@@ -210,13 +210,21 @@ qemuDomainGetPreservedMounts(virQEMUDriverConfig *cfg,
 
 static int
 qemuDomainPopulateDevices(virQEMUDriverConfig *cfg,
+                          virDomainObj *vm,
                           GSList **paths)
 {
     const char *const *devices = (const char *const *) cfg->cgroupDeviceACL;
     size_t i;
 
-    if (!devices)
+    if (!devices) {
         devices = defaultDeviceACL;
+
+        if (vm->def->virtType == VIR_DOMAIN_VIRT_KVM) {
+            *paths = g_slist_prepend(*paths, g_strdup(QEMU_DEV_KVM));
+        } else if (vm->def->virtType == VIR_DOMAIN_VIRT_HYPERV) {
+            *paths = g_slist_prepend(*paths, g_strdup("/dev/mshv"));
+        }
+    }
 
     for (i = 0; devices[i]; i++) {
         *paths = g_slist_prepend(*paths, g_strdup(devices[i]));
@@ -271,6 +279,10 @@ qemuDomainSetupDisk(virStorageSource *src,
                 return -1;
         } else {
             GSList *targetPaths = NULL;
+
+            if (next->dataFileStore &&
+                virStorageSourceIsLocalStorage(next->dataFileStore))
+                *paths = g_slist_prepend(*paths, g_strdup(next->dataFileStore->path));
 
             if (virStorageSourceIsEmpty(next) ||
                 !virStorageSourceIsLocalStorage(next)) {
@@ -333,13 +345,16 @@ qemuDomainSetupHostdev(virDomainObj *vm,
 {
     g_autofree char *path = NULL;
 
+    if (virHostdevIsPCIDeviceWithIOMMUFD(hostdev))
+        return 0;
+
     if (qemuDomainGetHostdevPath(hostdev, &path, NULL) < 0)
         return -1;
 
     if (path)
         *paths = g_slist_prepend(*paths, g_steal_pointer(&path));
 
-    if (qemuHostdevNeedsVFIO(hostdev) &&
+    if (virHostdevNeedsVFIO(hostdev) &&
         (!hotplug || !qemuDomainNeedsVFIO(vm->def)))
         *paths = g_slist_prepend(*paths, g_strdup(QEMU_DEV_VFIO));
 
@@ -372,8 +387,10 @@ qemuDomainSetupMemory(virDomainMemoryDef *mem,
 {
     switch (mem->model) {
     case VIR_DOMAIN_MEMORY_MODEL_NVDIMM:
+        *paths = g_slist_prepend(*paths, g_strdup(mem->source.nvdimm.path));
+        break;
     case VIR_DOMAIN_MEMORY_MODEL_VIRTIO_PMEM:
-        *paths = g_slist_prepend(*paths, g_strdup(mem->nvdimmPath));
+        *paths = g_slist_prepend(*paths, g_strdup(mem->source.virtio_pmem.path));
         break;
 
     case VIR_DOMAIN_MEMORY_MODEL_SGX_EPC:
@@ -572,7 +589,7 @@ static int
 qemuDomainSetupRNG(virDomainRNGDef *rng,
                    GSList **paths)
 {
-    switch ((virDomainRNGBackend) rng->backend) {
+    switch (rng->backend) {
     case VIR_DOMAIN_RNG_BACKEND_RANDOM:
         *paths = g_slist_prepend(*paths, g_strdup(rng->source.file));
         break;
@@ -649,8 +666,9 @@ qemuDomainSetupLaunchSecurity(virDomainObj *vm,
     if (!sec)
         return 0;
 
-    switch ((virDomainLaunchSecurity) sec->sectype) {
+    switch (sec->sectype) {
     case VIR_DOMAIN_LAUNCH_SECURITY_SEV:
+    case VIR_DOMAIN_LAUNCH_SECURITY_SEV_SNP:
         VIR_DEBUG("Setting up launch security for SEV");
 
         *paths = g_slist_prepend(*paths, g_strdup(QEMU_DEV_SEV));
@@ -658,6 +676,7 @@ qemuDomainSetupLaunchSecurity(virDomainObj *vm,
         VIR_DEBUG("Set up launch security for SEV");
         break;
     case VIR_DOMAIN_LAUNCH_SECURITY_PV:
+    case VIR_DOMAIN_LAUNCH_SECURITY_TDX:
         break;
     case VIR_DOMAIN_LAUNCH_SECURITY_NONE:
     case VIR_DOMAIN_LAUNCH_SECURITY_LAST:
@@ -686,7 +705,7 @@ qemuDomainBuildNamespace(virQEMUDriverConfig *cfg,
         return 0;
     }
 
-    if (qemuDomainPopulateDevices(cfg, &paths) < 0)
+    if (qemuDomainPopulateDevices(cfg, vm, &paths) < 0)
         return -1;
 
     if (qemuDomainSetupAllDisks(vm, &paths) < 0)
@@ -999,10 +1018,10 @@ qemuNamespaceMknodOne(qemuNamespaceMknodItem *data)
     bool isDev = S_ISCHR(data->sb.st_mode) || S_ISBLK(data->sb.st_mode);
     bool isReg = S_ISREG(data->sb.st_mode) || S_ISFIFO(data->sb.st_mode) || S_ISSOCK(data->sb.st_mode);
     bool isDir = S_ISDIR(data->sb.st_mode);
-    bool exists = false;
+    bool existed = false;
 
     if (virFileExists(data->file))
-        exists = true;
+        existed = true;
 
     if (virFileMakeParentPath(data->file) < 0) {
         virReportSystemError(errno,
@@ -1012,13 +1031,31 @@ qemuNamespaceMknodOne(qemuNamespaceMknodItem *data)
 
     if (isLink) {
         g_autofree char *target = NULL;
+        bool targetMatches = false;
 
-        if ((target = g_file_read_link(data->file, NULL)) &&
-            STREQ(target, data->target)) {
+        if ((target = g_file_read_link(data->file, NULL))) {
+            /* Normalize relative path to absolute path for comparison,
+             * using the same logic as qemuNamespaceMknodItemInit(). */
+            if (!g_path_is_absolute(target)) {
+                g_autofree char *fileTmp = g_strdup(data->file);
+                char *c = NULL;
+
+                if ((c = strrchr(fileTmp, '/')))
+                    *(c + 1) = '\0';
+
+                target = g_strdup_printf("%s%s", fileTmp, target);
+            }
+
+            if (STREQ(target, data->target))
+                targetMatches = true;
+        }
+
+        if (targetMatches) {
             VIR_DEBUG("Skipping symlink %s -> %s which exists and points to correct target",
                       data->file, data->target);
         } else {
             VIR_DEBUG("Creating symlink %s -> %s", data->file, data->target);
+            existed = false;
 
             /* First, unlink the symlink target. Symlinks change and
              * therefore we have no guarantees that pre-existing
@@ -1050,6 +1087,7 @@ qemuNamespaceMknodOne(qemuNamespaceMknodItem *data)
         } else {
             VIR_DEBUG("Creating dev %s (%d,%d)",
                       data->file, major(data->sb.st_rdev), minor(data->sb.st_rdev));
+            existed = false;
             unlink(data->file);
             if (mknod(data->file, data->sb.st_mode, data->sb.st_rdev) < 0) {
                 virReportSystemError(errno,
@@ -1085,50 +1123,52 @@ qemuNamespaceMknodOne(qemuNamespaceMknodItem *data)
         goto cleanup;
     }
 
-    if (lchown(data->file, data->sb.st_uid, data->sb.st_gid) < 0) {
-        virReportSystemError(errno,
-                             _("Failed to chown device %1$s"),
-                             data->file);
-        goto cleanup;
-    }
-
-    /* Symlinks don't have mode */
-    if (!isLink &&
-        chmod(data->file, data->sb.st_mode) < 0) {
-        virReportSystemError(errno,
-                             _("Failed to set permissions for device %1$s"),
-                             data->file);
-        goto cleanup;
-    }
-
-    if (data->acl &&
-        virFileSetACLs(data->file, data->acl) < 0 &&
-        errno != ENOTSUP) {
-        virReportSystemError(errno,
-                             _("Unable to set ACLs on %1$s"), data->file);
-        goto cleanup;
-    }
-
-# ifdef WITH_SELINUX
-    if (data->tcon &&
-        lsetfilecon_raw(data->file, (const char *)data->tcon) < 0) {
-        VIR_WARNINGS_NO_WLOGICALOP_EQUAL_EXPR
-        if (errno != EOPNOTSUPP && errno != ENOTSUP) {
-        VIR_WARNINGS_RESET
+    if (!existed) {
+        if (lchown(data->file, data->sb.st_uid, data->sb.st_gid) < 0) {
             virReportSystemError(errno,
-                                 _("Unable to set SELinux label on %1$s"),
+                                 _("Failed to chown device %1$s"),
                                  data->file);
             goto cleanup;
         }
-    }
+
+        /* Symlinks don't have mode */
+        if (!isLink &&
+            chmod(data->file, data->sb.st_mode) < 0) {
+            virReportSystemError(errno,
+                                 _("Failed to set permissions for device %1$s"),
+                                 data->file);
+            goto cleanup;
+        }
+
+        if (data->acl &&
+            virFileSetACLs(data->file, data->acl) < 0 &&
+            errno != ENOTSUP) {
+            virReportSystemError(errno,
+                                 _("Unable to set ACLs on %1$s"), data->file);
+            goto cleanup;
+        }
+
+# ifdef WITH_SELINUX
+        if (data->tcon &&
+            lsetfilecon_raw(data->file, (const char *)data->tcon) < 0) {
+            VIR_WARNINGS_NO_WLOGICALOP_EQUAL_EXPR
+            if (errno != EOPNOTSUPP && errno != ENOTSUP) {
+            VIR_WARNINGS_RESET
+                virReportSystemError(errno,
+                                     _("Unable to set SELinux label on %1$s"),
+                                     data->file);
+                goto cleanup;
+            }
+        }
 # endif
+    }
 
     /* Finish mount process started earlier. */
     if ((isReg || isDir) &&
         virFileMoveMount(data->target, data->file) < 0)
         goto cleanup;
 
-    ret = exists;
+    ret = existed;
  cleanup:
     if (ret < 0 && delDevice) {
         if (isDir)

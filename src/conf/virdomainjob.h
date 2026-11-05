@@ -37,10 +37,13 @@ typedef enum {
     VIR_JOB_MODIFY,        /* May change state */
     VIR_JOB_ABORT,         /* Abort current async job */
     VIR_JOB_MIGRATION_OP,  /* Operation influencing outgoing migration */
-    VIR_JOB_MODIFY_MIGRATION_SAFE, /* Internal only job for event handlers which
-                                      need to be processed even during migration.
-                                      The code may only change state in a way
-                                      that does not affect migration. */
+    VIR_JOB_MODIFY_MIGRATION_SAFE, /* Modify job that is safe to be run during
+                                      migration. The code may only change state
+                                      in a way that does not affect migration.
+                                      Used in event handlers which need to be
+                                      processed even during migration or for
+                                      setting block job speed when migrating
+                                      with non-shared storage. */
 
     /* The following two items must always be the last items before JOB_LAST */
     VIR_JOB_ASYNC,         /* Asynchronous job */
@@ -89,6 +92,7 @@ typedef enum {
     VIR_DOMAIN_JOB_STATUS_PAUSED,
     VIR_DOMAIN_JOB_STATUS_POSTCOPY,
     VIR_DOMAIN_JOB_STATUS_POSTCOPY_PAUSED,
+    VIR_DOMAIN_JOB_STATUS_POSTCOPY_RECOVER,
     VIR_DOMAIN_JOB_STATUS_COMPLETED,
     VIR_DOMAIN_JOB_STATUS_FAILED,
     VIR_DOMAIN_JOB_STATUS_CANCELED,

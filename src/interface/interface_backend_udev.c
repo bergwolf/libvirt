@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <libudev.h>
 
+#include "virlog.h"
 #include "virerror.h"
 #include "virfile.h"
 #include "datatypes.h"
@@ -39,6 +40,8 @@
 #include "configmake.h"
 
 #define VIR_FROM_THIS VIR_FROM_INTERFACE
+
+VIR_LOG_INIT("interface.interface_backend_udev");
 
 struct udev_iface_driver {
     struct udev *udev;
@@ -134,55 +137,22 @@ udevGetDevices(struct udev *udev, virUdevStatus status)
     return enumerate;
 }
 
-static int
-udevNumOfInterfacesByStatus(virConnectPtr conn, virUdevStatus status,
-                            virInterfaceObjListFilter filter)
-{
-    struct udev *udev = udev_ref(driver->udev);
-    struct udev_enumerate *enumerate = NULL;
-    struct udev_list_entry *devices;
-    struct udev_list_entry *dev_entry;
-    int count = 0;
 
-    enumerate = udevGetDevices(udev, status);
-
-    if (!enumerate) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("failed to get number of %1$s interfaces on host"),
-                       virUdevStatusString(status));
-        count = -1;
-        goto cleanup;
-    }
-
-    /* Do the scan to load up the enumeration */
-    udev_enumerate_scan_devices(enumerate);
-
-    /* Get a list we can walk */
-    devices = udev_enumerate_get_list_entry(enumerate);
-
-    /* For each item so we can count */
-    udev_list_entry_foreach(dev_entry, devices) {
-        struct udev_device *dev;
-        const char *path;
-        g_autoptr(virInterfaceDef) def = NULL;
-
-        path = udev_list_entry_get_name(dev_entry);
-        dev = udev_device_new_from_syspath(udev, path);
-
-        def = udevGetMinimalDefForDevice(dev);
-        if (filter(conn, def))
-            count++;
-        udev_device_unref(dev);
-    }
-
- cleanup:
-    if (enumerate)
-        udev_enumerate_unref(enumerate);
-    udev_unref(udev);
-
-    return count;
-}
-
+/**
+ * udevListInterfacesByStatus:
+ *
+ * @conn: connection object
+ * @names: optional pointer to array to be filled with interface names
+ * @names_len: size of @names, -1 if only number of interfaces is required (@names is then ignored)
+ * @status: status of interfaces to be listed
+ * @filter: ACL filter function
+ *
+ * Lists interfaces with status matching @status filling them into @names (if
+ * @names_len is positive, caller is expected to pass a properly sized array)
+ * and returns the number of such interfaces.
+ *
+ * In case of an error -1 is returned and no interfaces are filled into @names.
+ */
 static int
 udevListInterfacesByStatus(virConnectPtr conn,
                            char **const names,
@@ -216,18 +186,28 @@ udevListInterfacesByStatus(virConnectPtr conn,
     udev_list_entry_foreach(dev_entry, devices) {
         struct udev_device *dev;
         const char *path;
+        const char *name;
         g_autoptr(virInterfaceDef) def = NULL;
 
         /* Ensure we won't exceed the size of our array */
-        if (count > names_len)
+        if (names_len >= 0 && count >= names_len)
             break;
 
         path = udev_list_entry_get_name(dev_entry);
         dev = udev_device_new_from_syspath(udev, path);
 
+        if (!(name = udev_device_get_sysname(dev))) {
+            /* Name can be NULL in case when the interface is being unbound
+             * from the driver. The list API requires names to be present */
+            VIR_DEBUG("Skipping interface '%s', name == NULL", path);
+            continue;
+        }
+
         def = udevGetMinimalDefForDevice(dev);
         if (filter(conn, def)) {
-            names[count] = g_strdup(udev_device_get_sysname(dev));
+            /* Fill the array only if caller want's it */
+            if (names_len >= 0)
+                names[count] = g_strdup(name);
             count++;
         }
         udev_device_unref(dev);
@@ -239,14 +219,15 @@ udevListInterfacesByStatus(virConnectPtr conn,
     return count;
 }
 
+
 static int
 udevConnectNumOfInterfaces(virConnectPtr conn)
 {
     if (virConnectNumOfInterfacesEnsureACL(conn) < 0)
         return -1;
 
-    return udevNumOfInterfacesByStatus(conn, VIR_UDEV_IFACE_ACTIVE,
-                                       virConnectNumOfInterfacesCheckACL);
+    return udevListInterfacesByStatus(conn, NULL, -1, VIR_UDEV_IFACE_ACTIVE,
+                                      virConnectNumOfInterfacesCheckACL);
 }
 
 static int
@@ -268,8 +249,8 @@ udevConnectNumOfDefinedInterfaces(virConnectPtr conn)
     if (virConnectNumOfDefinedInterfacesEnsureACL(conn) < 0)
         return -1;
 
-    return udevNumOfInterfacesByStatus(conn, VIR_UDEV_IFACE_INACTIVE,
-                                       virConnectNumOfDefinedInterfacesCheckACL);
+    return udevListInterfacesByStatus(conn, NULL, -1, VIR_UDEV_IFACE_INACTIVE,
+                                      virConnectNumOfDefinedInterfacesCheckACL);
 }
 
 static int
@@ -354,11 +335,20 @@ udevConnectListAllInterfaces(virConnectPtr conn,
         const char *macaddr;
         g_autoptr(virInterfaceDef) def = NULL;
 
-        path = udev_list_entry_get_name(dev_entry);
-        dev = udev_device_new_from_syspath(udev, path);
-        name = udev_device_get_sysname(dev);
+        if (!(path = udev_list_entry_get_name(dev_entry))) {
+            VIR_DEBUG("Skipping interface, path == NULL");
+            continue;
+        }
+        if (!(dev = udev_device_new_from_syspath(udev, path))) {
+            VIR_DEBUG("Skipping interface '%s', dev == NULL", path);
+            continue;
+        }
+        if (!(name = udev_device_get_sysname(dev))) {
+            VIR_DEBUG("Skipping interface '%s', name == NULL", path);
+            continue;
+        }
         macaddr = udev_device_get_sysattr_value(dev, "address");
-        status = STREQ(udev_device_get_sysattr_value(dev, "operstate"), "up");
+        status = STREQ_NULLABLE(udev_device_get_sysattr_value(dev, "operstate"), "up");
 
         def = udevGetMinimalDefForDevice(dev);
         if (!virConnectListAllInterfacesCheckACL(conn, def)) {
@@ -937,7 +927,7 @@ udevGetIfaceDef(struct udev *udev, const char *name)
     g_autoptr(virInterfaceDef) ifacedef = NULL;
     unsigned int mtu;
     const char *mtu_str;
-    char *vlan_parent_dev = NULL;
+    const char *vlan_parent_dev = NULL;
     const char *devtype;
 
     /* Allocate our interface definition structure */
@@ -964,9 +954,9 @@ udevGetIfaceDef(struct udev *udev, const char *name)
 
     /* MTU */
     mtu_str = udev_device_get_sysattr_value(dev, "mtu");
-    if (virStrToLong_ui(mtu_str, NULL, 10, &mtu) < 0) {
+    if (!mtu_str || virStrToLong_ui(mtu_str, NULL, 10, &mtu) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                _("Could not parse MTU value '%1$s'"), mtu_str);
+                _("Could not parse MTU value '%1$s'"), NULLSTR(mtu_str));
         goto error;
     }
     ifacedef->mtu = mtu;
@@ -1039,11 +1029,13 @@ static char *
 udevInterfaceGetXMLDesc(virInterfacePtr ifinfo,
                         unsigned int flags)
 {
-    struct udev *udev = udev_ref(driver->udev);
+    struct udev *udev = NULL;
     g_autoptr(virInterfaceDef) ifacedef = NULL;
     char *xmlstr = NULL;
 
     virCheckFlags(VIR_INTERFACE_XML_INACTIVE, NULL);
+
+    udev = udev_ref(driver->udev);
 
     /* Recursively build up the interface XML based on the requested
      * interface name
@@ -1089,7 +1081,7 @@ udevInterfaceIsActive(virInterfacePtr ifinfo)
        goto cleanup;
 
     /* Check if it's active or not */
-    status = STREQ(udev_device_get_sysattr_value(dev, "operstate"), "up");
+    status = STREQ_NULLABLE(udev_device_get_sysattr_value(dev, "operstate"), "up");
 
     udev_device_unref(dev);
 
@@ -1103,7 +1095,7 @@ udevInterfaceIsActive(virInterfacePtr ifinfo)
 static int
 udevStateCleanup(void);
 
-static int
+static virDrvStateInitResult
 udevStateInitialize(bool privileged,
                     const char *root,
                     bool monolithic G_GNUC_UNUSED,

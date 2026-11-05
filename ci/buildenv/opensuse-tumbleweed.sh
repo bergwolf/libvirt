@@ -6,14 +6,15 @@
 
 function install_buildenv() {
     zypper dist-upgrade -y
-    zypper install -y \
+    zypper install -y --allow-downgrade \
            audit-devel \
            augeas \
            augeas-lenses \
-           bash-completion \
+           bash-completion-devel \
            ca-certificates \
            ccache \
            clang \
+           clang-devel \
            codespell \
            cpp \
            cppi \
@@ -22,7 +23,7 @@ function install_buildenv() {
            diffutils \
            dwarves \
            ebtables \
-           fuse-devel \
+           fuse3-devel \
            gcc \
            gettext-runtime \
            git \
@@ -31,9 +32,6 @@ function install_buildenv() {
            glibc-locale \
            glusterfs-devel \
            grep \
-           iproute2 \
-           iptables \
-           kmod \
            libacl-devel \
            libapparmor-devel \
            libattr-devel \
@@ -42,6 +40,8 @@ function install_buildenv() {
            libcurl-devel \
            libgnutls-devel \
            libiscsi-devel \
+           libjson-c-devel \
+           libnbd-devel \
            libnl3-devel \
            libnuma-devel \
            libpcap-devel \
@@ -56,32 +56,28 @@ function install_buildenv() {
            libxml2 \
            libxml2-devel \
            libxslt \
-           libyajl-devel \
-           lvm2 \
            make \
            meson \
-           nfs-utils \
            ninja \
-           numad \
-           open-iscsi \
            parted-devel \
            perl-base \
            pkgconfig \
-           polkit \
            python3-base \
+           python3-black \
            python3-docutils \
-           python39-flake8 \
+           python3-flake8 \
+           python3-pytest \
            qemu-tools \
            readline-devel \
-           rpcgen \
            rpm-build \
            sanlock-devel \
-           scrub \
            sed \
            systemd-rpm-macros \
-           systemtap-sdt-devel \
+           systemtap-dtrace \
+           systemtap-headers \
            wireshark-devel \
            xen-devel
+    rm -f /usr/lib*/python3*/EXTERNALLY-MANAGED
     rpm -qa | sort > /packages.txt
     mkdir -p /usr/libexec/ccache-wrappers
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/cc

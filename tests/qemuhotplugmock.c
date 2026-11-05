@@ -18,28 +18,19 @@
 
 #include <config.h>
 
+#include "qemu/qemu_command.h"
 #include "qemu/qemu_hotplug.h"
-#include "qemu/qemu_interface.h"
 #include "qemu/qemu_process.h"
 #include "testutilsqemu.h"
 #include "conf/domain_conf.h"
 #include "virdevmapper.h"
-#include "virmock.h"
 #include <fcntl.h>
+
+#include "testutils.h"
 
 #define LIBVIRT_QEMU_MONITOR_PRIV_H_ALLOW
 #include "qemu/qemu_monitor_priv.h"
 
-static bool (*real_virFileExists)(const char *path);
-
-static void
-init_syms(void)
-{
-    if (real_virFileExists)
-        return;
-
-    VIR_MOCK_REAL_INIT(virFileExists);
-}
 
 unsigned long long
 qemuDomainGetUnplugTimeout(virDomainObj *vm)
@@ -69,18 +60,6 @@ virDevMapperGetTargets(const char *path,
 }
 
 
-bool
-virFileExists(const char *path)
-{
-    init_syms();
-
-    if (STREQ(path, "/dev/mapper/virt"))
-        return true;
-
-    return real_virFileExists(path);
-}
-
-
 int
 qemuProcessStartManagedPRDaemon(virDomainObj *vm G_GNUC_UNUSED)
 {
@@ -94,10 +73,9 @@ qemuProcessKillManagedPRDaemon(virDomainObj *vm G_GNUC_UNUSED)
 }
 
 int
-qemuInterfaceVDPAConnect(virDomainNetDef *net G_GNUC_UNUSED)
+qemuVDPAConnect(const char *devicepath)
 {
-    /* need a valid fd or sendmsg won't work. Just open /dev/null */
-    return open("/dev/null", O_RDONLY);
+    return virTestMakeDummyFD(g_strdup_printf("@vdpa-%s-fd@", devicepath));
 }
 
 
